@@ -1,4 +1,3 @@
-
 import { NavLink } from "react-router-dom";
 
 const Footer = () => {
@@ -13,8 +12,8 @@ const Footer = () => {
               LazyCreator
             </NavLink>
             <p className="text-foreground/70 max-w-md">
-              The simplest way to create engaging YouTube Shorts. 
-              Turn your ideas into viral content in minutes.
+              The simplest way to create engaging YouTube Shorts. Turn your
+              ideas into viral content in minutes.
             </p>
           </div>
 
@@ -22,19 +21,27 @@ const Footer = () => {
             <h4 className="font-medium mb-4">Quick Links</h4>
             <ul className="space-y-2">
               <li>
-                <NavLink 
-                  to="/" 
+                <NavLink
+                  to="/"
                   className="text-foreground/70 hover:text-foreground transition-colors"
                 >
                   Home
                 </NavLink>
               </li>
               <li>
-                <NavLink 
-                  to="/create" 
+                <NavLink
+                  to="/create"
                   className="text-foreground/70 hover:text-foreground transition-colors"
                 >
                   Create
+                </NavLink>
+              </li>
+              <li>
+                <NavLink
+                  to="/learn"
+                  className="text-foreground/70 hover:text-foreground transition-colors"
+                >
+                  Learn More
                 </NavLink>
               </li>
             </ul>
@@ -44,20 +51,20 @@ const Footer = () => {
             <h4 className="font-medium mb-4">Legal</h4>
             <ul className="space-y-2">
               <li>
-                <a 
-                  href="#" 
+                <NavLink
+                  to="/privacy-policy"
                   className="text-foreground/70 hover:text-foreground transition-colors"
                 >
                   Privacy Policy
-                </a>
+                </NavLink>
               </li>
               <li>
-                <a 
-                  href="#" 
+                <NavLink
+                  to="/terms-of-service"
                   className="text-foreground/70 hover:text-foreground transition-colors"
                 >
                   Terms of Service
-                </a>
+                </NavLink>
               </li>
             </ul>
           </div>
@@ -68,27 +75,10 @@ const Footer = () => {
             © {year} LazyCreator. All rights reserved.
           </p>
           <div className="flex space-x-4 mt-4 md:mt-0">
-            <a 
-              href="#" 
-              className="text-foreground/60 hover:text-foreground transition-colors"
-              aria-label="Twitter"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"></path>
-              </svg>
-            </a>
-            <a 
-              href="#" 
+            <a
+              href="https://www.youtube.com/channel/UC6OLDh-EUFrhmf8-RmvaYnA"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-foreground/60 hover:text-foreground transition-colors"
               aria-label="YouTube"
             >
@@ -107,8 +97,10 @@ const Footer = () => {
                 <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
               </svg>
             </a>
-            <a 
-              href="#" 
+            <a
+              href="https://github.com/addy-47"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-foreground/60 hover:text-foreground transition-colors"
               aria-label="GitHub"
             >
