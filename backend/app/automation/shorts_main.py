@@ -2,9 +2,9 @@ import logging # for logging events
 import os # for environment variables and file paths
 from pathlib import Path # for file paths and directory creation
 from dotenv import load_dotenv # for loading environment variables
-from script_generator import generate_script
-from video_maker import YTShortsCreator
-from youtube_upload import upload_video, get_authenticated_service
+from .script_generator import generate_script
+from .video_maker import YTShortsCreator
+from .youtube_upload import upload_video, get_authenticated_service
 from nltk.corpus import stopwords
 import datetime # for timestamp
 import re # for regular expressions
@@ -104,14 +104,16 @@ def get_keywords(script, max_keywords=3):
 
     return top_keywords
 
-def generate_youtube_short(topic, style="video", max_duration=25):
+def generate_youtube_short(topic, max_duration, background_type, background_source, background_path=None):
     """
     Generate a YouTube Short.
 
     Args:
         topic (str): Topic for the YouTube Short
-        style (str): Type of background ("video" or "animation")
         max_duration (int): Maximum video duration in seconds
+        background_type (str): Type of background ("video" or "image")
+        background_source (str): Source of background ("custom" or "provide_for_me")
+        background_path (str): Path to the custom background image/video
     """
     try:
 
@@ -123,22 +125,20 @@ def generate_youtube_short(topic, style="video", max_duration=25):
         output_path = os.path.join(output_dir, output_filename)
 
         # Script Generation
-        latest_ai_news = get_latest_ai_news()
-        logger.info(f"Generating script for topic: {latest_ai_news}")
+        if topic == "Latest AI News":
+            topic = get_latest_ai_news()
         max_tokens = 200
-        # user_input = input("Prompt for the user: ")
-        # topic = user_input,
+
         prompt = f"""
-        Generate a YouTube Shorts script focused entirely on the latest AI news: '{latest_ai_news}
+        Generate a YouTube Shorts script focused entirely on the '{topic}'
         for the date {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.
-        The script should not exceed 25 secs and should follow this structure:
-        1. Start with an attention-grabbing opening (0–3 seconds).
-        2. Highlight 1–2 key points about this specific AI news (4–22 seconds).
-        3. End with a clear call to action (23–25 seconds).
-        Use short, concise sentences and suggest 3-4 trending hashtags (e.g., #AI, #TechNews).
+        The script should not exceed {max_duration} secs and should follow this structure:
+        1. Start with an attention-grabbing opening ({max_duration/6} seconds).
+        2. Highlight 1–2 key points about this specific AI news ({max_duration/1.5} seconds).
+        3. End with a clear call to action ({max_duration/6} seconds).
+        Use short, concise sentences and suggest 3-4 trending hashtags for the topic.
         Keep it under {max_tokens} tokens.
         """
-        # prompt = user_input
 
         script = generate_script(prompt, max_tokens=max_tokens)
         logger.info("Raw script generated successfully")
@@ -148,48 +148,49 @@ def generate_youtube_short(topic, style="video", max_duration=25):
         for i, card in enumerate(script_cards):
             logger.info(f"Section {i+1}: {card['text'][:30]}... (duration: {card['duration']}s)")
 
-        # Extract keywords for each section and the overall script
+        # Initialize variables
         overall_keywords = get_keywords(script)
+        section_keywords = []
         logger.info(f"Overall keywords: {overall_keywords}")
 
-        # Get section-specific keywords for background queries
-        section_keywords = []
-        for i, card in enumerate(script_cards):
-            # Always start with "technology" as the first keyword
-            section_kw = ["technology"]
+        if(background_type == "video" and background_source == "provide_for_me"):
+            # Get section-specific keywords for background queries
+            for i, card in enumerate(script_cards):
+                # Always start with "technology" as the first keyword
+                section_kw = ["technology"]
 
-            # Extract keywords from this section (limit to 3 more)
-            section_specific_kw = get_keywords(card['text'], max_keywords=3)
+                # Extract keywords from this section (limit to 3 more)
+                section_specific_kw = get_keywords(card['text'], max_keywords=3)
 
-            # For short sections or if no keywords extracted, use overall keywords
-            if not section_specific_kw:
-                section_specific_kw = overall_keywords[:3]
+                # For short sections or if no keywords extracted, use overall keywords
+                if not section_specific_kw:
+                    section_specific_kw = overall_keywords[:3]
 
-            # Add section-specific keywords (up to 3 more)
-            section_kw.extend([k for k in section_specific_kw if k != "technology"][:3])
+                # Add section-specific keywords (up to 3 more)
+                section_kw.extend([k for k in section_specific_kw if k != "technology"][:3])
 
-            # Ensure we have exactly 4 keywords total
-            while len(section_kw) < 4 and overall_keywords:
-                # Add from overall keywords if needed
-                for kw in overall_keywords:
-                    if kw not in section_kw:
-                        section_kw.append(kw)
+                # Ensure we have exactly 4 keywords total
+                while len(section_kw) < 4 and overall_keywords:
+                    # Add from overall keywords if needed
+                    for kw in overall_keywords:
+                        if kw not in section_kw:
+                            section_kw.append(kw)
+                            break
+
+                    # Break if we still can't find enough keywords
+                    if len(section_kw) < 4 and len(section_kw) == len(set(section_kw + overall_keywords)):
                         break
 
-                # Break if we still can't find enough keywords
-                if len(section_kw) < 4 and len(section_kw) == len(set(section_kw + overall_keywords)):
-                    break
+                # Create query string from the keywords (limit to 4 total)
+                section_kw = section_kw[:4]
+                query = " ".join(section_kw)
 
-            # Create query string from the keywords (limit to 4 total)
-            section_kw = section_kw[:4]
-            query = " ".join(section_kw)
+                # Add topic context for intro and outro
+                if i == 0 or i == len(script_cards) - 1:
+                    query = f"{topic} {query}"
 
-            # Add topic context for intro and outro
-            if i == 0 or i == len(script_cards) - 1:
-                query = f"{topic} {query}"
-
-            section_keywords.append(query)
-            logger.info(f"Section {i+1} keywords: {query}")
+                section_keywords.append(query)
+                logger.info(f"Section {i+1} keywords: {query}")
 
         # Video Creation
         logger.info("Creating YouTube Short")
@@ -197,13 +198,17 @@ def generate_youtube_short(topic, style="video", max_duration=25):
         video_path = creator.create_youtube_short(
             title=topic,
             script_sections=script_cards,
+            background_type=background_type,
+            background_source=background_source,
+            background_path=background_path,
             background_query=overall_keywords[0] if overall_keywords else "technology",
             output_filename=output_path,
-            style=style,
             voice_style="none",
             max_duration=max_duration,
             background_queries=section_keywords,
-            blur_background= False
+            blur_background= False,
+            edge_blur=False
+
         )
 
         # Optional: YouTube Upload
@@ -224,21 +229,3 @@ def generate_youtube_short(topic, style="video", max_duration=25):
         logger.error(f"Error generating YouTube Short: {e}")
         raise
 
-def main():
-    try:
-        topic = os.getenv("YOUTUBE_TOPIC", "Artificial Intelligence")
-        style = os.getenv("BACKGROUND_STYLE", "video")
-        # Get blur background setting from environment variable (default: True)
-        blur_background = os.getenv("BLUR_BACKGROUND", "true").lower() == "true"
-
-        video_path = generate_youtube_short(
-            topic,
-            style=style,
-            max_duration=25,
-        )
-        logger.info(f"YouTube Short created successfully: {video_path}")
-    except Exception as e:
-        logger.error(f"Process failed: {e}")
-
-if __name__ == "__main__":
-    main()

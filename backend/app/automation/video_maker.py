@@ -1,21 +1,21 @@
-import os # for file operations
-import time # for timing events and creating filenames like timestamps
-import random # for randomizing elements
-import textwrap # for wrapping text but is being handled by textclip class in moviepy
-import requests # for making HTTP requests
-import numpy as np # for numerical operations here used for rounding off
-import logging # for logging events
-from PIL import Image, ImageFilter, ImageDraw, ImageFont# for image processing
-from moviepy.editor import ( # for video editing
-    VideoFileClip, VideoClip, TextClip, CompositeVideoClip,ImageClip,
+import os
+import time
+import random
+import textwrap
+import requests
+import numpy as np
+import logging
+from PIL import Image, ImageFilter, ImageDraw, ImageFont
+from moviepy.editor import (
+    VideoFileClip, VideoClip, TextClip, CompositeVideoClip, ImageClip,
     AudioFileClip, concatenate_videoclips, ColorClip, CompositeAudioClip
 )
 from moviepy.config import change_settings
-change_settings({"IMAGEMAGICK_BINARY": "magick"}) # for windows users
+change_settings({"IMAGEMAGICK_BINARY": "magick"})
 from gtts import gTTS
 from dotenv import load_dotenv
-import shutil # for file operations like moving and deleting files
-import tempfile # for creating temporary files
+import shutil
+import tempfile
 
 # Configure logging for easier debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -51,7 +51,7 @@ class YTShortsCreator:
         self.azure_tts = None
         if os.getenv("USE_AZURE_TTS", "false").lower() == "true":
             try:
-                from voiceover import AzureVoiceover
+                from .voiceover import AzureVoiceover
                 self.azure_tts = AzureVoiceover(
                     voice=os.getenv("AZURE_VOICE", "en-US-JennyNeural"),
                     output_dir=self.temp_dir
@@ -80,10 +80,11 @@ class YTShortsCreator:
             ])
         }
 
-        # Load Pexels API key for background videos
+        # Load API keys
         load_dotenv()
         self.pexels_api_key = os.getenv("PEXELS_API_KEY")
         self.pixabay_api_key = os.getenv("PIXABAY_API_KEY")
+        self.unsplash_api_key = os.getenv("UNSPLASH_API_KEY")
 
     def _fetch_videos(self, query, count=5, min_duration=5):
         """
@@ -122,7 +123,6 @@ class YTShortsCreator:
 
         return videos[:count]
 
-
     def _fetch_from_pixabay(self, query, count, min_duration):
         """
         Fetch background videos from Pixabay API
@@ -136,13 +136,19 @@ class YTShortsCreator:
             list: Paths to downloaded video files
         """
         try:
-            url = f"https://pixabay.com/api/videos/?key={self.pixabay_api_key}&q={query}&min_width=1080&min_height=1920"
+            url = f"https://pixabay.com/api/videos/?key={self.pixabay_api_key}&q={query}&min_width=1080&min_height=1920&per_page=10"
             response = requests.get(url)
             if response.status_code == 200:
                 data = response.json()
                 videos = data.get("hits", [])
                 video_paths = []
-                for video in videos[:count]:
+                top_videos = videos[:2]
+                if len(top_videos) > count:
+                    selected_videos = random.sample(top_videos, count)
+                else:
+                    selected_videos = top_videos
+
+                for video in selected_videos:
                     video_url = video["videos"]["large"]["url"]
                     video_path = os.path.join(self.temp_dir, f"pixabay_{video['id']}.mp4")
                     with requests.get(video_url, stream=True) as r:
@@ -156,7 +162,7 @@ class YTShortsCreator:
                     clip.close()
                 return video_paths
 
-            return self._fetch_from_pexels (query, count, min_duration)
+            return self._fetch_from_pexels(query, count, min_duration)
         except Exception as e:
             logger.error(f"Error fetching videos from Pixabay: {e}")
             return self._fetch_from_pexels(query, count, min_duration)
@@ -174,14 +180,23 @@ class YTShortsCreator:
             list: Paths to downloaded video files
         """
         try:
-            url = f"https://api.pexels.com/videos/search?query={query}&per_page={count}&orientation=portrait"
-            response = requests.get(url)
+            url = f"https://api.pexels.com/videos/search?query={query}&per_page=10&orientation=portrait"
+            headers = {"Authorization": self.pexels_api_key}
+            response = requests.get(url, headers=headers)
             if response.status_code == 200:
                 data = response.json()
-                videos = data.get("hits", [])
+                videos = data.get("videos", [])
                 video_paths = []
-                for video in videos[:count]:
-                    video_url = video["videos"]["large"]["url"]
+                top_videos = videos[:2]
+                if len(top_videos) > count:
+                    selected_videos = random.sample(top_videos, count)
+                else:
+                    selected_videos = top_videos
+
+                for video in selected_videos:
+                    video_files = video.get("video_files", [])
+                    if video_files:
+                        video_url = video_files[0].get("link")
                     video_path = os.path.join(self.temp_dir, f"pexels_{video['id']}.mp4")
                     with requests.get(video_url, stream=True) as r:
                         r.raise_for_status()
@@ -194,14 +209,296 @@ class YTShortsCreator:
                     clip.close()
                 return video_paths
 
-            return self._fetch_from_pixabay (query, count, min_duration)
+            return self._fetch_from_pixabay(query, count, min_duration)
         except Exception as e:
             logger.error(f"Error fetching videos from Pixabay: {e}")
             return self._fetch_from_pixabay(query, count, min_duration)
 
-    def _create_text_clip(self, text, duration=5, font_size=60, font_path=None, color='white', position='center', animation="fade", animation_duration=1.0, shadow=True, outline=True):
+    def _fetch_media(self, query, media_type="video", count=5, source="provide_for_me",
+                     min_duration=5, max_duration=25):
         """
-        Create a text clip with optional effects
+        Unified method to fetch either videos or images based on requirements
+
+        Args:
+            query (str): Search term for media
+            media_type (str): Type of media - "video" or "image"
+            count (int): Number of media to fetch
+            source (str): Source of media - "provide_for_me" or "custom"
+            min_duration (int): Minimum duration for videos
+            max_duration (int): Maximum total video duration
+
+        Returns:
+            list: Paths to downloaded media files
+        """
+        if media_type == "image":
+            # For images, calculate count based on duration if source is "provide_for_me"
+            if source == "provide_for_me":
+                count = max(1, int(max_duration / 5))  # One image per 5 seconds
+            return self._fetch_images_pexels(query, count, source)
+        else:  # video
+            return self._fetch_videos(query, count, min_duration)
+
+    def _fetch_images_pexels(self, query, count=5, source="provide_for_me"):
+        """
+        Fetch background images from various sources
+
+        Args:
+            query (str): Search term for images
+            count (int): Number of images to fetch
+            source (str): Source of images - "provide_for_me" or "custom"
+
+        Returns:
+            list: Paths to downloaded image files
+        """
+        try:
+            url = f"https://api.pexels.com/v1/search?query={query}&per_page={count}&orientation=portrait"
+            headers = {"Authorization": self.pexels_api_key}
+            response = requests.get(url, headers=headers)
+
+            if response.status_code == 200:
+                data = response.json()
+                images = data.get("photos", [])
+                image_paths = []
+
+                for image in images:
+                    image_url = image["src"]["large"]
+                    image_path = os.path.join(self.temp_dir, f"pexels_{image['id']}.jpg")
+
+                    with requests.get(image_url, stream=True) as r:
+                        r.raise_for_status()
+                        with open(image_path, 'wb') as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f.write(chunk)
+
+                    # Process and resize image to match resolution
+                    img = Image.open(image_path)
+                    img = img.resize(self.resolution, Image.LANCZOS)
+                    img.save(image_path)
+
+                    image_paths.append(image_path)
+
+                return image_paths
+
+            return self._fetch_images_pixabay(query, count, source)
+
+        except Exception as e:
+            logger.error(f"Error fetching images from Pexels: {e}")
+            return self._fetch_images_pixabay(query, count, source)
+
+    def _fetch_images_pixabay(self, query, count=5, source="provide_for_me"):
+        """
+        Fetch background images from Pixabay API
+        """
+        try:
+            url = f"https://pixabay.com/api/?key={self.pixabay_api_key}&q={query}&min_width=1080&min_height=1920&per_page=10"
+            response = requests.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                images = data.get("hits", [])
+                image_paths = []
+
+                for image in images[:count]:
+                    image_url = image["webformatURL"]
+                    image_path = os.path.join(self.temp_dir, f"pixabay_{image['id']}.jpg")
+
+                    with requests.get(image_url, stream=True) as r:
+                        r.raise_for_status()
+                        with open(image_path, 'wb') as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f.write(chunk)
+
+                    # Process and resize image to match resolution
+                    img = Image.open(image_path)
+                    img = img.resize(self.resolution, Image.LANCZOS)
+                    img.save(image_path)
+
+                    image_paths.append(image_path)
+
+                return image_paths
+
+            logger.warning("Failed to fetch images from Pixabay")
+            return self._fetch_images_pexels(query, count, source)
+        except Exception as e:
+            logger.error(f"Error fetching images from Pixabay: {e}")
+            return self._fetch_images_pexels(query, count, source)
+
+    def _process_image_background(self, image_path, target_duration, blur_background=False, edge_blur=False):
+        """
+        Process an image background to match the required duration
+
+        Args:
+            image_path (str): Path to the image file
+            target_duration (float): Duration the image should be displayed
+            blur_background (bool): Whether to apply blur effect
+            edge_blur (bool): Whether to apply edge blur effect
+
+        Returns:
+            VideoClip: Processed image clip
+        """
+        try:
+            # Create ImageClip from the image
+            img_clip = ImageClip(image_path)
+            img_clip = img_clip.set_duration(target_duration)
+
+            # Apply blur effects if requested
+            if blur_background and not edge_blur:
+                img_clip = self.custom_blur(img_clip, radius=5)
+            elif edge_blur:
+                img_clip = self.custom_edge_blur(img_clip, edge_width=450, radius=8)
+
+            return img_clip
+
+        except Exception as e:
+            logger.error(f"Error processing image background: {e}")
+            raise
+
+    def _process_background_clip(self, clip, target_duration, blur_background=False, edge_blur=False):
+        """
+        Process a background clip to match the required duration
+        Args:
+            clip (VideoClip): The input video clip
+            target_duration (float): The required duration
+            blur_background (bool): Whether to apply blur effect to the background
+            edge_blur (bool): Whether to apply edge blur effect to the background
+        Returns:
+            VideoClip: Processed clip that matches the target duration
+        """
+        # Handle videos shorter than needed duration with proper looping
+        if clip.duration < target_duration:
+            # Create enough loops to cover the needed duration
+            loops_needed = int(np.ceil(target_duration / clip.duration))
+            looped_clips = []
+
+            for loop in range(loops_needed):
+                if loop == loops_needed - 1:
+                    # For the last segment, only take what we need
+                    remaining_needed = target_duration - (loop * clip.duration)
+                    if remaining_needed > 0:
+                        segment = clip.subclip(0, min(remaining_needed, clip.duration))
+                        looped_clips.append(segment)
+                else:
+                    looped_clips.append(clip.copy())
+
+            clip = concatenate_videoclips(looped_clips)
+        else:
+            # If longer than needed, take a random segment
+            if clip.duration > target_duration + 1:
+                max_start = clip.duration - target_duration - 0.5
+                start_time = random.uniform(0, max_start)
+                clip = clip.subclip(start_time, start_time + target_duration)
+            else:
+                # Just take from the beginning if not much longer
+                clip = clip.subclip(0, target_duration)
+
+        # Resize to match height
+        clip = clip.resize(height=self.resolution[1])
+
+       # Apply blur effect only if requested
+        if blur_background and not edge_blur:
+            clip = self.custom_blur(clip, radius=5)
+        elif edge_blur:
+            clip = self.custom_edge_blur(clip, edge_width=450, radius=8)
+
+        # Center the video if it's not wide enough
+        if clip.w < self.resolution[0]:
+            bg = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(clip.duration)
+            x_pos = (self.resolution[0] - clip.w) // 2
+            clip = CompositeVideoClip([bg, clip.set_position((x_pos, 0))], size=self.resolution)
+
+        # Crop width if wider than needed
+        elif clip.w > self.resolution[0]:
+            x_centering = (clip.w - self.resolution[0]) // 2
+            clip = clip.crop(x1=x_centering, x2=x_centering + self.resolution[0])
+
+        # Make sure we have exact duration to prevent timing issues
+        clip = clip.set_duration(target_duration)
+
+        return clip
+
+    def _handle_custom_media(self, media_path, media_type, max_duration, blur_background=False, edge_blur=False):
+        """
+        Handle custom media (either image or video) provided by the user
+
+        Args:
+            media_path (str): Path to the custom media file
+            media_type (str): Type of media - "image" or "video"
+            max_duration (float): Total duration needed
+            blur_background (bool): Whether to apply blur effect
+            edge_blur (bool): Whether to apply edge blur effect
+
+        Returns:
+            list: List of processed media clips
+        """
+        processed_clips = []
+
+        if media_type == "image":
+            # For images, we need to create enough segments based on max_duration/5
+            num_segments = max(1, int(np.ceil(max_duration / 5)))
+            segment_duration = max_duration / num_segments
+
+            try:
+                # Process the same image for each segment
+                for _ in range(num_segments):
+                    clip = self._process_image_background(
+                        media_path,
+                        segment_duration,
+                        blur_background=blur_background,
+                        edge_blur=edge_blur
+                    )
+                    processed_clips.append(clip)
+            except Exception as e:
+                logger.error(f"Error processing custom image: {e}")
+                raise
+
+        else:  # video
+            try:
+                # For videos, we'll process the entire video and let _process_background_clip handle looping
+                clip = VideoFileClip(media_path)
+                processed_clip = self._process_background_clip(
+                    clip,
+                    max_duration,
+                    blur_background=blur_background,
+                    edge_blur=edge_blur
+                )
+                processed_clips.append(processed_clip)
+                clip.close()
+            except Exception as e:
+                logger.error(f"Error processing custom video: {e}")
+                raise
+
+        return processed_clips
+
+    def _create_pill_image(self, size, color=(0, 0, 0, 160), radius=30):
+        """
+        Create a pill-shaped background image with rounded corners.
+
+        Args:
+            size (tuple): Size of the image (width, height)
+            color (tuple): Color of the pill background (RGBA)
+            radius (int): Radius of the rounded corners
+
+        Returns:
+            Image: PIL Image with the pill-shaped background
+        """
+        width, height = size
+        img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Draw the rounded rectangle
+        draw.rectangle([(radius, 0), (width - radius, height)], fill=color)
+        draw.rectangle([(0, radius), (width, height - radius)], fill=color)
+        draw.ellipse([(0, 0), (radius * 2, radius * 2)], fill=color)
+        draw.ellipse([(width - radius * 2, 0), (width, radius * 2)], fill=color)
+        draw.ellipse([(0, height - radius * 2), (radius * 2, height)], fill=color)
+        draw.ellipse([(width - radius * 2, height - radius * 2), (width, height)], fill=color)
+
+        return img
+
+    def _create_text_clip(self, text, duration=5, font_size=60, font_path=None, color='white',
+                          position='center', animation="fade", animation_duration=1.0, shadow=True,
+                          outline=True, with_pill=False, pill_color=(0, 0, 0, 160), pill_radius=30):
+        """
+        Create a text clip with optional effects and pill-shaped background.
 
         Args:
             text (str): Text content
@@ -214,14 +511,16 @@ class YTShortsCreator:
             animation_duration (float): Animation duration
             shadow (bool): Add shadow effect
             outline (bool): Add outline effect
+            with_pill (bool): Add pill-shaped background
+            pill_color (tuple): Color of the pill background (RGBA)
+            pill_radius (int): Radius of the pill's rounded corners
 
         Returns:
-            VideoClip: Text clip with effects
+            VideoClip: Text clip with effects and optional pill background
         """
         if not font_path:
             font_path = self.body_font_path
 
-        # Create the main text clip
         try:
             txt_clip = TextClip(
                 txt=text,
@@ -245,6 +544,12 @@ class YTShortsCreator:
 
         txt_clip = txt_clip.set_duration(duration)
         clips = []
+
+        # Add pill-shaped background if requested
+        if with_pill:
+            pill_image = self._create_pill_image(txt_clip.size, color=pill_color, radius=pill_radius)
+            pill_clip = ImageClip(np.array(pill_image), duration=duration)
+            clips.append(pill_clip)
 
         # Add shadow effect
         if shadow:
@@ -278,7 +583,8 @@ class YTShortsCreator:
         clips.append(txt_clip)
         text_composite = CompositeVideoClip(clips)
 
-        text_composite = text_composite.set_position("center","center")
+        # Set the position of the entire composite
+        text_composite = text_composite.set_position(position)
 
         # Apply animation
         if animation in self.transitions:
@@ -439,72 +745,46 @@ class YTShortsCreator:
 
         return clip.fl(lambda gf, t: blur_frame(gf, t))
 
-    def _process_background_clip(self, clip, target_duration, blur_background=True):
+    def custom_edge_blur(self, clip, edge_width=50, radius=10):
         """
-        Process a background clip to match the required duration
+        Apply a Gaussian blur effect to the edges of a video clip, leaving the center unblurred.
 
         Args:
-            clip (VideoClip): The input video clip
-            target_duration (float): The required duration
-            blur_background (bool): Whether to apply blur effect to the background
+            clip (VideoClip): Video clip to blur.
+            edge_width (int): Width of the blurred edge in pixels.
+            radius (int): Blur radius - increase for more blur
 
         Returns:
-            VideoClip: Processed clip that matches the target duration
+            VideoClip: Video clip with blurred edges.
         """
-        # Handle videos shorter than needed duration with proper looping
-        if clip.duration < target_duration:
-            # Create enough loops to cover the needed duration
-            loops_needed = int(np.ceil(target_duration / clip.duration))
-            looped_clips = []
 
-            for loop in range(loops_needed):
-                if loop == loops_needed - 1:
-                    # For the last segment, only take what we need
-                    remaining_needed = target_duration - (loop * clip.duration)
-                    if remaining_needed > 0:
-                        segment = clip.subclip(0, min(remaining_needed, clip.duration))
-                        looped_clips.append(segment)
-                else:
-                    looped_clips.append(clip.copy())
+        def blur_frame(get_frame, t):
+            frame = get_frame(t)
+            img = Image.fromarray(frame)
+            width, height = img.size
 
-            clip = concatenate_videoclips(looped_clips)
-        else:
-            # If longer than needed, take a random segment
-            if clip.duration > target_duration + 1:
-                max_start = clip.duration - target_duration - 0.5
-                start_time = random.uniform(0, max_start)
-                clip = clip.subclip(start_time, start_time + target_duration)
-            else:
-                # Just take from the beginning if not much longer
-                clip = clip.subclip(0, target_duration)
+            # Create a mask for the unblurred center
+            mask = Image.new('L', (width, height), 0)
+            draw = ImageDraw.Draw(mask)
+            draw.rectangle(
+                [(edge_width, edge_width), (width - edge_width, height - edge_width)],
+                fill=255
+            )
 
-        # Resize to match height
-        clip = clip.resize(height=self.resolution[1])
+            # Blur the entire image
+            blurred = img.filter(ImageFilter.GaussianBlur(radius=radius))
 
-        # Apply blur effect only if requested
-        if blur_background:
-            clip = self.custom_blur(clip, radius=5)
+            # Composite the blurred image with the original using the mask
+            composite = Image.composite(img, blurred, mask)
 
-        # Center the video if it's not wide enough
-        if clip.w < self.resolution[0]:
-            bg = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(clip.duration)
-            x_pos = (self.resolution[0] - clip.w) // 2
-            clip = CompositeVideoClip([bg, clip.set_position((x_pos, 0))], size=self.resolution)
+            return np.array(composite)
 
-        # Crop width if wider than needed
-        elif clip.w > self.resolution[0]:
-            x_centering = (clip.w - self.resolution[0]) // 2
-            clip = clip.crop(x1=x_centering, x2=x_centering + self.resolution[0])
-
-        # Make sure we have exact duration to prevent timing issues
-        clip = clip.set_duration(target_duration)
-
-        return clip
-
+        return clip.fl(lambda gf, t: blur_frame(gf, t))
 
     def create_youtube_short(self, title, script_sections, background_query="abstract background",
-                            output_filename=None, add_captions=False, style="video", voice_style=None, max_duration=25,
-                            background_queries=None, blur_background=False):
+                            output_filename=None, add_captions=False, voice_style=None, max_duration=25,
+                            background_type="video", background_source="provide_for_me", background_path=None,
+                            background_queries=None, blur_background=False, edge_blur=False):
         """
         Create a YouTube Short video with seamless backgrounds and no black screens
 
@@ -514,12 +794,14 @@ class YTShortsCreator:
             background_query (str): Fallback search term for background videos
             output_filename (str): Output file path
             add_captions (bool): Add captions at the bottom
-            style (str): Video style
             voice_style (str): Voice style for TTS
             max_duration (int): Maximum duration in seconds (default: 25)
+            background_type (str): Type of background ("video" or "image")
+            background_source (str): Source of background ("provide_for_me" or "custom")
+            background_path (str): Path to the background video or image
             background_queries (list): List of search terms for background videos, one per segment
             blur_background (bool): Whether to apply blur effect to background videos (default: True)
-
+            edge_blur (bool): Whether to apply edge blur effect to background videos (default: False)
         Returns:
             str: Path to the created video
         """
@@ -539,127 +821,199 @@ class YTShortsCreator:
 
         logger.info(f"Total video duration: {total_duration:.1f}s")
 
-        # Calculate optimal number of background segments based on duration
-        if total_duration <= 10:
-            num_backgrounds = 1  # Just one background for very short videos
-        else:
-            # Aim for segments of about 8-10 seconds each
-            num_backgrounds = max(1, min(5, int(np.ceil(total_duration / 8))))
-
-        logger.info(f"Creating video with {num_backgrounds} background segments for {total_duration:.1f}s")
-
-        # Prepare background queries
-        if background_queries is None or len(background_queries) < num_backgrounds:
-            # If no specific queries provided or not enough queries, use the default/fallback
-            if background_queries is None:
-                background_queries = []
-
-            # Fill remaining slots with the fallback query
-            while len(background_queries) < num_backgrounds:
-                background_queries.append(background_query)
-
-        logger.info(f"Using {len(background_queries[:num_backgrounds])} different background queries")
-
-        # Fetch background videos for each segment
-        bg_paths = []
-        for i in range(num_backgrounds):
-            query = background_queries[i]
-            logger.info(f"Fetching background #{i+1} with query: '{query}'")
-
-            # Try to get one video per query
-            segment_paths = self._fetch_videos(query, count=1, min_duration=5)
-
-            if segment_paths:
-                bg_paths.extend(segment_paths)
-            else:
-                # Fallback to main query if this specific query fails
-                logger.warning(f"No videos found for query '{query}', trying fallback query")
-                fallback_paths = self._fetch_videos(background_query, count=1, min_duration=5)
-                if fallback_paths:
-                    bg_paths.extend(fallback_paths)
-
-        # Final check if we have any backgrounds
-        if not bg_paths:
-            raise ValueError("No background videos available. Aborting video creation.")
-
-        # If we have fewer backgrounds than needed, duplicate some
-        while len(bg_paths) < num_backgrounds:
-            bg_paths.append(random.choice(bg_paths))
-
-        transition_duration = 0.5  # Shorter transitions for better timing
-
-        # Calculate exact durations needed for each background segment
-        segment_durations = []
-        remaining_duration = total_duration
-
-        # Distribute the duration more evenly across background segments
-        base_segment_duration = total_duration / num_backgrounds
-
-        for i in range(num_backgrounds):
-            if i == num_backgrounds - 1:
-                # Last segment gets all remaining duration
-                duration = remaining_duration
-
-            else:
-                # Each segment gets roughly equal duration
-                duration = base_segment_duration
-
-            # Add transition overlap except for the last clip
-            if i < num_backgrounds - 1:
-                duration += transition_duration
-
-            segment_durations.append(duration)
-            remaining_duration -= (duration - (transition_duration if i < num_backgrounds - 1 else 0))
-
-        logger.info(f"Segment durations: {[round(d, 1) for d in segment_durations]}")
-
-        # Create background clips with calculated durations
-        processed_bg_clips = []
-
-        for i, bg_path in enumerate(bg_paths):
+        # Handle custom media if specified
+        if background_source == "custom" and background_path:
             try:
-                # Load video
-                target_duration = segment_durations[i]
-                bg_clip = VideoFileClip(bg_path)
-
-                # Process the background clip to match the required duration
-                processed_clip = self._process_background_clip(bg_clip, target_duration, blur_background=blur_background)
-                processed_bg_clips.append(processed_clip)
-
+                processed_bg_clips = self._handle_custom_media(
+                    background_path,
+                    background_type,
+                    total_duration,
+                    blur_background=blur_background,
+                    edge_blur=edge_blur
+                )
+                background = concatenate_videoclips(processed_bg_clips, method="compose")
             except Exception as e:
-                logger.error(f"Error processing background video {i+1}: {str(e)}")
-                # Instead of a black screen, use another background or loop an existing one
-                if processed_bg_clips:
-                    # Use a previously processed clip as a fallback
-                    fallback_clip = random.choice(processed_bg_clips).copy()
-                    processed_clip = self._process_background_clip(fallback_clip, target_duration, blur_background=blur_background)
-                    processed_bg_clips.append(processed_clip)
+                logger.error(f"Failed to process custom media: {e}. Falling back to provided media.")
+                background_source = "provide_for_me"
+
+        # Handle provided media (either from API or default)
+        if background_source != "custom":
+            # Calculate optimal number of background segments based on duration
+            if total_duration <= 10:
+                num_backgrounds = 1  # Just one background for very short videos
+            else:
+                # Aim for segments of about 8-10 seconds each
+                num_backgrounds = max(1, min(5, int(np.ceil(total_duration / 8))))
+
+            logger.info(f"Creating video with {num_backgrounds} background segments for {total_duration:.1f}s")
+
+            # Prepare background queries
+            if background_queries is None or len(background_queries) < num_backgrounds:
+                # If no specific queries provided or not enough queries, use the default/fallback
+                if background_queries is None:
+                    background_queries = []
+
+                # Fill remaining slots with the fallback query
+                while len(background_queries) < num_backgrounds:
+                    background_queries.append(background_query)
+
+            logger.info(f"Using {len(background_queries[:num_backgrounds])} different background queries")
+
+            # Fetch background media for each segment
+            bg_paths = []
+            for i in range(num_backgrounds):
+                query = background_queries[i]
+                logger.info(f"Fetching background #{i+1} with query: '{query}'")
+
+                # Try to get one media item per query
+                segment_paths = self._fetch_media(
+                    query,
+                    media_type=background_type,
+                    count=1,
+                    source=background_source,
+                    max_duration=total_duration
+                )
+
+                if segment_paths:
+                    bg_paths.extend(segment_paths)
                 else:
-                    # Try to fetch a new background if we have no processed clips yet
-                    try:
-                        emergency_bg_paths = self._fetch_videos(background_query, count=1, min_duration=5)
-                        if emergency_bg_paths:
-                            emergency_clip = VideoFileClip(emergency_bg_paths[0])
-                            processed_clip = self._process_background_clip(emergency_clip, target_duration, blur_background=blur_background)
-                            processed_bg_clips.append(processed_clip)
-                    except Exception as e2:
-                        logger.error(f"Failed to create background. ABORTING{str(e2)}")
+                    # Fallback to main query if this specific query fails
+                    logger.warning(f"No media found for query '{query}', trying fallback query")
+                    fallback_paths = self._fetch_media(
+                        background_query,
+                        media_type=background_type,
+                        count=1,
+                        source=background_source,
+                        max_duration=total_duration
+                    )
+                    if fallback_paths:
+                        bg_paths.extend(fallback_paths)
 
-        # Apply crossfade transitions between background clips
-        final_bg_clips = [processed_bg_clips[0]]
+            # Final check if we have any backgrounds
+            if not bg_paths:
+                raise ValueError("No background media available. Aborting video creation.")
 
-        for i in range(1, len(processed_bg_clips)):
-            # Create the crossfade effect
-            crossfaded = concatenate_videoclips(
-                [final_bg_clips[-1], processed_bg_clips[i].crossfadein(transition_duration)],
-                padding=-transition_duration,
-                method="compose"
-            )
+            # If we have fewer backgrounds than needed, duplicate some
+            while len(bg_paths) < num_backgrounds:
+                bg_paths.append(random.choice(bg_paths))
 
-            final_bg_clips[-1] = crossfaded
+            transition_duration = 0.5  # Shorter transitions for better timing
 
-        # Concatenate all background clips into one seamless background
-        background = concatenate_videoclips(final_bg_clips, method="compose")
+            # Calculate exact durations needed for each background segment
+            segment_durations = []
+            remaining_duration = total_duration
+
+            # Distribute the duration more evenly across background segments
+            base_segment_duration = total_duration / num_backgrounds
+
+            for i in range(num_backgrounds):
+                if i == num_backgrounds - 1:
+                    # Last segment gets all remaining duration
+                    duration = remaining_duration
+                else:
+                    # Each segment gets roughly equal duration
+                    duration = base_segment_duration
+
+                # Add transition overlap except for the last clip
+                if i < num_backgrounds - 1:
+                    duration += transition_duration
+
+                segment_durations.append(duration)
+                remaining_duration -= (duration - (transition_duration if i < num_backgrounds - 1 else 0))
+
+            logger.info(f"Segment durations: {[round(d, 1) for d in segment_durations]}")
+
+            # Create background clips with calculated durations
+            processed_bg_clips = []
+
+            for i, bg_path in enumerate(bg_paths):
+                try:
+                    target_duration = segment_durations[i]
+
+                    if background_type == "image":
+                        bg_clip = self._process_image_background(
+                            bg_path,
+                            target_duration,
+                            blur_background=blur_background,
+                            edge_blur=edge_blur
+                        )
+                    else:  # video
+                        bg_clip = VideoFileClip(bg_path)
+                        bg_clip = self._process_background_clip(
+                            bg_clip,
+                            target_duration,
+                            blur_background=blur_background,
+                            edge_blur=edge_blur
+                        )
+
+                    processed_bg_clips.append(bg_clip)
+
+                except Exception as e:
+                    logger.error(f"Error processing background media {i+1}: {str(e)}")
+                    # Instead of a black screen, use another background or loop an existing one
+                    if processed_bg_clips:
+                        # Use a previously processed clip as a fallback
+                        fallback_clip = random.choice(processed_bg_clips).copy()
+                        if background_type == "image":
+                            processed_clip = self._process_image_background(
+                                fallback_clip.filename,  # For ImageClip, we need the path
+                                target_duration,
+                                blur_background=blur_background,
+                                edge_blur=edge_blur
+                            )
+                        else:
+                            processed_clip = self._process_background_clip(
+                                fallback_clip,
+                                target_duration,
+                                blur_background=blur_background,
+                                edge_blur=edge_blur
+                            )
+                        processed_bg_clips.append(processed_clip)
+                    else:
+                        # Try to fetch a new background if we have no processed clips yet
+                        try:
+                            emergency_bg_paths = self._fetch_media(
+                                background_query,
+                                media_type=background_type,
+                                count=1,
+                                source=background_source,
+                                max_duration=total_duration
+                            )
+                            if emergency_bg_paths:
+                                if background_type == "image":
+                                    emergency_clip = self._process_image_background(
+                                        emergency_bg_paths[0],
+                                        target_duration,
+                                        blur_background=blur_background,
+                                        edge_blur=edge_blur
+                                    )
+                                else:
+                                    emergency_clip = VideoFileClip(emergency_bg_paths[0])
+                                    emergency_clip = self._process_background_clip(
+                                        emergency_clip,
+                                        target_duration,
+                                        blur_background=blur_background,
+                                        edge_blur=edge_blur
+                                    )
+                                processed_bg_clips.append(emergency_clip)
+                        except Exception as e2:
+                            logger.error(f"Failed to create background. ABORTING{str(e2)}")
+
+            # Apply crossfade transitions between background clips
+            final_bg_clips = [processed_bg_clips[0]]
+
+            for i in range(1, len(processed_bg_clips)):
+                # Create the crossfade effect
+                crossfaded = concatenate_videoclips(
+                    [final_bg_clips[-1], processed_bg_clips[i].crossfadein(transition_duration)],
+                    padding=-transition_duration,
+                    method="compose"
+                )
+
+                final_bg_clips[-1] = crossfaded
+
+            # Concatenate all background clips into one seamless background
+            background = concatenate_videoclips(final_bg_clips, method="compose")
 
         # Double-check the background duration against total_duration
         if abs(background.duration - total_duration) > 0.5:  # Allow small rounding differences
@@ -670,7 +1024,20 @@ class YTShortsCreator:
                 last_clip = processed_bg_clips[-1]
 
                 # Create a copy of the last clip and loop it as needed
-                extra_clip = self._process_background_clip(last_clip.copy(), needed_duration, blur_background=blur_background)
+                if background_type == "image":
+                    extra_clip = self._process_image_background(
+                        last_clip.filename,
+                        needed_duration,
+                        blur_background=blur_background,
+                        edge_blur=edge_blur
+                    )
+                else:
+                    extra_clip = self._process_background_clip(
+                        last_clip,
+                        needed_duration,
+                        blur_background=blur_background,
+                        edge_blur=edge_blur
+                    )
 
                 # Add crossfade to the extension
                 extra_clip = extra_clip.crossfadein(transition_duration)
@@ -773,8 +1140,26 @@ class YTShortsCreator:
                 logger.info(f"Extending background by {needed_duration:.1f}s to match new duration")
 
                 # Use last clip to create additional background
-                last_clip = processed_bg_clips[-1].copy()
-                extra_clip = self._process_background_clip(last_clip, needed_duration, blur_background=blur_background)
+                last_clip = processed_bg_clips[-1]
+
+                # For images, we need a different approach since ImageClip doesn't have filename attribute
+                if background_type == "image":
+                    # Create a new clip by copying the visual content of the last clip
+                    extra_clip = last_clip.copy()
+                    extra_clip = extra_clip.set_duration(needed_duration)
+
+                    # Apply the same blur effects if needed
+                    if blur_background and not edge_blur:
+                        extra_clip = self.custom_blur(extra_clip, radius=5)
+                    elif edge_blur:
+                        extra_clip = self.custom_edge_blur(extra_clip, edge_width=450, radius=8)
+                else:
+                    extra_clip = self._process_background_clip(
+                        last_clip,
+                        needed_duration,
+                        blur_background=blur_background,
+                        edge_blur=edge_blur
+                    )
 
                 # Add crossfade to the extension
                 extra_clip = extra_clip.crossfadein(transition_duration)
@@ -804,14 +1189,16 @@ class YTShortsCreator:
                 if i == 0 and title:
                     title_clip = self._create_text_clip(
                         title, duration=duration, font_size=70, font_path=self.title_font_path,
-                        position=('center', 150), animation="fade", animation_duration=0.8
+                        position=('center', 150), animation="fade", animation_duration=0.8,
+                        with_pill=True, pill_color=(0, 0, 0, 160), pill_radius=30
                     ).set_start(current_time)
                     text_clips.append(title_clip)
 
                 # Add section text with regular style for intro/outro
                 text_clip = self._create_text_clip(
                     text, duration=duration, font_size=55, font_path=self.body_font_path,
-                    position=('center', 'center'), animation="fade", animation_duration=0.8
+                    position=('center', 'center'), animation="fade", animation_duration=0.8,
+                    with_pill=True, pill_color=(0, 0, 0, 160), pill_radius=30
                 ).set_start(current_time)
                 text_clips.append(text_clip)
             else:
@@ -863,5 +1250,3 @@ class YTShortsCreator:
             logger.info("Temporary files cleaned up successfully.")
         except Exception as e:
             logger.warning(f"Error cleaning up temporary files: {str(e)}")
-
-

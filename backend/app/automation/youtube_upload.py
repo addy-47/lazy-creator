@@ -1,7 +1,7 @@
 import os  # for file operations
 import googleapiclient.discovery # for interacting with the YouTube API
 import googleapiclient.errors # for handling API errors
-from youtube_auth import authenticate_youtube
+from .youtube_auth import authenticate_youtube
 import logging
 
 # Configure logging
