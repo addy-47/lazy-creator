@@ -1,9 +1,8 @@
-
 import { useState, useEffect } from "react";
 import { MessageSquare } from "lucide-react";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea } from "./ui/scroll-area";
-import { 
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -14,33 +13,35 @@ const predefinedPrompts = [
   {
     id: 1,
     title: "Latest AI News",
-    prompt: "Create a short about the most recent developments in artificial intelligence"
+    prompt:
+      "Create a short about the most recent developments in artificial intelligence",
   },
   {
     id: 2,
     title: "Tech Gadget Review",
-    prompt: "Review the latest smartphone features in a compelling short format"
+    prompt:
+      "Review the latest smartphone features in a compelling short format",
   },
   {
     id: 3,
     title: "Coding Tips",
-    prompt: "Share 3 essential coding tips for beginners in a brief tutorial"
+    prompt: "Share 3 essential coding tips for beginners in a brief tutorial",
   },
   {
     id: 4,
     title: "Daily Motivation",
-    prompt: "Create an inspirational short about overcoming challenges"
+    prompt: "Create an inspirational short about overcoming challenges",
   },
   {
     id: 5,
     title: "Productivity Hack",
-    prompt: "Explain a time-saving productivity technique in under 60 seconds"
+    prompt: "Explain a time-saving productivity technique in under 60 seconds",
   },
   {
     id: 6,
     title: "Life Hack",
-    prompt: "Demonstrate a clever everyday life hack that saves time or money"
-  }
+    prompt: "Demonstrate a clever everyday life hack that saves time or money",
+  },
 ];
 
 interface PromptSelectorProps {
@@ -48,7 +49,10 @@ interface PromptSelectorProps {
   onPromptChange: (prompt: string) => void;
 }
 
-const PromptSelector = ({ selectedPrompt, onPromptChange }: PromptSelectorProps) => {
+const PromptSelector = ({
+  selectedPrompt,
+  onPromptChange,
+}: PromptSelectorProps) => {
   const [customPrompt, setCustomPrompt] = useState("");
   const [isCustom, setIsCustom] = useState(false);
 
@@ -63,7 +67,9 @@ const PromptSelector = ({ selectedPrompt, onPromptChange }: PromptSelectorProps)
     setIsCustom(false);
   };
 
-  const handleCustomPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleCustomPromptChange = (
+    e: React.ChangeEvent<HTMLTextAreaElement>
+  ) => {
     setCustomPrompt(e.target.value);
     onPromptChange(e.target.value);
   };
@@ -81,9 +87,10 @@ const PromptSelector = ({ selectedPrompt, onPromptChange }: PromptSelectorProps)
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-medium">Select a Prompt</h3>
-      
-      <ScrollArea className="whitespace-nowrap pb-4">
-        <div className="flex space-x-2 pb-2">
+
+      {/* Improved scroll area with better overflow handling */}
+      <div className="overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-rounded-full scrollbar-thumb-primary/50 scrollbar-track-transparent">
+        <div className="flex space-x-2 pb-2 min-w-max">
           {predefinedPrompts.map((promptItem) => (
             <button
               key={promptItem.id}
@@ -108,7 +115,7 @@ const PromptSelector = ({ selectedPrompt, onPromptChange }: PromptSelectorProps)
             Custom
           </button>
         </div>
-      </ScrollArea>
+      </div>
 
       {isCustom ? (
         <div className="animate-fade-in space-y-2">
@@ -123,7 +130,8 @@ const PromptSelector = ({ selectedPrompt, onPromptChange }: PromptSelectorProps)
             onChange={handleCustomPromptChange}
           />
           <p className="text-xs text-foreground/60">
-            Try to be detailed and specific about the content you want in your Short.
+            Try to be detailed and specific about the content you want in your
+            Short.
           </p>
         </div>
       ) : (
