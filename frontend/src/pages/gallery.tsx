@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import axios from "axios";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/Button";
 import { toast } from "sonner";
 import { Youtube } from "lucide-react";
+import { AuthContext } from "../App";
 
 interface Video {
   id: string;
@@ -17,10 +18,12 @@ interface Video {
 }
 
 function GalleryPage() {
+  const { isAuthenticated, username } = useContext(AuthContext);
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null);
   const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
+  const [youtubeAuthChecked, setYoutubeAuthChecked] = useState(false);
   const [uploadData, setUploadData] = useState({
     title: "",
     description: "",
@@ -49,7 +52,10 @@ function GalleryPage() {
     const checkYouTubeAuth = async () => {
       try {
         const token = localStorage.getItem("token");
-        if (!token) return;
+        if (!token) {
+          setYoutubeAuthChecked(true);
+          return;
+        }
 
         const response = await axios.get(
           "http://localhost:4000/api/youtube-auth-status",
@@ -63,8 +69,10 @@ function GalleryPage() {
         if (response.data.status === "success") {
           setIsYouTubeConnected(response.data.authenticated);
         }
+        setYoutubeAuthChecked(true);
       } catch (error) {
         console.error("Error checking YouTube auth:", error);
+        setYoutubeAuthChecked(true);
       }
     };
 
@@ -209,7 +217,7 @@ function GalleryPage() {
   if (loading)
     return (
       <div className="min-h-screen flex flex-col">
-        <Navbar />
+        <Navbar username={username} />
         <main className="flex-grow flex items-center justify-center">
           <div className="animate-pulse">Loading videos...</div>
         </main>
@@ -219,7 +227,7 @@ function GalleryPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
+      <Navbar username={username} />
       <main className="flex-grow pt-32 pb-20 px-4">
         <div className="container mx-auto max-w-6xl">
           <div className="flex justify-between items-center mb-6">
@@ -227,7 +235,7 @@ function GalleryPage() {
               Your Shorts Gallery
             </h1>
 
-            {!isYouTubeConnected && (
+            {isAuthenticated && youtubeAuthChecked && !isYouTubeConnected && (
               <Button
                 onClick={connectYouTube}
                 className="flex items-center gap-2"
@@ -312,7 +320,7 @@ function GalleryPage() {
                         >
                           Upload to YouTube
                         </Button>
-                      ) : (
+                      ) : isAuthenticated && youtubeAuthChecked ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -321,7 +329,7 @@ function GalleryPage() {
                         >
                           Connect YouTube to Upload
                         </Button>
-                      )}
+                      ) : null}
                     </div>
 
                     <div
