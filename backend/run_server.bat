@@ -1,3 +1,0 @@
-@echo off
-echo Starting YouTube Shorts Automation API Server...
-python server.py
