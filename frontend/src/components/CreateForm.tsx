@@ -84,19 +84,47 @@ const CreateForm = () => {
     setShowConfirmDialog(true);
   };
 
-  const startGeneration = () => {
+  const startGeneration = async () => {
     setShowConfirmDialog(false);
     setIsGenerating(true);
 
-    // Simulating the generation process
-    // In a real app, this would be an API call to your backend
-    console.log({
-      prompt,
-      duration,
-      backgroundType,
-      backgroundSource,
-      backgroundFile,
-    });
+    try {
+      const formData = new FormData();
+      formData.append("prompt", prompt);
+      formData.append("duration", duration.toString());
+      formData.append("background_type", backgroundType || "");
+      formData.append("background_source", backgroundSource || "");
+
+      if (backgroundFile) {
+        formData.append("background_file", backgroundFile);
+      }
+
+      const response = await fetch("http://localhost:4000/api/generate-short", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to generate video");
+      }
+
+      const data = await response.json();
+      console.log("Video generated successfully:", data);
+
+      // Handle the successful response
+      setIsGenerating(false);
+      setIsGenerated(true);
+
+      // You might want to store the video path or handle the video preview here
+      toast.success("Video generated successfully!");
+    } catch (error) {
+      console.error("Error generating video:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to generate video"
+      );
+      setIsGenerating(false);
+    }
   };
 
   const handleGenerationComplete = () => {
