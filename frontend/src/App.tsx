@@ -13,17 +13,22 @@ import YouTubeAuthSuccess from "./pages/YouTubeAuthSuccess";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOFService";
 import NotFound from "./pages/NotFound";
-import { createContext, useEffect, useState } from "react";
+import { createContext, useEffect, useState, useCallback } from "react";
 
 // Create authentication context
 export interface AuthContextType {
   isAuthenticated: boolean;
   username: string | undefined;
+  refreshAuthState: () => void;
 }
+
+// Create a custom event for auth changes
+export const AUTH_CHANGE_EVENT = "auth-change";
 
 export const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
   username: undefined,
+  refreshAuthState: () => {},
 });
 
 const queryClient = new QueryClient();
@@ -32,38 +37,46 @@ const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
-    const checkAuthStatus = () => {
-      const user = localStorage.getItem("user");
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          setIsAuthenticated(true);
-          setUsername(userData.name);
-        } catch (e) {
-          console.error("Error parsing user data");
-          setIsAuthenticated(false);
-          setUsername(undefined);
-        }
-      } else {
+  const checkAuthStatus = useCallback(() => {
+    const user = localStorage.getItem("user");
+    if (user) {
+      try {
+        const userData = JSON.parse(user);
+        setIsAuthenticated(true);
+        setUsername(userData.name);
+
+        // Dispatch a custom event to notify components about auth change
+        window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
+      } catch (e) {
+        console.error("Error parsing user data");
         setIsAuthenticated(false);
         setUsername(undefined);
       }
-    };
+    } else {
+      setIsAuthenticated(false);
+      setUsername(undefined);
+    }
+  }, []);
 
+  // Initial auth check
+  useEffect(() => {
     checkAuthStatus();
 
     // Listen for storage changes (for multi-tab support)
     window.addEventListener("storage", checkAuthStatus);
+    // Listen for our custom auth change event
+    window.addEventListener(AUTH_CHANGE_EVENT, checkAuthStatus);
 
     return () => {
       window.removeEventListener("storage", checkAuthStatus);
+      window.removeEventListener(AUTH_CHANGE_EVENT, checkAuthStatus);
     };
-  }, []);
+  }, [checkAuthStatus]);
 
   const authValue = {
     isAuthenticated,
     username,
+    refreshAuthState: checkAuthStatus,
   };
 
   return (

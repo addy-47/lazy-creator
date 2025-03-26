@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
@@ -7,7 +7,12 @@ import StickFigureAnimation from "@/components/StickFigureAnimation";
 import { AuthContext } from "../App";
 
 const Index = () => {
-  const { username } = useContext(AuthContext);
+  const { username, refreshAuthState } = useContext(AuthContext);
+
+  // Refresh auth state when component mounts
+  useEffect(() => {
+    refreshAuthState();
+  }, [refreshAuthState]);
 
   return (
     <div className="min-h-screen flex flex-col">

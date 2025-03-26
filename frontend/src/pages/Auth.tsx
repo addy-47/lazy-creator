@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -16,6 +16,7 @@ import Logo from "@/components/Logo";
 import { toast } from "sonner";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { AUTH_CHANGE_EVENT, AuthContext } from "@/App";
 
 // Import Firebase auth functions and providers
 import {
@@ -28,6 +29,7 @@ import { auth } from "@/firebase"; // Import the pre-configured auth instance
 
 const Auth = () => {
   const navigate = useNavigate();
+  const { refreshAuthState } = useContext(AuthContext);
   const [isSignIn, setIsSignIn] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -92,6 +94,10 @@ const Auth = () => {
 
       localStorage.setItem("user", JSON.stringify(userData));
 
+      // Dispatch auth change event and refresh auth state
+      window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
+      refreshAuthState();
+
       if (isSignIn) {
         console.log("Sign in with:", email, password);
         toast.success("Successfully signed in!");
@@ -127,6 +133,11 @@ const Auth = () => {
           name: result.user.displayName || "User",
         })
       );
+
+      // Dispatch auth change event and refresh auth state
+      window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
+      refreshAuthState();
+
       toast.success("Signed in with Google successfully!");
       navigate("/");
     } catch (error) {
@@ -150,6 +161,11 @@ const Auth = () => {
           name: result.user.displayName || "User",
         })
       );
+
+      // Dispatch auth change event and refresh auth state
+      window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
+      refreshAuthState();
+
       toast.success("Signed in with Facebook successfully!");
       navigate("/");
     } catch (error) {

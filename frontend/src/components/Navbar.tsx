@@ -1,17 +1,68 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useReducer } from "react";
 import { NavLink } from "react-router-dom";
 import { Menu, X, Sun, Moon, LogIn, User } from "lucide-react";
 import { Button } from "./Button";
 import Logo from "./Logo";
+import { AUTH_CHANGE_EVENT } from "../App";
 
 interface NavbarProps {
   username?: string;
 }
 
 const Navbar = ({ username }: NavbarProps) => {
+  // Add forceUpdate function to force re-renders
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState<string | undefined>(
+    undefined
+  );
+
+  // Function to check and update the username directly from localStorage
+  const updateUsernameFromStorage = () => {
+    try {
+      const userString = localStorage.getItem("user");
+      if (userString) {
+        const userData = JSON.parse(userString);
+        setCurrentUsername(userData.name);
+      } else {
+        setCurrentUsername(undefined);
+      }
+    } catch (e) {
+      console.error("Error parsing user data:", e);
+      setCurrentUsername(undefined);
+    }
+  };
+
+  // Initialize username on mount and when prop changes
+  useEffect(() => {
+    updateUsernameFromStorage();
+    if (username) {
+      setCurrentUsername(username);
+    }
+  }, [username]);
+
+  // Listen for auth change events
+  useEffect(() => {
+    const handleAuthChange = () => {
+      updateUsernameFromStorage();
+      forceUpdate(); // Force a re-render
+    };
+
+    // Listen for storage events and custom auth event
+    window.addEventListener("storage", handleAuthChange);
+    window.addEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
+
+    // Initial check
+    updateUsernameFromStorage();
+
+    return () => {
+      window.removeEventListener("storage", handleAuthChange);
+      window.removeEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
+    };
+  }, []);
 
   useEffect(() => {
     // Check user's preference
@@ -27,11 +78,15 @@ const Navbar = ({ username }: NavbarProps) => {
         setIsDarkMode(false);
         document.documentElement.classList.remove("dark");
       }
+
+      // Also update username when theme changes
+      updateUsernameFromStorage();
+      forceUpdate();
     };
 
     checkTheme();
 
-    // Listen for theme changes from other components
+    // Listen for theme changes
     window.addEventListener("storage", checkTheme);
 
     // Handle scroll events
@@ -60,6 +115,11 @@ const Navbar = ({ username }: NavbarProps) => {
       localStorage.theme = "dark";
       setIsDarkMode(true);
     }
+
+    // Check username again after toggling theme
+    updateUsernameFromStorage();
+    forceUpdate();
+
     // Trigger event to inform other components about theme change
     window.dispatchEvent(new Event("storage"));
   };
@@ -72,8 +132,19 @@ const Navbar = ({ username }: NavbarProps) => {
 
   const handleSignOut = () => {
     localStorage.removeItem("user");
+    setCurrentUsername(undefined);
+    forceUpdate();
+
+    // Trigger auth change event
+    window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
     window.location.href = "/"; // Reload the page to update auth state
   };
+
+  // Check auth status on every render
+  const userData = localStorage.getItem("user");
+  const userInfo = userData ? JSON.parse(userData) : null;
+  const displayUsername =
+    currentUsername || (userInfo ? userInfo.name : undefined);
 
   return (
     <nav
@@ -123,11 +194,11 @@ const Navbar = ({ username }: NavbarProps) => {
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
 
-            {username ? (
+            {displayUsername ? (
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10">
                   <User size={16} className="text-primary" />
-                  <span className="text-sm font-medium">{username}</span>
+                  <span className="text-sm font-medium">{displayUsername}</span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={handleSignOut}>
                   Sign Out
@@ -187,11 +258,11 @@ const Navbar = ({ username }: NavbarProps) => {
               </NavLink>
             ))}
             <div className="pt-4">
-              {username ? (
+              {displayUsername ? (
                 <>
                   <div className="flex items-center gap-2 mb-3 py-2">
                     <User size={18} className="text-primary" />
-                    <span className="font-medium">{username}</span>
+                    <span className="font-medium">{displayUsername}</span>
                   </div>
                   <Button
                     className="w-full"
