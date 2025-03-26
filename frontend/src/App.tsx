@@ -8,6 +8,8 @@ import Index from "./pages/Index";
 import Create from "./pages/Create";
 import Auth from "./pages/Auth";
 import Learn from "./pages/learn";
+import Gallery from "./pages/gallery";
+import YouTubeAuthSuccess from "./pages/YouTubeAuthSuccess";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOFService";
 import NotFound from "./pages/NotFound";
@@ -50,6 +52,11 @@ const App = () => {
               <Route path="/" element={<Index />} />
               <Route path="/create" element={<Create />} />
               <Route path="/learn" element={<Learn />} />
+              <Route path="/gallery" element={<Gallery />} />
+              <Route
+                path="/youtube-auth-success"
+                element={<YouTubeAuthSuccess />}
+              />
               <Route path="/terms-of-service" element={<TermsOfService />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route

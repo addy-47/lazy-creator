@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowRight, Info } from "lucide-react";
 import { Button } from "./Button";
 import PromptSelector from "./PromptSelector";
@@ -36,7 +36,13 @@ const CreateForm = () => {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGenerated, setIsGenerated] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [videoData, setVideoData] = useState<{
+    filename: string;
+    path: string;
+  } | null>(null);
+  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   const handlePromptChange = (value: string) => {
     setPrompt(value);
@@ -59,6 +65,13 @@ const CreateForm = () => {
   const handleBackgroundFileChange = (file: File | null) => {
     setBackgroundFile(file);
   };
+
+  // Cleanup poll interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [pollInterval]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,6 +100,7 @@ const CreateForm = () => {
   const startGeneration = async () => {
     setShowConfirmDialog(false);
     setIsGenerating(true);
+    setGenerationProgress(0);
 
     try {
       const formData = new FormData();
@@ -99,6 +113,7 @@ const CreateForm = () => {
         formData.append("background_file", backgroundFile);
       }
 
+      // Start the video generation process
       const response = await fetch("http://localhost:4000/api/generate-short", {
         method: "POST",
         body: formData,
@@ -110,14 +125,49 @@ const CreateForm = () => {
       }
 
       const data = await response.json();
-      console.log("Video generated successfully:", data);
+      console.log("Generation started:", data);
 
-      // Handle the successful response
-      setIsGenerating(false);
-      setIsGenerated(true);
+      if (data.status === "success") {
+        // Set up polling to check video status
+        const checkInterval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(
+              `http://localhost:4000/api/video-status/${data.video.id}`,
+              {
+                method: "GET",
+              }
+            );
 
-      // You might want to store the video path or handle the video preview here
-      toast.success("Video generated successfully!");
+            if (!statusResponse.ok) {
+              throw new Error("Failed to check video status");
+            }
+
+            const statusData = await statusResponse.json();
+
+            // Update progress
+            if (statusData.progress) {
+              setGenerationProgress(statusData.progress);
+            }
+
+            // If video is complete
+            if (statusData.status === "completed") {
+              clearInterval(checkInterval);
+              setPollInterval(null);
+              setVideoData(statusData.video);
+              setIsGenerating(false);
+              setIsGenerated(true);
+              toast.success("Video generated successfully!");
+            }
+          } catch (error) {
+            console.error("Error checking video status:", error);
+            // Don't stop polling on error, just log it
+          }
+        }, 2000); // Check every 2 seconds
+
+        setPollInterval(checkInterval);
+      } else {
+        throw new Error(data.message || "Failed to start video generation");
+      }
     } catch (error) {
       console.error("Error generating video:", error);
       toast.error(
@@ -128,15 +178,25 @@ const CreateForm = () => {
   };
 
   const handleGenerationComplete = () => {
+    // This is now just a fallback if the polling doesn't work
+    if (!videoData) {
+      toast.info(
+        "Video processing may still be in progress. Check the gallery later."
+      );
+    }
     setIsGenerating(false);
     setIsGenerated(true);
+  };
+
+  const navigateToGallery = () => {
+    window.location.href = "/gallery";
   };
 
   return (
     <div className="max-w-3xl mx-auto">
       {isGenerating && (
         <GeneratingAnimation
-          duration={30}
+          duration={Math.max(duration * 1.5, 30)} // Adjust expected time based on video duration
           onComplete={handleGenerationComplete}
         />
       )}
@@ -148,7 +208,7 @@ const CreateForm = () => {
             <AlertDialogTitle>Ready to create your Short?</AlertDialogTitle>
             <AlertDialogDescription>
               This will generate a YouTube Short based on your current settings.
-              The process will take approximately 30 seconds.
+              The process may take several minutes depending on video length.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -182,15 +242,37 @@ const CreateForm = () => {
 
             <h2 className="text-2xl font-medium">Your Short is Ready!</h2>
 
-            <div className="aspect-video rounded-lg bg-black/5 flex items-center justify-center">
-              <p className="text-foreground/70">
-                Video preview would appear here
-              </p>
+            <div className="aspect-[9/16] rounded-lg overflow-hidden bg-black flex items-center justify-center">
+              {videoData ? (
+                <video
+                  src={`http://localhost:4000/gallery/${videoData.filename}`}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <p className="text-foreground/70">
+                  Video is still processing. Check the gallery.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
-              <Button>Download</Button>
-              <Button variant="outline">Upload to YouTube</Button>
+              {videoData && (
+                <Button
+                  onClick={() => {
+                    const link = document.createElement("a");
+                    link.href = `http://localhost:4000/gallery/${videoData.filename}`;
+                    link.download = videoData.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                  }}
+                >
+                  Download
+                </Button>
+              )}
+              <Button onClick={navigateToGallery}>Go to Gallery</Button>
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -200,6 +282,7 @@ const CreateForm = () => {
                   setBackgroundType(null);
                   setBackgroundSource(null);
                   setBackgroundFile(null);
+                  setVideoData(null);
                 }}
               >
                 Create Another

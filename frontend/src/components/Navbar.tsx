@@ -16,19 +16,23 @@ const Navbar = ({ username }: NavbarProps) => {
   useEffect(() => {
     // Check user's preference
     const checkTheme = () => {
-      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      if (
+        localStorage.theme === "dark" ||
+        (!("theme" in localStorage) &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches)
+      ) {
         setIsDarkMode(true);
-        document.documentElement.classList.add('dark');
+        document.documentElement.classList.add("dark");
       } else {
         setIsDarkMode(false);
-        document.documentElement.classList.remove('dark');
+        document.documentElement.classList.remove("dark");
       }
     };
-    
+
     checkTheme();
 
     // Listen for theme changes from other components
-    window.addEventListener('storage', checkTheme);
+    window.addEventListener("storage", checkTheme);
 
     // Handle scroll events
     const handleScroll = () => {
@@ -42,27 +46,28 @@ const Navbar = ({ username }: NavbarProps) => {
     window.addEventListener("scroll", handleScroll);
     return () => {
       window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener('storage', checkTheme);
+      window.removeEventListener("storage", checkTheme);
     };
   }, []);
 
   const toggleDarkMode = () => {
     if (isDarkMode) {
-      document.documentElement.classList.remove('dark');
-      localStorage.theme = 'light';
+      document.documentElement.classList.remove("dark");
+      localStorage.theme = "light";
       setIsDarkMode(false);
     } else {
-      document.documentElement.classList.add('dark');
-      localStorage.theme = 'dark';
+      document.documentElement.classList.add("dark");
+      localStorage.theme = "dark";
       setIsDarkMode(true);
     }
     // Trigger event to inform other components about theme change
-    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event("storage"));
   };
 
   const navItems = [
     { name: "Home", path: "/" },
     { name: "Create", path: "/create" },
+    { name: "Gallery", path: "/gallery" },
   ];
 
   const handleSignOut = () => {
@@ -71,16 +76,18 @@ const Navbar = ({ username }: NavbarProps) => {
   };
 
   return (
-    <nav 
+    <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled ? "bg-white/80 dark:bg-black/80 backdrop-blur-lg shadow-sm" : "bg-transparent"
+        isScrolled
+          ? "bg-white/80 dark:bg-black/80 backdrop-blur-lg shadow-sm"
+          : "bg-transparent"
       }`}
     >
       <div className="container-wide flex h-16 items-center justify-between">
         <div className="flex items-center gap-2">
           <Logo />
-          <NavLink 
-            to="/" 
+          <NavLink
+            to="/"
             className="text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
           >
             LazyCreator
@@ -109,7 +116,9 @@ const Navbar = ({ username }: NavbarProps) => {
             <button
               onClick={toggleDarkMode}
               className="p-2 rounded-full hover:bg-accent transition-colors"
-              aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={
+                isDarkMode ? "Switch to light mode" : "Switch to dark mode"
+              }
             >
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -120,11 +129,7 @@ const Navbar = ({ username }: NavbarProps) => {
                   <User size={16} className="text-primary" />
                   <span className="text-sm font-medium">{username}</span>
                 </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={handleSignOut}
-                >
+                <Button variant="ghost" size="sm" onClick={handleSignOut}>
                   Sign Out
                 </Button>
               </div>
@@ -144,11 +149,13 @@ const Navbar = ({ username }: NavbarProps) => {
           <button
             onClick={toggleDarkMode}
             className="p-2 rounded-full hover:bg-accent transition-colors"
-            aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label={
+              isDarkMode ? "Switch to light mode" : "Switch to dark mode"
+            }
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
-          
+
           <button
             className="p-2 rounded-md hover:bg-accent transition-colors"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -186,8 +193,8 @@ const Navbar = ({ username }: NavbarProps) => {
                     <User size={18} className="text-primary" />
                     <span className="font-medium">{username}</span>
                   </div>
-                  <Button 
-                    className="w-full" 
+                  <Button
+                    className="w-full"
                     variant="outline"
                     onClick={() => {
                       handleSignOut();
