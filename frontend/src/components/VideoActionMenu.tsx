@@ -35,6 +35,13 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
   // Stop event propagation to prevent triggering the video popup
   const handleTriggerClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
+  };
+
+  const handleItemClick = (e: React.MouseEvent, callback: Function) => {
+    e.stopPropagation();
+    e.preventDefault();
+    callback();
   };
 
   return (
@@ -49,10 +56,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onDownload(videoId);
-          }}
+          onClick={(e) => handleItemClick(e, () => onDownload(videoId))}
           className="cursor-pointer"
         >
           <Download className="mr-2 h-4 w-4" />
@@ -61,10 +65,9 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
 
         {isUploaded ? (
           <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation();
-              youtubeId && onOpenYouTube(youtubeId);
-            }}
+            onClick={(e) =>
+              youtubeId && handleItemClick(e, () => onOpenYouTube(youtubeId))
+            }
             className="cursor-pointer"
             disabled={!youtubeId}
           >
@@ -73,10 +76,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
           </DropdownMenuItem>
         ) : isYouTubeConnected ? (
           <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation();
-              onShowUploadForm();
-            }}
+            onClick={(e) => handleItemClick(e, onShowUploadForm)}
             className="cursor-pointer"
           >
             <Youtube className="mr-2 h-4 w-4" />
@@ -84,10 +84,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation();
-              onConnectYouTube();
-            }}
+            onClick={(e) => handleItemClick(e, onConnectYouTube)}
             className="cursor-pointer"
           >
             <Youtube className="mr-2 h-4 w-4" />
@@ -98,10 +95,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(videoId);
-          }}
+          onClick={(e) => handleItemClick(e, () => onDelete(videoId))}
           className="cursor-pointer text-destructive focus:text-destructive"
         >
           <Trash2 className="mr-2 h-4 w-4" />

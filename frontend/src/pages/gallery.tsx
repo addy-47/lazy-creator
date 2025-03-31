@@ -15,7 +15,7 @@ import {
 import { AuthContext } from "../App";
 import VideoActionMenu from "@/components/VideoActionMenu";
 import { InfiniteMovingCards } from "@/components/ui/infinite-moving-cards";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface Video {
   id: string;
@@ -29,6 +29,7 @@ interface Video {
 
 function GalleryPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, username } = useContext(AuthContext);
   const [videos, setVideos] = useState<Video[]>([]);
   const [demoVideos, setDemoVideos] = useState<{ id: string; url: string }[]>(
@@ -110,6 +111,69 @@ function GalleryPage() {
     checkYouTubeAuth();
   }, []);
 
+  // Add effect to check authentication status when returning from YouTube auth
+  useEffect(() => {
+    const checkAuthAfterRedirect = async () => {
+      const shouldCheck = localStorage.getItem("checkYouTubeAuth");
+
+      if (shouldCheck === "true") {
+        // Clear the flag
+        localStorage.removeItem("checkYouTubeAuth");
+
+        // Wait a bit to ensure the auth process completed
+        setTimeout(async () => {
+          try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+
+            const response = await axios.get(
+              "http://localhost:4000/api/youtube-auth-status",
+              {
+                headers: {
+                  "x-access-token": token,
+                },
+              }
+            );
+
+            if (response.data.status === "success") {
+              setIsYouTubeConnected(response.data.authenticated);
+
+              if (response.data.authenticated) {
+                toast.success("YouTube connected successfully!");
+              } else {
+                toast.error("YouTube connection failed. Please try again.");
+              }
+            }
+          } catch (error) {
+            console.error("Error checking YouTube auth after redirect:", error);
+          }
+        }, 2000);
+      }
+    };
+
+    checkAuthAfterRedirect();
+  }, []);
+
+  // Handle YouTube auth callback from URL
+  useEffect(() => {
+    // Check if this is a YouTube auth callback
+    if (location.pathname === "/youtube-auth-callback") {
+      // Get query parameters
+      const urlParams = new URLSearchParams(location.search);
+      const code = urlParams.get("code");
+      const state = urlParams.get("state");
+
+      if (code && state) {
+        // Redirect to backend endpoint to complete OAuth flow
+        window.location.href = `http://localhost:4000/api/youtube-auth-callback?code=${code}&state=${state}`;
+      } else {
+        // If missing parameters, go back to gallery
+        toast.error("Authentication failed: Missing parameters");
+        navigate("/gallery");
+      }
+    }
+  }, [location, navigate]);
+
   const handleDownload = async (videoId: string) => {
     try {
       const response = await axios.get(
@@ -151,7 +215,7 @@ function GalleryPage() {
         return;
       }
 
-      toast.loading("Connecting to YouTube...");
+      const toastId = toast.loading("Connecting to YouTube...");
 
       const response = await axios.get(
         "http://localhost:4000/api/youtube-auth-start",
@@ -159,14 +223,24 @@ function GalleryPage() {
           headers: {
             "x-access-token": token,
           },
+          params: {
+            redirect_uri: `${window.location.origin}/youtube-auth-callback`,
+          },
         }
       );
 
-      toast.dismiss();
+      toast.dismiss(toastId);
 
       if (response.data.status === "success" && response.data.auth_url) {
-        // Open the auth URL in a new window/tab
-        window.location.href = response.data.auth_url;
+        // Open the auth URL in a new window
+        window.open(response.data.auth_url, "_blank", "width=800,height=600");
+
+        // Set a flag to check auth status after user returns
+        localStorage.setItem("checkYouTubeAuth", "true");
+
+        toast.info("Please complete authentication in the opened window", {
+          duration: 5000,
+        });
       } else {
         toast.error("Failed to start YouTube authentication");
       }
@@ -185,7 +259,7 @@ function GalleryPage() {
       // If token doesn't exist, redirect to auth page
       if (!token) {
         toast.error("Please log in to upload to YouTube");
-        window.location.href = "/auth";
+        navigate("/auth");
         return;
       }
 
@@ -258,6 +332,7 @@ function GalleryPage() {
 
       if (!token) {
         toast.error("Please log in to delete videos");
+        navigate("/auth");
         return;
       }
 
