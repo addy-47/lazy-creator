@@ -4,6 +4,9 @@ import { Menu, X, Sun, Moon, LogIn, User } from "lucide-react";
 import { Button } from "./Button";
 import Logo from "./Logo";
 import { AUTH_CHANGE_EVENT } from "../App";
+import { useTheme } from "next-themes";
+import { useLocation } from "react-router-dom";
+import { setAuthToken } from "@/lib/socket";
 
 interface NavbarProps {
   username?: string;
@@ -131,7 +134,13 @@ const Navbar = ({ username }: NavbarProps) => {
   ];
 
   const handleSignOut = () => {
+    // Remove user data and token
     localStorage.removeItem("user");
+    localStorage.removeItem("token");
+
+    // Clear the auth token for API requests
+    setAuthToken(null);
+
     setCurrentUsername(undefined);
     forceUpdate();
 

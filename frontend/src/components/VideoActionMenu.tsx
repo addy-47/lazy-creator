@@ -32,16 +32,27 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
   onOpenYouTube,
   onDelete,
 }) => {
-  // Stop event propagation to prevent triggering the video popup
+  // Handler for the trigger button to prevent video playback
   const handleTriggerClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
   };
 
+  // Generic handler for menu items to prevent triggering background elements
   const handleItemClick = (e: React.MouseEvent, callback: Function) => {
     e.stopPropagation();
     e.preventDefault();
     callback();
+  };
+
+  // Stop propagation for mouse events
+  const handleMenuContentClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
+  // Stop propagation for touch events
+  const handleMenuContentTouch = (e: React.TouchEvent) => {
+    e.stopPropagation();
   };
 
   return (
@@ -50,11 +61,19 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         <button
           className="absolute top-3 left-3 z-10 p-1 rounded-full bg-background/80 backdrop-blur-sm hover:bg-background"
           onClick={handleTriggerClick}
+          onTouchEnd={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
         >
           <MoreVertical size={20} className="text-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
+      <DropdownMenuContent
+        align="start"
+        onClick={handleMenuContentClick}
+        onTouchEnd={handleMenuContentTouch}
+      >
         <DropdownMenuItem
           onClick={(e) => handleItemClick(e, () => onDownload(videoId))}
           className="cursor-pointer"

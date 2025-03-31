@@ -21,7 +21,7 @@ import TermsOfService from "./pages/TermsOFService";
 import NotFound from "./pages/NotFound";
 import { createContext, useEffect, useState, useCallback } from "react";
 import PageTransition from "./components/PageTransition";
-import { initSocket, disconnectSocket } from "./lib/socket";
+import { initSocket, disconnectSocket, setAuthToken } from "./lib/socket";
 
 // Create authentication context
 export interface AuthContextType {
@@ -78,8 +78,14 @@ const App = () => {
   useEffect(() => {
     checkAuthStatus();
 
+    // Set the auth token for API requests
+    const token = localStorage.getItem("token");
+    setAuthToken(token);
+
     // Initialize socket connection
-    initSocket();
+    (async () => {
+      await initSocket();
+    })();
 
     // Listen for storage changes (for multi-tab support)
     window.addEventListener("storage", checkAuthStatus);

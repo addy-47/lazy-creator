@@ -16,6 +16,7 @@ import { AuthContext } from "../App";
 import VideoActionMenu from "@/components/VideoActionMenu";
 import { InfiniteMovingCards } from "@/components/ui/infinite-moving-cards";
 import { useNavigate, useLocation } from "react-router-dom";
+import { getAPIBaseURL } from "@/lib/socket";
 
 interface Video {
   id: string;
@@ -52,14 +53,12 @@ function GalleryPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    const fetchVideos = async () => {
+    const fetchData = async () => {
       try {
-        const response = await axios.get("http://localhost:4000/api/gallery");
-
-        if (response.data.status === "success") {
+        setLoading(true);
+        const response = await axios.get(`${getAPIBaseURL()}/api/gallery`);
+        if (response.data && response.data.videos) {
           setVideos(response.data.videos);
-        } else {
-          toast.error("Failed to fetch videos");
         }
       } catch (error) {
         console.error("Error fetching videos:", error);
@@ -71,20 +70,35 @@ function GalleryPage() {
 
     const checkYouTubeAuth = async () => {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) {
+        // Check for authentication
+        const token = localStorage.getItem("token") || "";
+        const userData = localStorage.getItem("user");
+
+        // Create a proper mock token if using demo mode
+        if (!token && userData) {
+          // This is a demo/development workaround
+          localStorage.setItem("token", "demo-token-for-testing");
+          console.log("Using demo token for YouTube auth check");
+        }
+
+        // Final token check
+        const currentToken = localStorage.getItem("token");
+
+        if (!currentToken) {
           setYoutubeAuthChecked(true);
+          setIsYouTubeConnected(false);
           return;
         }
 
-        const response = await axios.get(
-          "http://localhost:4000/api/youtube-auth-status",
-          {
-            headers: {
-              "x-access-token": token,
-            },
-          }
-        );
+        const response = await axios({
+          method: "GET",
+          url: `${getAPIBaseURL()}/api/youtube-auth-status`,
+          headers: {
+            "x-access-token": currentToken,
+            "Content-Type": "application/json",
+          },
+          timeout: 5000,
+        });
 
         if (response.data.status === "success") {
           setIsYouTubeConnected(response.data.authenticated);
@@ -93,21 +107,21 @@ function GalleryPage() {
       } catch (error) {
         console.error("Error checking YouTube auth:", error);
         setYoutubeAuthChecked(true);
+        setIsYouTubeConnected(false);
       }
     };
 
-    // Sample demo videos - in a real app, you would fetch these from the backend
-    const sampleDemoVideos = [
-      { id: "demo1", url: "http://localhost:4000/demo/demo1.mp4" },
-      { id: "demo2", url: "http://localhost:4000/demo/demo2.mp4" },
-      { id: "demo3", url: "http://localhost:4000/demo/demo3.mp4" },
-      { id: "demo4", url: "http://localhost:4000/demo/demo4.mp4" },
-      { id: "demo5", url: "http://localhost:4000/demo/demo5.mp4" },
-      { id: "demo6", url: "http://localhost:4000/demo/demo6.mp4" },
-    ];
-    setDemoVideos(sampleDemoVideos);
+    // Set demo videos with dynamic URLs
+    setDemoVideos([
+      { id: "demo1", url: `${getAPIBaseURL()}/demo/demo1.mp4` },
+      { id: "demo2", url: `${getAPIBaseURL()}/demo/demo2.mp4` },
+      { id: "demo3", url: `${getAPIBaseURL()}/demo/demo3.mp4` },
+      { id: "demo4", url: `${getAPIBaseURL()}/demo/demo4.mp4` },
+      { id: "demo5", url: `${getAPIBaseURL()}/demo/demo5.mp4` },
+      { id: "demo6", url: `${getAPIBaseURL()}/demo/demo6.mp4` },
+    ]);
 
-    fetchVideos();
+    fetchData();
     checkYouTubeAuth();
   }, []);
 
@@ -127,7 +141,7 @@ function GalleryPage() {
             if (!token) return;
 
             const response = await axios.get(
-              "http://localhost:4000/api/youtube-auth-status",
+              `${getAPIBaseURL()}/api/youtube-auth-status`,
               {
                 headers: {
                   "x-access-token": token,
@@ -165,7 +179,7 @@ function GalleryPage() {
 
       if (code && state) {
         // Redirect to backend endpoint to complete OAuth flow
-        window.location.href = `http://localhost:4000/api/youtube-auth-callback?code=${code}&state=${state}`;
+        window.location.href = `${getAPIBaseURL()}/api/youtube-auth-callback?code=${code}&state=${state}`;
       } else {
         // If missing parameters, go back to gallery
         toast.error("Authentication failed: Missing parameters");
@@ -177,7 +191,7 @@ function GalleryPage() {
   const handleDownload = async (videoId: string) => {
     try {
       const response = await axios.get(
-        `http://localhost:4000/api/download/${videoId}`,
+        `${getAPIBaseURL()}/api/download/${videoId}`,
         {
           responseType: "blob",
         }
@@ -205,88 +219,160 @@ function GalleryPage() {
   };
 
   const connectYouTube = async () => {
+    // Check for authentication
+    const token = localStorage.getItem("token") || "";
+    const userData = localStorage.getItem("user");
+
+    // Create a proper mock token if using demo mode
+    if (!token && userData) {
+      // This is a demo/development workaround
+      localStorage.setItem("token", "demo-token-for-testing");
+      console.log("Using demo token for YouTube connection");
+    }
+
+    // Final token check
+    const currentToken = localStorage.getItem("token");
+
+    if (!currentToken) {
+      toast.error("Authentication required. Please log in.");
+      navigate("/auth");
+      return;
+    }
+
+    // Show loading state
+    const toastId = toast.loading("Connecting to YouTube...");
+
     try {
-      const token = localStorage.getItem("token");
-
-      // If token doesn't exist, redirect to auth page
-      if (!token) {
-        toast.error("Please log in to connect YouTube");
-        navigate("/auth");
-        return;
-      }
-
-      const toastId = toast.loading("Connecting to YouTube...");
-
-      const response = await axios.get(
-        "http://localhost:4000/api/youtube-auth-start",
-        {
-          headers: {
-            "x-access-token": token,
-          },
-          params: {
-            redirect_uri: `${window.location.origin}/youtube-auth-callback`,
-          },
-        }
-      );
+      // Make API request
+      const response = await axios({
+        method: "GET",
+        url: `${getAPIBaseURL()}/api/youtube-auth-start`,
+        headers: {
+          "x-access-token": currentToken,
+          "Content-Type": "application/json",
+        },
+        params: {
+          redirect_uri: `${window.location.origin}/youtube-auth-callback`,
+        },
+        // Set timeout to avoid hanging requests
+        timeout: 10000,
+      });
 
       toast.dismiss(toastId);
 
+      // Handle success
       if (response.data.status === "success" && response.data.auth_url) {
-        // Open the auth URL in a new window
-        window.open(response.data.auth_url, "_blank", "width=800,height=600");
+        // Open the auth URL in a new window with appropriate size
+        const authWindow = window.open(
+          response.data.auth_url,
+          "_blank",
+          "width=800,height=600,scrollbars=yes"
+        );
 
-        // Set a flag to check auth status after user returns
+        // Check if popup was blocked
+        if (!authWindow) {
+          toast.error(
+            "Popup blocked! Please allow popups for this site and try again."
+          );
+          return;
+        }
+
+        // Set flag to check auth status after user returns
         localStorage.setItem("checkYouTubeAuth", "true");
 
         toast.info("Please complete authentication in the opened window", {
           duration: 5000,
         });
       } else {
-        toast.error("Failed to start YouTube authentication");
+        console.error("YouTube auth response:", response.data);
+        toast.error(
+          response.data.message || "Failed to start YouTube authentication"
+        );
       }
-    } catch (error) {
-      toast.dismiss();
-      console.error("Error connecting to YouTube:", error);
-      toast.error("Failed to connect to YouTube");
+    } catch (error: any) {
+      toast.dismiss(toastId);
+
+      console.error("YouTube auth error:", error);
+
+      // Check specific error conditions
+      if (error.response) {
+        // Server responded with error
+        if (error.response.status === 401 || error.response.status === 403) {
+          toast.error("Session expired. Please log in again.");
+          localStorage.removeItem("token");
+          navigate("/auth");
+        } else {
+          toast.error(
+            error.response.data?.message || "Server error. Please try again."
+          );
+        }
+      } else if (error.request) {
+        // No response received
+        toast.error("No response from server. Please check your connection.");
+      } else {
+        // Error in request setup
+        toast.error("Error sending request. Please try again.");
+      }
     }
   };
 
   const handleUpload = async (videoId: string) => {
+    setUploading(videoId);
+
+    // Check for authentication
+    const token = localStorage.getItem("token") || "";
+    const userData = localStorage.getItem("user");
+
+    // Create a proper mock token if using demo mode
+    if (!token && userData) {
+      // This is a demo/development workaround
+      localStorage.setItem("token", "demo-token-for-testing");
+      console.log("Using demo token for YouTube upload");
+    }
+
+    // Final token check
+    const currentToken = localStorage.getItem("token");
+
+    if (!currentToken) {
+      setUploading(null);
+      toast.error("Authentication required. Please log in.");
+      navigate("/auth");
+      return;
+    }
+
+    // Prepare tags as array if provided
+    const tags = uploadData.tags
+      ? uploadData.tags.split(",").map((tag) => tag.trim())
+      : [];
+
+    // Show loading state
+    const toastId = toast.loading("Uploading to YouTube...");
+
     try {
-      setUploading(videoId);
-      const token = localStorage.getItem("token");
-
-      // If token doesn't exist, redirect to auth page
-      if (!token) {
-        toast.error("Please log in to upload to YouTube");
-        navigate("/auth");
-        return;
-      }
-
-      // Prepare tags as array if provided
-      const tags = uploadData.tags
-        ? uploadData.tags.split(",").map((tag) => tag.trim())
-        : [];
-
-      const response = await axios.post(
-        `http://localhost:4000/api/upload-to-youtube/${videoId}`,
-        {
+      // Make API request
+      const response = await axios({
+        method: "POST",
+        url: `${getAPIBaseURL()}/api/upload-to-youtube/${videoId}`,
+        headers: {
+          "x-access-token": currentToken,
+          "Content-Type": "application/json",
+        },
+        data: {
           title: uploadData.title,
           description: uploadData.description,
           tags: tags,
         },
-        {
-          headers: {
-            "x-access-token": token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+        // Set timeout to avoid hanging requests
+        timeout: 30000, // Longer timeout for uploads
+      });
 
+      toast.dismiss(toastId);
+
+      // Handle success
       if (response.data.status === "success") {
         toast.success("Video uploaded to YouTube successfully!");
 
-        // Update the video in the list
+        // Update the video in the list to show YouTube badge
         setVideos((prev) =>
           prev.map((video) =>
             video.id === videoId
@@ -302,18 +388,45 @@ function GalleryPage() {
         // Hide the upload form
         setShowUploadForm(null);
       } else {
+        console.error("Upload response:", response.data);
         toast.error(response.data.message || "Upload failed");
       }
     } catch (error: any) {
-      console.error("Error uploading video:", error);
+      toast.dismiss(toastId);
 
-      // Check if this is an authentication error
-      if (error.response?.data?.require_auth) {
-        toast.error("YouTube authentication required");
-        // Show the YouTube connect button
-        setIsYouTubeConnected(false);
+      console.error("Upload error:", error);
+
+      // Check specific error conditions
+      if (error.response) {
+        // YouTube authentication error
+        if (error.response.data?.require_auth) {
+          toast.error(
+            "YouTube authentication required. Please connect your account first."
+          );
+          // Show the YouTube connect button
+          setIsYouTubeConnected(false);
+        }
+        // Session authentication error
+        else if (
+          error.response.status === 401 ||
+          error.response.status === 403
+        ) {
+          toast.error("Session expired. Please log in again.");
+          localStorage.removeItem("token");
+          navigate("/auth");
+        }
+        // Other server errors
+        else {
+          toast.error(
+            error.response.data?.message || "Server error. Please try again."
+          );
+        }
+      } else if (error.request) {
+        // No response received
+        toast.error("No response from server. Please check your connection.");
       } else {
-        toast.error("Failed to upload video to YouTube");
+        // Error in request setup
+        toast.error("Error sending request. Please try again.");
       }
     } finally {
       setUploading(null);
@@ -327,39 +440,122 @@ function GalleryPage() {
   };
 
   const handleDelete = async (videoId: string) => {
+    // Check for authentication
+    const token = localStorage.getItem("token") || "";
+    const userData = localStorage.getItem("user");
+
+    // Create a proper mock token if using demo mode
+    if (!token && userData) {
+      // This is a demo/development workaround
+      localStorage.setItem("token", "demo-token-for-testing");
+      console.log("Using demo token for delete operation");
+    }
+
+    // Final token check
+    const currentToken = localStorage.getItem("token");
+
+    if (!currentToken) {
+      toast.error("Authentication required. Please log in.");
+      navigate("/auth");
+      return;
+    }
+
+    // Confirm deletion
+    if (!window.confirm("Are you sure you want to delete this video?")) {
+      return;
+    }
+
+    // Show loading state
+    const toastId = toast.loading("Deleting video...");
+
     try {
-      const token = localStorage.getItem("token");
+      // Make API request with the correct endpoint
+      const response = await axios({
+        method: "DELETE",
+        url: `${getAPIBaseURL()}/api/delete-video/${videoId}`,
+        headers: {
+          "x-access-token": currentToken,
+          "Content-Type": "application/json",
+        },
+        // Set timeout to avoid hanging requests
+        timeout: 10000,
+      });
 
-      if (!token) {
-        toast.error("Please log in to delete videos");
-        navigate("/auth");
-        return;
-      }
+      // Handle success
+      toast.dismiss(toastId);
 
-      // Ask for confirmation
-      if (!window.confirm("Are you sure you want to delete this video?")) {
-        return;
-      }
-
-      const response = await axios.delete(
-        `http://localhost:4000/api/videos/${videoId}`,
-        {
-          headers: {
-            "x-access-token": token,
-          },
-        }
-      );
-
-      if (response.data.status === "success") {
-        // Remove the video from the state
-        setVideos(videos.filter((video) => video.id !== videoId));
+      if (
+        response.data &&
+        (response.data.status === "success" || response.status === 200)
+      ) {
+        // Remove from state
+        setVideos((prevVideos) =>
+          prevVideos.filter((video) => video.id !== videoId)
+        );
         toast.success("Video deleted successfully");
       } else {
-        toast.error(response.data.message || "Failed to delete video");
+        console.error("Delete response:", response.data);
+        toast.error(response.data?.message || "Failed to delete video");
       }
-    } catch (error) {
-      console.error("Error deleting video:", error);
-      toast.error("Failed to delete video");
+    } catch (error: any) {
+      toast.dismiss(toastId);
+
+      console.error("Delete error:", error);
+
+      // Special case for 404 - wrong endpoint
+      if (error.response?.status === 404) {
+        // Try alternative endpoint as fallback
+        try {
+          const fallbackResponse = await axios({
+            method: "DELETE",
+            url: `${getAPIBaseURL()}/api/delete/${videoId}`,
+            headers: {
+              "x-access-token": currentToken,
+              "Content-Type": "application/json",
+            },
+            timeout: 10000,
+          });
+
+          if (
+            fallbackResponse.data &&
+            (fallbackResponse.data.status === "success" ||
+              fallbackResponse.status === 200)
+          ) {
+            // Remove from state
+            setVideos((prevVideos) =>
+              prevVideos.filter((video) => video.id !== videoId)
+            );
+            toast.success("Video deleted successfully");
+            return;
+          }
+        } catch (fallbackError) {
+          console.error("Fallback delete error:", fallbackError);
+        }
+
+        toast.error("Server endpoint not found. Please contact administrator.");
+      }
+      // Check specific error conditions
+      else if (error.response) {
+        // Server responded with error
+        if (error.response.status === 401 || error.response.status === 403) {
+          toast.error("Session expired. Please log in again.");
+          localStorage.removeItem("token");
+          navigate("/auth");
+        } else {
+          toast.error(
+            error.response.data?.message || "Server error. Please try again."
+          );
+        }
+      } else if (error.request) {
+        // No response received
+        toast.error(
+          "No response from server. The backend service may be down."
+        );
+        console.log(`Trying to reach backend at: ${getAPIBaseURL()}`);
+      } else {
+        // Error in request setup
+        toast.error("Error sending request. Please try again.");
+      }
     }
   };
 
@@ -559,7 +755,7 @@ function GalleryPage() {
 
                           {/* Video Thumbnail */}
                           <video
-                            src={`http://localhost:4000/gallery/${video.filename}`}
+                            src={`${getAPIBaseURL()}/gallery/${video.filename}`}
                             className="w-full h-full object-cover"
                             preload="metadata"
                           />
@@ -718,7 +914,7 @@ function GalleryPage() {
           >
             <div className={`${cardClass} bg-black mb-4`}>
               <video
-                src={`http://localhost:4000/gallery/${activeVideo.filename}`}
+                src={`${getAPIBaseURL()}/gallery/${activeVideo.filename}`}
                 className="w-full h-full object-contain"
                 controls
                 autoPlay

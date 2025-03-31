@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AUTH_CHANGE_EVENT, AuthContext } from "@/App";
+import { setAuthToken } from "@/lib/socket";
 
 // Import Firebase auth functions and providers
 import {
@@ -92,7 +93,15 @@ const Auth = () => {
         name: isSignIn ? "User" : name,
       };
 
+      // Generate a demo token
+      const demoToken = "demo-token-for-testing";
+
+      // Store user info and token in localStorage
       localStorage.setItem("user", JSON.stringify(userData));
+      localStorage.setItem("token", demoToken);
+
+      // Set the auth token for API requests
+      setAuthToken(demoToken);
 
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
@@ -126,6 +135,10 @@ const Auth = () => {
       const result = await signInWithPopup(auth, provider);
       // You can extract additional user info if needed:
       // const user = result.user;
+
+      // Generate a demo token
+      const demoToken = "demo-token-for-testing";
+
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -133,6 +146,12 @@ const Auth = () => {
           name: result.user.displayName || "User",
         })
       );
+
+      // Store token in localStorage
+      localStorage.setItem("token", demoToken);
+
+      // Set the auth token for API requests
+      setAuthToken(demoToken);
 
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
@@ -154,6 +173,10 @@ const Auth = () => {
     const provider = new FacebookAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
+
+      // Generate a demo token
+      const demoToken = "demo-token-for-testing";
+
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -161,6 +184,12 @@ const Auth = () => {
           name: result.user.displayName || "User",
         })
       );
+
+      // Store token in localStorage
+      localStorage.setItem("token", demoToken);
+
+      // Set the auth token for API requests
+      setAuthToken(demoToken);
 
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));

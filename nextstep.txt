@@ -53,3 +53,4 @@ Setting up a GCP project and moving storage to Cloud Storage.
 Adding a simple Cloud Function for a specific task.
 Configuring a CI pipeline with Cloud Build.
 
+> mongod --dbpath "E:\MongoDBData"
