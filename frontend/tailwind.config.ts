@@ -1,4 +1,3 @@
-
 import type { Config } from "tailwindcss";
 
 export default {
@@ -153,6 +152,22 @@ export default {
           "50%": { transform: "rotate(-15deg)" },
           "100%": { transform: "rotate(0deg)" },
         },
+        "infinite-scroll-x": {
+          from: { transform: "translateX(0)" },
+          to: { transform: "translateX(-100%)" },
+        },
+        "infinite-scroll-x-reverse": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
+        "infinite-scroll-y": {
+          from: { transform: "translateY(0)" },
+          to: { transform: "translateY(-100%)" },
+        },
+        "infinite-scroll-y-reverse": {
+          from: { transform: "translateY(-100%)" },
+          to: { transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -164,13 +179,19 @@ export default {
         "scale-in": "scale-in 0.3s ease-out forwards",
         pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         breathe: "breathe 3s ease-in-out infinite",
-        "spin-slow": "spin-slow 3s linear infinite",
+        "spin-slow": "spin 6s linear infinite",
         progress: "progress 30s linear forwards",
         wave: "wave 1.5s ease-in-out infinite",
         kick: "kick 1s ease-in-out infinite",
         peek: "peek 0.5s ease-out forwards",
         dance: "dance 1.5s ease-in-out infinite",
         stretch: "stretch 3s ease-in-out infinite",
+        "infinite-scroll-x": "infinite-scroll-x 25s linear infinite",
+        "infinite-scroll-x-reverse":
+          "infinite-scroll-x-reverse 25s linear infinite",
+        "infinite-scroll-y": "infinite-scroll-y 25s linear infinite",
+        "infinite-scroll-y-reverse":
+          "infinite-scroll-y-reverse 25s linear infinite",
       },
     },
   },

@@ -1,27 +1,70 @@
-
 import { useState, useEffect } from "react";
 import Logo from "./Logo";
+import { subscribeToProgress, unsubscribeFromProgress } from "@/lib/socket";
 
 interface GeneratingAnimationProps {
   duration: number;
   onComplete: () => void;
+  videoId?: string;
 }
 
-const GeneratingAnimation = ({ duration, onComplete }: GeneratingAnimationProps) => {
+const GeneratingAnimation = ({
+  duration,
+  onComplete,
+  videoId,
+}: GeneratingAnimationProps) => {
   const [timeLeft, setTimeLeft] = useState(duration);
   const [dots, setDots] = useState("");
   const [currentStep, setCurrentStep] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [usingWebSocket, setUsingWebSocket] = useState(false);
 
   const generationSteps = [
-    { name: "Analyzing prompt", delay: 0 },
-    { name: "Generating content", delay: 2 },
-    { name: "Optimizing script", delay: 5 },
-    { name: "Adding background", delay: 10 },
-    { name: "Applying effects", delay: 15 },
-    { name: "Finalizing", delay: 20 },
+    { name: "Analyzing prompt", threshold: 10 },
+    { name: "Generating content", threshold: 30 },
+    { name: "Optimizing script", threshold: 50 },
+    { name: "Adding background", threshold: 70 },
+    { name: "Applying effects", threshold: 85 },
+    { name: "Finalizing", threshold: 95 },
   ];
 
+  // Connect to WebSocket for progress updates if videoId is provided
   useEffect(() => {
+    if (videoId) {
+      // Subscribe to progress updates via WebSocket
+      subscribeToProgress(videoId, (updatedProgress) => {
+        setProgress(updatedProgress);
+        setUsingWebSocket(true);
+
+        // Update current step based on progress
+        const nextStep = generationSteps.findIndex(
+          (step, index) =>
+            updatedProgress < step.threshold &&
+            (index === 0 ||
+              updatedProgress >= generationSteps[index - 1].threshold)
+        );
+
+        if (nextStep !== -1 && nextStep !== currentStep) {
+          setCurrentStep(nextStep);
+        }
+
+        // Complete when progress is 100%
+        if (updatedProgress >= 100) {
+          onComplete();
+        }
+      });
+
+      // Cleanup on unmount
+      return () => {
+        unsubscribeFromProgress(videoId);
+      };
+    }
+  }, [videoId, currentStep, onComplete]);
+
+  // Fallback timer-based progress when WebSocket is not available
+  useEffect(() => {
+    if (usingWebSocket || !duration) return;
+
     if (timeLeft <= 0) {
       onComplete();
       return;
@@ -29,11 +72,39 @@ const GeneratingAnimation = ({ duration, onComplete }: GeneratingAnimationProps)
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => Math.max(0, prev - 1));
+      // Calculate progress as a percentage of elapsed time
+      const elapsedTime = duration - timeLeft + 1;
+      const calculatedProgress = Math.min(99, (elapsedTime / duration) * 100);
+      setProgress(calculatedProgress);
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft, onComplete]);
+  }, [timeLeft, onComplete, duration, usingWebSocket]);
 
+  // Update steps based on time-based progress
+  useEffect(() => {
+    if (usingWebSocket) return;
+
+    const stepTimer = setInterval(() => {
+      const progressPercentage = ((duration - timeLeft) / duration) * 100;
+
+      // Find the appropriate step based on progress
+      const nextStep = generationSteps.findIndex(
+        (step, index) =>
+          progressPercentage < step.threshold &&
+          (index === 0 ||
+            progressPercentage >= generationSteps[index - 1].threshold)
+      );
+
+      if (nextStep !== -1 && nextStep !== currentStep) {
+        setCurrentStep(nextStep);
+      }
+    }, 1000);
+
+    return () => clearInterval(stepTimer);
+  }, [timeLeft, currentStep, duration, usingWebSocket]);
+
+  // Animated dots
   useEffect(() => {
     const dotTimer = setInterval(() => {
       setDots((prevDots) => {
@@ -45,22 +116,6 @@ const GeneratingAnimation = ({ duration, onComplete }: GeneratingAnimationProps)
     return () => clearInterval(dotTimer);
   }, []);
 
-  useEffect(() => {
-    const stepTimer = setInterval(() => {
-      const nextPossibleStep = generationSteps.findIndex(
-        step => duration - timeLeft >= step.delay && step.delay > (generationSteps[currentStep]?.delay || -1)
-      );
-      
-      if (nextPossibleStep !== -1 && nextPossibleStep > currentStep) {
-        setCurrentStep(nextPossibleStep);
-      }
-    }, 1000);
-
-    return () => clearInterval(stepTimer);
-  }, [timeLeft, currentStep, duration]);
-
-  const progressPercentage = ((duration - timeLeft) / duration) * 100;
-
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex items-center justify-center">
       <div className="max-w-md w-full mx-auto px-4">
@@ -69,9 +124,12 @@ const GeneratingAnimation = ({ duration, onComplete }: GeneratingAnimationProps)
             <div className="relative w-40 h-40 mx-auto">
               {/* Outer circle */}
               <div className="absolute inset-0 rounded-full border-4 border-secondary"></div>
-              
+
               {/* Progress circle */}
-              <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
+              <svg
+                className="absolute inset-0 w-full h-full"
+                viewBox="0 0 100 100"
+              >
                 <circle
                   cx="50"
                   cy="50"
@@ -81,29 +139,32 @@ const GeneratingAnimation = ({ duration, onComplete }: GeneratingAnimationProps)
                   strokeWidth="8"
                   strokeLinecap="round"
                   className="text-primary transform -rotate-90 origin-center transition-all duration-1000"
-                  strokeDasharray={`${progressPercentage * 2.89}, 289`}
+                  strokeDasharray={`${progress * 2.89}, 289`}
                 />
               </svg>
-              
+
               {/* Spinning logo */}
               <div className="absolute inset-0 flex items-center justify-center animate-spin-slow">
                 <div className="bg-background rounded-full p-2">
                   <Logo size="default" />
                 </div>
               </div>
-              
-              {/* Time left */}
+
+              {/* Progress percentage */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center bg-background/80 rounded-full w-16 h-16 flex items-center justify-center backdrop-blur-sm">
-                  <span className="text-3xl font-semibold">{timeLeft}</span>
-                  <span className="text-lg">s</span>
+                  <span className="text-2xl font-semibold">
+                    {Math.round(progress)}
+                  </span>
+                  <span className="text-lg">%</span>
                 </div>
               </div>
             </div>
 
             <div className="space-y-2">
               <h3 className="text-2xl font-semibold">
-                {generationSteps[currentStep]?.name}{dots}
+                {generationSteps[currentStep]?.name}
+                {dots}
               </h3>
               <p className="text-foreground/70">
                 Creating your YouTube Short. This process takes a moment.
@@ -111,19 +172,19 @@ const GeneratingAnimation = ({ duration, onComplete }: GeneratingAnimationProps)
             </div>
 
             <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
-              <div 
+              <div
                 className="bg-primary h-full transition-all duration-1000 ease-linear"
-                style={{ width: `${progressPercentage}%` }}
+                style={{ width: `${progress}%` }}
               ></div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
               {generationSteps.map((step, index) => (
-                <div 
+                <div
                   key={index}
                   className={`p-2 rounded-md border transition-all ${
-                    index <= currentStep 
-                      ? "border-primary bg-primary/5 text-primary" 
+                    index <= currentStep
+                      ? "border-primary bg-primary/5 text-primary"
                       : "border-border text-foreground/60"
                   }`}
                 >

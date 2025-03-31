@@ -2,7 +2,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
 import Create from "./pages/Create";
@@ -14,6 +20,8 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOFService";
 import NotFound from "./pages/NotFound";
 import { createContext, useEffect, useState, useCallback } from "react";
+import PageTransition from "./components/PageTransition";
+import { initSocket, disconnectSocket } from "./lib/socket";
 
 // Create authentication context
 export interface AuthContextType {
@@ -32,6 +40,14 @@ export const AuthContext = createContext<AuthContextType>({
 });
 
 const queryClient = new QueryClient();
+
+// Wrapper component for route transitions
+const RouteTransition = ({ children }: { children: React.ReactNode }) => {
+  const location = useLocation();
+  return (
+    <PageTransition location={location.pathname}>{children}</PageTransition>
+  );
+};
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -62,6 +78,9 @@ const App = () => {
   useEffect(() => {
     checkAuthStatus();
 
+    // Initialize socket connection
+    initSocket();
+
     // Listen for storage changes (for multi-tab support)
     window.addEventListener("storage", checkAuthStatus);
     // Listen for our custom auth change event
@@ -70,6 +89,8 @@ const App = () => {
     return () => {
       window.removeEventListener("storage", checkAuthStatus);
       window.removeEventListener(AUTH_CHANGE_EVENT, checkAuthStatus);
+      // Disconnect socket on unmount
+      disconnectSocket();
     };
   }, [checkAuthStatus]);
 
@@ -93,21 +114,82 @@ const App = () => {
             <Sonner />
             <BrowserRouter>
               <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/create" element={<Create />} />
-                <Route path="/learn" element={<Learn />} />
-                <Route path="/gallery" element={<Gallery />} />
                 <Route
-                  path="/youtube-auth-success"
-                  element={<YouTubeAuthSuccess />}
+                  element={
+                    <RouteTransition>
+                      <Index />
+                    </RouteTransition>
+                  }
+                  path="/"
                 />
-                <Route path="/terms-of-service" element={<TermsOfService />} />
-                <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <Create />
+                    </RouteTransition>
+                  }
+                  path="/create"
+                />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <Learn />
+                    </RouteTransition>
+                  }
+                  path="/learn"
+                />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <Gallery />
+                    </RouteTransition>
+                  }
+                  path="/gallery"
+                />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <YouTubeAuthSuccess />
+                    </RouteTransition>
+                  }
+                  path="/youtube-auth-success"
+                />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <TermsOfService />
+                    </RouteTransition>
+                  }
+                  path="/terms-of-service"
+                />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <PrivacyPolicy />
+                    </RouteTransition>
+                  }
+                  path="/privacy-policy"
+                />
                 <Route
                   path="/auth"
-                  element={isAuthenticated ? <Navigate to="/" /> : <Auth />}
+                  element={
+                    isAuthenticated ? (
+                      <Navigate to="/" />
+                    ) : (
+                      <RouteTransition>
+                        <Auth />
+                      </RouteTransition>
+                    )
+                  }
                 />
-                <Route path="*" element={<NotFound />} />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <NotFound />
+                    </RouteTransition>
+                  }
+                  path="*"
+                />
               </Routes>
             </BrowserRouter>
           </TooltipProvider>

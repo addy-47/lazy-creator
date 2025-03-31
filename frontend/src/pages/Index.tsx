@@ -27,51 +27,18 @@ const Index = () => {
       <main className="flex-grow">
         <Hero username={username} />
 
-        {/* Add more stick figure animations throughout the page */}
+        {/* Add just two subtle stick figure animations */}
         <div className="container-wide relative my-12">
-          <div className="absolute -right-10 top-1/2 -translate-y-1/2 hidden md:block">
-            <StickFigureAnimation type="jump" delay={300} height={80} />
+          <div className="absolute right-5 top-1/2 -translate-y-1/2 hidden md:block">
+            <StickFigureAnimation type="wave" delay={450} height={70} />
           </div>
 
-          <div className="absolute -left-10 top-1/2 -translate-y-1/2 hidden md:block">
-            <StickFigureAnimation type="sleep" delay={600} height={80} />
-          </div>
-
-          {/* Add new animations */}
-          <div className="absolute right-1/4 top-0 hidden md:block">
-            <StickFigureAnimation type="wave" delay={450} height={80} />
-          </div>
-
-          <div className="absolute left-1/4 bottom-0 hidden md:block">
-            <StickFigureAnimation type="spin" delay={750} height={80} />
+          <div className="absolute left-5 bottom-0 hidden md:block">
+            <StickFigureAnimation type="dance" delay={750} height={70} />
           </div>
         </div>
 
         <Features />
-
-        {/* Add even more stick figures */}
-        <div className="container-wide relative mt-16 mb-8">
-          <div className="absolute left-10 bottom-0 hidden md:block">
-            <StickFigureAnimation type="dance" delay={900} height={80} />
-          </div>
-
-          <div className="absolute right-10 bottom-0 hidden md:block">
-            <StickFigureAnimation type="stretch" delay={1200} height={80} />
-          </div>
-
-          {/* Add new animations */}
-          <div className="absolute left-1/3 top-0 hidden md:block">
-            <StickFigureAnimation type="peek" delay={1050} height={80} />
-          </div>
-
-          <div className="absolute right-1/3 top-1/2 hidden md:block">
-            <StickFigureAnimation type="jump" delay={1350} height={80} />
-          </div>
-
-          <div className="absolute left-1/4 top-1/2 hidden md:block">
-            <StickFigureAnimation type="sleep" delay={1500} height={80} />
-          </div>
-        </div>
       </main>
       <Footer />
     </div>

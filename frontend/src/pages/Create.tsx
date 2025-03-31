@@ -28,27 +28,14 @@ const Create = () => {
             Choose a prompt, set the duration, and select your background.
           </p>
 
-          {/* Add stick figure animations */}
-          <div className="absolute -top-8 right-0 hidden md:block">
-            <StickFigureAnimation type="dance" delay={400} height={70} />
-          </div>
-
-          <div className="absolute -top-8 left-0 hidden md:block">
-            <StickFigureAnimation type="stretch" delay={600} height={70} />
+          {/* Single stick figure animation in a more subtle position */}
+          <div className="absolute -top-8 right-1/4 hidden md:block">
+            <StickFigureAnimation type="dance" delay={400} height={60} />
           </div>
         </div>
 
         <div className="relative">
           <CreateForm />
-
-          {/* Add more stick figure animations */}
-          <div className="absolute bottom-10 -right-10 hidden lg:block">
-            <StickFigureAnimation type="sleep" delay={800} height={70} />
-          </div>
-
-          <div className="absolute bottom-10 -left-10 hidden lg:block">
-            <StickFigureAnimation type="peek" delay={1000} height={70} />
-          </div>
         </div>
       </main>
       <Footer />

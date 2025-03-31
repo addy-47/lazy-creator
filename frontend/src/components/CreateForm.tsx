@@ -22,8 +22,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useNavigate } from "react-router-dom";
 
 const CreateForm = () => {
+  const navigate = useNavigate();
   const [prompt, setPrompt] = useState("");
   const [duration, setDuration] = useState(20);
   const [backgroundType, setBackgroundType] = useState<
@@ -41,6 +43,7 @@ const CreateForm = () => {
   const [videoData, setVideoData] = useState<{
     filename: string;
     path: string;
+    id: string;
   } | null>(null);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
@@ -128,7 +131,14 @@ const CreateForm = () => {
       console.log("Generation started:", data);
 
       if (data.status === "success") {
-        // Set up polling to check video status
+        // Set video data with ID for websocket subscription
+        setVideoData({
+          filename: data.video.filename,
+          path: data.video.path,
+          id: data.video.id,
+        });
+
+        // We'll still keep the polling as a fallback
         const checkInterval = setInterval(async () => {
           try {
             const statusResponse = await fetch(
@@ -153,7 +163,11 @@ const CreateForm = () => {
             if (statusData.status === "completed") {
               clearInterval(checkInterval);
               setPollInterval(null);
-              setVideoData(statusData.video);
+              setVideoData({
+                filename: statusData.video.filename,
+                path: statusData.video.path,
+                id: statusData.video.id,
+              });
               setIsGenerating(false);
               setIsGenerated(true);
               toast.success("Video generated successfully!");
@@ -186,10 +200,14 @@ const CreateForm = () => {
     }
     setIsGenerating(false);
     setIsGenerated(true);
+    // Automatically redirect to gallery after 2 seconds
+    setTimeout(() => {
+      navigate("/gallery");
+    }, 2000);
   };
 
   const navigateToGallery = () => {
-    window.location.href = "/gallery";
+    navigate("/gallery");
   };
 
   return (
@@ -198,6 +216,7 @@ const CreateForm = () => {
         <GeneratingAnimation
           duration={Math.max(duration * 1.5, 30)} // Adjust expected time based on video duration
           onComplete={handleGenerationComplete}
+          videoId={videoData?.id}
         />
       )}
 
