@@ -54,3 +54,8 @@ Adding a simple Cloud Function for a specific task.
 Configuring a CI pipeline with Cloud Build.
 
 > mongod --dbpath "E:\MongoDBData"
+
+check the setup step by step to ensure
+when a user createes a video it is getting created in their account vivsible in the gallery folder
+it should not be getting upoaded automatically but  only when the user connects to youtube first and then clicks  upload to youtube  it should get uploaded to their channel verify the outh2 flow for that
+check the download functionality of the short

@@ -56,7 +56,21 @@ function GalleryPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${getAPIBaseURL()}/api/gallery`);
+
+        // Get authentication token
+        const token = localStorage.getItem("token");
+        if (!token) {
+          console.error("Authentication token missing");
+          setLoading(false);
+          return;
+        }
+
+        const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
+          headers: {
+            "x-access-token": token,
+          },
+        });
+
         if (response.data && response.data.videos) {
           setVideos(response.data.videos);
         }
@@ -190,10 +204,21 @@ function GalleryPage() {
 
   const handleDownload = async (videoId: string) => {
     try {
+      // Get authentication token
+      const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error("Authentication required. Please log in.");
+        navigate("/auth");
+        return;
+      }
+
       const response = await axios.get(
         `${getAPIBaseURL()}/api/download/${videoId}`,
         {
           responseType: "blob",
+          headers: {
+            "x-access-token": token,
+          },
         }
       );
 
@@ -317,120 +342,76 @@ function GalleryPage() {
   };
 
   const handleUpload = async (videoId: string) => {
-    setUploading(videoId);
-
-    // Check for authentication
-    const token = localStorage.getItem("token") || "";
-    const userData = localStorage.getItem("user");
-
-    // Create a proper mock token if using demo mode
-    if (!token && userData) {
-      // This is a demo/development workaround
-      localStorage.setItem("token", "demo-token-for-testing");
-      console.log("Using demo token for YouTube upload");
-    }
-
-    // Final token check
-    const currentToken = localStorage.getItem("token");
-
-    if (!currentToken) {
-      setUploading(null);
-      toast.error("Authentication required. Please log in.");
-      navigate("/auth");
+    // Do not proceed if YouTube is not connected
+    if (!isYouTubeConnected) {
+      toast.error("Please connect to YouTube first.");
       return;
     }
 
-    // Prepare tags as array if provided
-    const tags = uploadData.tags
-      ? uploadData.tags.split(",").map((tag) => tag.trim())
-      : [];
-
-    // Show loading state
-    const toastId = toast.loading("Uploading to YouTube...");
+    // Set the videoId that's being uploaded
+    setUploading(videoId);
+    setShowUploadForm(null); // Reset upload form visibility
 
     try {
-      // Make API request
+      // Get upload data from state
+      const { title, description, tags } = uploadData;
+
+      if (!title) {
+        toast.error("Title is required");
+        setUploading(null);
+        return;
+      }
+
+      const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error("Authentication required");
+        setUploading(null);
+        return;
+      }
+
+      // Send upload request to the server with video metadata
       const response = await axios({
         method: "POST",
         url: `${getAPIBaseURL()}/api/upload-to-youtube/${videoId}`,
         headers: {
-          "x-access-token": currentToken,
+          "x-access-token": token,
           "Content-Type": "application/json",
         },
         data: {
-          title: uploadData.title,
-          description: uploadData.description,
-          tags: tags,
+          title,
+          description,
+          tags: tags.split(",").map((tag) => tag.trim()),
         },
-        // Set timeout to avoid hanging requests
-        timeout: 30000, // Longer timeout for uploads
       });
 
-      toast.dismiss(toastId);
-
-      // Handle success
       if (response.data.status === "success") {
         toast.success("Video uploaded to YouTube successfully!");
 
-        // Update the video in the list to show YouTube badge
-        setVideos((prev) =>
-          prev.map((video) =>
-            video.id === videoId
-              ? {
-                  ...video,
-                  uploaded_to_yt: true,
-                  youtube_id: response.data.youtube_id,
-                }
-              : video
-          )
-        );
+        // Update the local video data with YouTube ID
+        const updatedVideos = videos.map((v) => {
+          if (v.id === videoId) {
+            return {
+              ...v,
+              uploaded_to_yt: true,
+              youtube_id: response.data.youtube_id,
+            };
+          }
+          return v;
+        });
 
-        // Hide the upload form
-        setShowUploadForm(null);
+        setVideos(updatedVideos);
       } else {
-        console.error("Upload response:", response.data);
-        toast.error(response.data.message || "Upload failed");
+        throw new Error(response.data.message || "Upload failed");
       }
-    } catch (error: any) {
-      toast.dismiss(toastId);
-
-      console.error("Upload error:", error);
-
-      // Check specific error conditions
-      if (error.response) {
-        // YouTube authentication error
-        if (error.response.data?.require_auth) {
-          toast.error(
-            "YouTube authentication required. Please connect your account first."
-          );
-          // Show the YouTube connect button
-          setIsYouTubeConnected(false);
-        }
-        // Session authentication error
-        else if (
-          error.response.status === 401 ||
-          error.response.status === 403
-        ) {
-          toast.error("Session expired. Please log in again.");
-          localStorage.removeItem("token");
-          navigate("/auth");
-        }
-        // Other server errors
-        else {
-          toast.error(
-            error.response.data?.message || "Server error. Please try again."
-          );
-        }
-      } else if (error.request) {
-        // No response received
-        toast.error("No response from server. Please check your connection.");
-      } else {
-        // Error in request setup
-        toast.error("Error sending request. Please try again.");
-      }
+    } catch (error) {
+      console.error("Error uploading to YouTube:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to upload video to YouTube"
+      );
     } finally {
       setUploading(null);
-      // Reset upload form
       setUploadData({
         title: "",
         description: "",

@@ -6,6 +6,7 @@ import DurationSlider from "./DurationSlider";
 import BackgroundSelector from "./BackgroundSelector";
 import GeneratingAnimation from "./GeneratingAnimation";
 import { toast } from "sonner";
+import { getAPIBaseURL } from "@/lib/socket";
 import {
   Tooltip,
   TooltipContent,
@@ -116,10 +117,24 @@ const CreateForm = () => {
         formData.append("background_file", backgroundFile);
       }
 
-      // Start the video generation process
-      const response = await fetch("http://localhost:4000/api/generate-short", {
+      // Get authentication token
+      const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error(
+          "You need to be logged in to create videos. Please log in and try again."
+        );
+        setIsGenerating(false);
+        navigate("/auth");
+        return;
+      }
+
+      // Start the video generation process with authentication
+      const response = await fetch(`${getAPIBaseURL()}/api/generate-short`, {
         method: "POST",
         body: formData,
+        headers: {
+          "x-access-token": token,
+        },
       });
 
       if (!response.ok) {
@@ -142,9 +157,12 @@ const CreateForm = () => {
         const checkInterval = setInterval(async () => {
           try {
             const statusResponse = await fetch(
-              `http://localhost:4000/api/video-status/${data.video.id}`,
+              `${getAPIBaseURL()}/api/video-status/${data.video.id}`,
               {
                 method: "GET",
+                headers: {
+                  "x-access-token": token,
+                },
               }
             );
 
@@ -192,22 +210,33 @@ const CreateForm = () => {
   };
 
   const handleGenerationComplete = () => {
-    // This is now just a fallback if the polling doesn't work
+    // Ensure the video data is available
     if (!videoData) {
       toast.info(
         "Video processing may still be in progress. Check the gallery later."
       );
     }
-    setIsGenerating(false);
-    setIsGenerated(true);
-    // Automatically redirect to gallery after 2 seconds
-    setTimeout(() => {
-      navigate("/gallery");
-    }, 2000);
+
+    // Clear any polling intervals
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      setPollInterval(null);
+    }
+
+    // Navigate to gallery
+    navigateToGallery();
   };
 
   const navigateToGallery = () => {
-    navigate("/gallery");
+    setIsGenerating(false);
+    setIsGenerated(true);
+
+    toast.success("Video generated successfully!");
+
+    // Redirect to gallery page to see the video
+    setTimeout(() => {
+      navigate("/gallery");
+    }, 500);
   };
 
   return (
@@ -261,10 +290,10 @@ const CreateForm = () => {
 
             <h2 className="text-2xl font-medium">Your Short is Ready!</h2>
 
-            <div className="aspect-[9/16] rounded-lg overflow-hidden bg-black flex items-center justify-center">
+            <div className="aspect-[9/16] max-w-[280px] mx-auto rounded-lg overflow-hidden bg-black flex items-center justify-center">
               {videoData ? (
                 <video
-                  src={`http://localhost:4000/gallery/${videoData.filename}`}
+                  src={`${getAPIBaseURL()}/gallery/${videoData.filename}`}
                   controls
                   autoPlay
                   className="w-full h-full object-contain"
@@ -279,13 +308,46 @@ const CreateForm = () => {
             <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
               {videoData && (
                 <Button
-                  onClick={() => {
-                    const link = document.createElement("a");
-                    link.href = `http://localhost:4000/gallery/${videoData.filename}`;
-                    link.download = videoData.filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
+                  onClick={async () => {
+                    try {
+                      // Get authentication token
+                      const token = localStorage.getItem("token");
+                      if (!token) {
+                        toast.error("Authentication required to download");
+                        return;
+                      }
+
+                      // Use the download API which handles authentication
+                      const response = await fetch(
+                        `${getAPIBaseURL()}/api/download/${videoData.id}`,
+                        {
+                          headers: {
+                            "x-access-token": token,
+                          },
+                        }
+                      );
+
+                      if (!response.ok) {
+                        throw new Error("Failed to download video");
+                      }
+
+                      const blob = await response.blob();
+                      const url = URL.createObjectURL(blob);
+
+                      // Create download link
+                      const link = document.createElement("a");
+                      link.href = url;
+                      link.download = videoData.filename;
+                      document.body.appendChild(link);
+                      link.click();
+                      link.remove();
+                      URL.revokeObjectURL(url);
+
+                      toast.success("Download started!");
+                    } catch (error) {
+                      console.error("Download error:", error);
+                      toast.error("Failed to download video");
+                    }
                   }}
                 >
                   Download

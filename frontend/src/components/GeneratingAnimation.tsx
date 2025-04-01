@@ -1,6 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Logo from "./Logo";
-import { subscribeToProgress, unsubscribeFromProgress } from "@/lib/socket";
+import {
+  subscribeToProgress,
+  unsubscribeFromProgress,
+  getAPIBaseURL,
+} from "@/lib/socket";
+import axios from "axios";
 
 interface GeneratingAnimationProps {
   duration: number;
@@ -18,6 +23,8 @@ const GeneratingAnimation = ({
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
   const [usingWebSocket, setUsingWebSocket] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   const generationSteps = [
     { name: "Analyzing prompt", threshold: 10 },
@@ -27,6 +34,66 @@ const GeneratingAnimation = ({
     { name: "Applying effects", threshold: 85 },
     { name: "Finalizing", threshold: 95 },
   ];
+
+  // Function to check video status directly from the API
+  const checkVideoStatus = useCallback(async () => {
+    if (!videoId) return;
+
+    try {
+      // Get authentication token
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("Authentication token missing");
+        return false;
+      }
+
+      const response = await axios.get(
+        `${getAPIBaseURL()}/api/video-status/${videoId}`,
+        {
+          headers: {
+            "x-access-token": token,
+          },
+        }
+      );
+
+      if (response.data.status === "completed") {
+        // Video is complete, trigger completion
+        setProgress(100);
+        setIsCompleted(true);
+        return true;
+      } else if (response.data.progress) {
+        // Update progress
+        setProgress(response.data.progress);
+      }
+      return false;
+    } catch (error) {
+      console.error("Error checking video status:", error);
+      return false;
+    }
+  }, [videoId]);
+
+  // Set up polling for completion status as a fallback
+  useEffect(() => {
+    if (isCompleted || !videoId) return;
+
+    // Start polling for video status
+    const interval = setInterval(async () => {
+      const isComplete = await checkVideoStatus();
+      if (isComplete) {
+        // Clear interval if complete
+        clearInterval(interval);
+        if (!isCompleted) {
+          setIsCompleted(true);
+        }
+      }
+    }, 3000); // Check every 3 seconds
+
+    setPollInterval(interval);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [videoId, isCompleted, checkVideoStatus]);
 
   // Connect to WebSocket for progress updates if videoId is provided
   useEffect(() => {
@@ -50,7 +117,7 @@ const GeneratingAnimation = ({
 
         // Complete when progress is 100%
         if (updatedProgress >= 100) {
-          onComplete();
+          setIsCompleted(true);
         }
       });
 
@@ -59,31 +126,56 @@ const GeneratingAnimation = ({
         unsubscribeFromProgress(videoId);
       };
     }
-  }, [videoId, currentStep, onComplete]);
+  }, [videoId, currentStep, generationSteps]);
+
+  // Effect to trigger onComplete when isCompleted changes
+  useEffect(() => {
+    if (isCompleted) {
+      // Wait a moment to allow UI to show 100% before redirecting
+      const completeTimer = setTimeout(() => {
+        onComplete();
+      }, 1500);
+
+      return () => clearTimeout(completeTimer);
+    }
+  }, [isCompleted, onComplete]);
 
   // Fallback timer-based progress when WebSocket is not available
   useEffect(() => {
-    if (usingWebSocket || !duration) return;
+    if (usingWebSocket || !duration || isCompleted) return;
 
     if (timeLeft <= 0) {
-      onComplete();
+      // Check one last time for completion status
+      checkVideoStatus().then((isComplete) => {
+        if (!isComplete) {
+          // If not complete yet, show 99% but don't redirect
+          setProgress(99);
+        }
+      });
       return;
     }
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => Math.max(0, prev - 1));
-      // Calculate progress as a percentage of elapsed time
+      // Calculate progress as a percentage of elapsed time - max out at 95% for timer-based updates
       const elapsedTime = duration - timeLeft + 1;
-      const calculatedProgress = Math.min(99, (elapsedTime / duration) * 100);
+      const calculatedProgress = Math.min(95, (elapsedTime / duration) * 100);
       setProgress(calculatedProgress);
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft, onComplete, duration, usingWebSocket]);
+  }, [
+    timeLeft,
+    onComplete,
+    duration,
+    usingWebSocket,
+    isCompleted,
+    checkVideoStatus,
+  ]);
 
   // Update steps based on time-based progress
   useEffect(() => {
-    if (usingWebSocket) return;
+    if (usingWebSocket || isCompleted) return;
 
     const stepTimer = setInterval(() => {
       const progressPercentage = ((duration - timeLeft) / duration) * 100;
@@ -102,7 +194,14 @@ const GeneratingAnimation = ({
     }, 1000);
 
     return () => clearInterval(stepTimer);
-  }, [timeLeft, currentStep, duration, usingWebSocket]);
+  }, [
+    timeLeft,
+    currentStep,
+    duration,
+    usingWebSocket,
+    generationSteps,
+    isCompleted,
+  ]);
 
   // Animated dots
   useEffect(() => {
@@ -115,6 +214,13 @@ const GeneratingAnimation = ({
 
     return () => clearInterval(dotTimer);
   }, []);
+
+  // Clean up intervals on unmount
+  useEffect(() => {
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [pollInterval]);
 
   return (
     <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex items-center justify-center">
@@ -163,11 +269,15 @@ const GeneratingAnimation = ({
 
             <div className="space-y-2">
               <h3 className="text-2xl font-semibold">
-                {generationSteps[currentStep]?.name}
-                {dots}
+                {progress >= 100
+                  ? "Complete!"
+                  : generationSteps[currentStep]?.name}
+                {progress < 100 && dots}
               </h3>
               <p className="text-foreground/70">
-                Creating your YouTube Short. This process takes a moment.
+                {progress >= 100
+                  ? "Your YouTube Short is ready! Redirecting to gallery..."
+                  : "Creating your YouTube Short. This process takes a moment."}
               </p>
             </div>
 
@@ -188,7 +298,7 @@ const GeneratingAnimation = ({
                       : "border-border text-foreground/60"
                   }`}
                 >
-                  {index === currentStep && (
+                  {index === currentStep && progress < 100 && (
                     <div className="flex items-center space-x-1">
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -197,7 +307,7 @@ const GeneratingAnimation = ({
                       <span>{step.name}</span>
                     </div>
                   )}
-                  {index !== currentStep && step.name}
+                  {(index !== currentStep || progress >= 100) && step.name}
                 </div>
               ))}
             </div>

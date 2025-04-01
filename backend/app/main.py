@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import shutil
 from functools import wraps
+import requests
 
 from automation.shorts_main import generate_youtube_short
 from automation.youtube_upload import upload_video, get_authenticated_service, check_auth_status
@@ -120,7 +121,8 @@ def login():
 
 # Generate YouTube Short
 @app.route('/api/generate-short', methods=['POST'])
-def generate_short():
+@token_required
+def generate_short(current_user):
     try:
         # Extract form data
         prompt = request.form.get('prompt', 'latest AI news')
@@ -140,7 +142,7 @@ def generate_short():
             background_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             background_file.save(background_path)
 
-        # Create a video entry with 'processing' status
+        # Create a video entry with 'processing' status and link to user account
         video_data = {
             'original_prompt': prompt,
             'duration': duration,
@@ -149,7 +151,8 @@ def generate_short():
             'status': 'processing',  # Add status field
             'progress': 0,  # Add progress field
             'uploaded_to_yt': False,
-            'youtube_id': None
+            'youtube_id': None,
+            'user_id': str(current_user['_id'])  # Link video to user account
         }
 
         # Insert into database and get ID
@@ -185,9 +188,25 @@ def generate_short():
                         'status': 'completed',
                         'progress': 100,
                         'filename': filename,
-                        'path': gallery_path
+                        'path': gallery_path,
+                        'user_id': str(current_user['_id'])  # Ensure user ID is set in the final update
                     }}
                 )
+
+                # Notify frontend that generation is complete (attempt to call frontend's callback URL)
+                try:
+                    # Extract origin from request headers to build callback URL
+                    origin = request.headers.get('Origin', 'http://localhost:3500')
+                    # Make a POST request to the frontend callback URL
+                    callback_url = f"{origin}/api/generation-complete-callback/{video_id}"
+                    requests.post(callback_url, json={
+                        'status': 'success',
+                        'video_id': str(video_id),
+                        'filename': filename
+                    }, timeout=5)
+                except Exception as callback_error:
+                    logger.error(f"Failed to notify frontend of completion: {callback_error}")
+                    # Continue even if notification fails
 
             except Exception as e:
                 logger.error(f"Error in background processing: {e}")
@@ -219,10 +238,14 @@ def generate_short():
 
 # Check video status
 @app.route('/api/video-status/<video_id>', methods=['GET'])
-def check_video_status(video_id):
+@token_required
+def check_video_status(current_user, video_id):
     try:
         # Find the video
-        video = videos_collection.find_one({'_id': ObjectId(video_id)})
+        video = videos_collection.find_one({
+            '_id': ObjectId(video_id),
+            'user_id': str(current_user['_id'])  # Ensure video belongs to current user
+        })
 
         if not video:
             return jsonify({"status": "error", "message": "Video not found"}), 404
@@ -248,36 +271,41 @@ def check_video_status(video_id):
         logger.error(f"Error checking video status: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Get User's Videos
+# Get Gallery (ensure to filter by user ID)
 @app.route('/api/gallery', methods=['GET'])
-def get_gallery():
+@token_required
+def get_gallery(current_user):
     try:
-        videos = list(videos_collection.find(
-            {'status': 'completed'},  # Only show completed videos
-            {'path': 0}  # Don't include full path in response
-        ).sort('created_at', -1))
+        # Get all completed videos for the current user
+        videos = list(videos_collection.find({
+            'status': 'completed',
+            'user_id': str(current_user['_id'])  # Filter by user ID
+        }).sort('created_at', -1))
 
-        # Convert ObjectId and datetime to strings
+        # Convert ObjectId to string for JSON serialization
         for video in videos:
             video['id'] = str(video['_id'])
-            del video['_id']
-            if 'created_at' in video:
-                video['created_at'] = video['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-            if 'uploaded_at' in video and video['uploaded_at']:
-                video['uploaded_at'] = video['uploaded_at'].strftime('%Y-%m-%d %H:%M:%S')
+            video.pop('_id', None)
 
-        return jsonify({"status": "success", "videos": videos})
-
+        return jsonify({
+            'status': 'success',
+            'videos': videos
+        })
     except Exception as e:
         logger.error(f"Error fetching gallery: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 # Download Video
 @app.route('/api/download/<video_id>', methods=['GET'])
-def download_video(video_id):
+@token_required
+def download_video(current_user, video_id):
     try:
         video = videos_collection.find_one({
-            '_id': ObjectId(video_id)
+            '_id': ObjectId(video_id),
+            'user_id': str(current_user['_id'])  # Ensure video belongs to current user
         })
 
         if not video or video.get('status') != 'completed' or not os.path.exists(video.get('path', '')):
@@ -487,7 +515,7 @@ def delete_video(current_user, video_id):
 def delete_video_compatibility(current_user, video_id):
     return delete_video(current_user, video_id)
 
-# Serve gallery videos
+# Serve gallery videos - No auth required for direct viewing
 @app.route('/gallery/<filename>', methods=['GET'])
 def serve_gallery_file(filename):
     try:
@@ -504,6 +532,41 @@ def serve_gallery_file(filename):
     except Exception as e:
         logger.error(f"Error serving gallery file: {e}")
         return jsonify({"status": "error", "message": str(e)}), 404
+
+# Add a new endpoint to notify frontend when video generation is complete
+@app.route('/api/notify-generation-complete/<video_id>', methods=['POST'])
+def notify_generation_complete(video_id):
+    try:
+        # Update the video status to mark it as complete
+        video = videos_collection.find_one({'_id': ObjectId(video_id)})
+
+        # If video doesn't exist or is already completed, return success
+        if not video or video.get('status') == 'completed':
+            return jsonify({
+                'status': 'success',
+                'message': 'Video already marked as complete'
+            })
+
+        # Update the status
+        videos_collection.update_one(
+            {'_id': ObjectId(video_id)},
+            {'$set': {
+                'status': 'completed',
+                'progress': 100
+            }}
+        )
+
+        # Return success
+        return jsonify({
+            'status': 'success',
+            'message': 'Video marked as complete'
+        })
+    except Exception as e:
+        logger.error(f"Error notifying generation complete: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=4000, debug=True)

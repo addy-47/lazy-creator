@@ -55,6 +55,20 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
     e.stopPropagation();
   };
 
+  // Handle YouTube upload option click - only show upload form if YouTube is connected
+  const handleYouTubeOptionClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (isUploaded && youtubeId) {
+      onOpenYouTube(youtubeId);
+    } else if (isYouTubeConnected) {
+      onShowUploadForm();
+    } else {
+      onConnectYouTube();
+    }
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

@@ -211,17 +211,18 @@ def generate_youtube_short(topic, max_duration, background_type, background_sour
 
         )
 
-        # Optional: YouTube Upload
-        if os.getenv("ENABLE_YOUTUBE_UPLOAD", "false").lower() == "true":
-            logger.info("Uploading to YouTube")
-            youtube = get_authenticated_service()
-            upload_video(
-                youtube,
-                video_path,
-                f"AI Short: {topic}",
-                f"Explore {topic} in this quick AI-generated Short! {' '.join(['#' + kw for kw in overall_keywords[:5]])}",
-                ["shorts", "ai", "technology"]
-            )
+        # Optional: YouTube Upload - Disabled to prevent automatic uploads
+        # Users should explicitly request upload through the UI
+        # if os.getenv("ENABLE_YOUTUBE_UPLOAD", "false").lower() == "true":
+        #     logger.info("Uploading to YouTube")
+        #     youtube = get_authenticated_service()
+        #     upload_video(
+        #         youtube,
+        #         video_path,
+        #         f"AI Short: {topic}",
+        #         f"Explore {topic} in this quick AI-generated Short! {' '.join(['#' + kw for kw in overall_keywords[:5]])}",
+        #         ["shorts", "ai", "technology"]
+        #     )
 
         return video_path
 
