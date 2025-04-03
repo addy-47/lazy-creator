@@ -1,6 +1,6 @@
 import { useState, useEffect, useReducer } from "react";
 import { NavLink } from "react-router-dom";
-import { Menu, X, Sun, Moon, LogIn, User } from "lucide-react";
+import { Menu, X, Sun, Moon, LogIn, User, Youtube } from "lucide-react";
 import { Button } from "./Button";
 import Logo from "./Logo";
 import { AUTH_CHANGE_EVENT } from "../App";
@@ -170,7 +170,10 @@ const Navbar = ({ username }: NavbarProps) => {
             to="/"
             className="text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
           >
-            LazyCreator
+            <span>Lazy</span>
+            <span className="text-purple-600 dark:text-purple-400">
+              Creator
+            </span>
           </NavLink>
         </div>
 
@@ -183,7 +186,7 @@ const Navbar = ({ username }: NavbarProps) => {
                 to={item.path}
                 className={({ isActive }) =>
                   isActive
-                    ? "font-medium text-primary"
+                    ? "font-medium text-purple-600 dark:text-purple-400"
                     : "text-foreground/80 hover:text-foreground transition-colors"
                 }
               >
@@ -200,24 +203,51 @@ const Navbar = ({ username }: NavbarProps) => {
                 isDarkMode ? "Switch to light mode" : "Switch to dark mode"
               }
             >
-              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+              {isDarkMode ? (
+                <Sun className="h-5 w-5" />
+              ) : (
+                <Moon className="h-5 w-5" />
+              )}
             </button>
 
             {displayUsername ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10">
-                  <User size={16} className="text-primary" />
-                  <span className="text-sm font-medium">{displayUsername}</span>
+              <div className="flex items-center space-x-4">
+                <NavLink to="/create" className="flex items-center">
+                  <Button variant="purple" size="sm" className="rounded-full">
+                    <div className="flex items-center space-x-2">
+                      <Youtube size={16} />
+                      <span className="hidden lg:inline">Connect YouTube</span>
+                    </div>
+                  </Button>
+                </NavLink>
+                <div className="relative group">
+                  <button className="flex items-center gap-2 py-1 px-3 rounded-full bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-800/60 transition-colors">
+                    <User className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm font-medium">
+                      {displayUsername}
+                    </span>
+                  </button>
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
+                      Sign out
+                    </button>
+                  </div>
                 </div>
-                <Button variant="ghost" size="sm" onClick={handleSignOut}>
-                  Sign Out
-                </Button>
               </div>
             ) : (
               <NavLink to="/auth">
-                <Button size="default" className="flex items-center gap-2">
-                  <LogIn size={18} />
-                  Sign In
+                <Button
+                  variant="purple"
+                  size="sm"
+                  className="rounded-full px-4 py-2 h-9"
+                >
+                  <div className="flex items-center space-x-2">
+                    <LogIn size={16} />
+                    <span>Sign In</span>
+                  </div>
                 </Button>
               </NavLink>
             )}
@@ -225,70 +255,90 @@ const Navbar = ({ username }: NavbarProps) => {
         </div>
 
         {/* Mobile Navigation Toggle */}
-        <div className="flex items-center space-x-4 md:hidden">
-          <button
-            onClick={toggleDarkMode}
-            className="p-2 rounded-full hover:bg-accent transition-colors"
-            aria-label={
-              isDarkMode ? "Switch to light mode" : "Switch to dark mode"
-            }
-          >
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
-
-          <button
-            className="p-2 rounded-md hover:bg-accent transition-colors"
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            aria-label="Toggle menu"
-          >
-            {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
-        </div>
+        <button
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+        >
+          {isMenuOpen ? (
+            <X className="h-6 w-6" />
+          ) : (
+            <Menu className="h-6 w-6" />
+          )}
+        </button>
       </div>
 
       {/* Mobile Navigation Menu */}
       {isMenuOpen && (
-        <div className="fixed inset-0 top-16 z-40 bg-background animate-fade-in md:hidden">
-          <div className="flex flex-col space-y-4 pt-8 px-6">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.name}
-                to={item.path}
-                className={({ isActive }) =>
-                  `py-2 text-lg ${
-                    isActive
-                      ? "font-medium text-primary"
-                      : "text-foreground/80 hover:text-foreground"
-                  }`
-                }
-                onClick={() => setIsMenuOpen(false)}
+        <div className="md:hidden bg-white dark:bg-gray-900 shadow-lg">
+          <div className="container-wide py-4 space-y-4">
+            <div className="flex flex-col space-y-2">
+              {navItems.map((item) => (
+                <NavLink
+                  key={item.name}
+                  to={item.path}
+                  onClick={() => setIsMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `px-4 py-2 rounded-lg ${
+                      isActive
+                        ? "font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20"
+                        : "hover:bg-gray-100 dark:hover:bg-gray-800"
+                    }`
+                  }
+                >
+                  {item.name}
+                </NavLink>
+              ))}
+            </div>
+
+            <hr className="border-gray-200 dark:border-gray-800" />
+
+            <div className="flex flex-col space-y-3 px-4">
+              <button
+                onClick={toggleDarkMode}
+                className="flex items-center gap-3 py-2"
               >
-                {item.name}
-              </NavLink>
-            ))}
-            <div className="pt-4">
+                {isDarkMode ? (
+                  <div className="flex items-center space-x-2">
+                    <Sun className="h-5 w-5" />
+                    <span>Switch to Light Mode</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <Moon className="h-5 w-5" />
+                    <span>Switch to Dark Mode</span>
+                  </div>
+                )}
+              </button>
+
               {displayUsername ? (
                 <>
-                  <div className="flex items-center gap-2 mb-3 py-2">
-                    <User size={18} className="text-primary" />
-                    <span className="font-medium">{displayUsername}</span>
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="flex items-center space-x-2">
+                      <User className="h-5 w-5" />
+                      <span>{displayUsername}</span>
+                    </div>
                   </div>
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    onClick={() => {
-                      handleSignOut();
-                      setIsMenuOpen(false);
-                    }}
+                  <button
+                    onClick={handleSignOut}
+                    className="flex items-center gap-3 py-2 text-red-600"
                   >
-                    Sign Out
-                  </Button>
+                    <div className="flex items-center space-x-2">
+                      <LogIn className="h-5 w-5" />
+                      <span>Sign Out</span>
+                    </div>
+                  </button>
                 </>
               ) : (
-                <NavLink to="/auth" onClick={() => setIsMenuOpen(false)}>
-                  <Button className="w-full" size="lg">
-                    Sign In
-                  </Button>
+                <NavLink
+                  to="/auth"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center gap-3 py-2"
+                >
+                  <div className="flex items-center space-x-2">
+                    <LogIn className="h-5 w-5" />
+                    <span>Sign In</span>
+                  </div>
                 </NavLink>
               )}
             </div>
