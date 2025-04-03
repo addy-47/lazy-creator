@@ -11,6 +11,7 @@ import jwt
 import shutil
 from functools import wraps
 import requests
+import re
 
 from automation.shorts_main import generate_youtube_short
 from automation.youtube_upload import upload_video, get_authenticated_service, check_auth_status
@@ -567,6 +568,209 @@ def notify_generation_complete(video_id):
             'status': 'error',
             'message': str(e)
         }), 500
+
+# Add this new endpoint after an existing YouTube-related endpoint
+@app.route('/api/youtube-trending-shorts', methods=['GET'])
+@token_required
+def get_youtube_trending_shorts(current_user):
+    try:
+        # Get authenticated YouTube client
+        youtube = get_authenticated_service(current_user['email'])
+
+        if not youtube:
+            # If not authenticated, return demo data instead of error
+            logger.info("User not authenticated for YouTube API, returning demo trending shorts")
+            return jsonify({
+                "status": "success",
+                "shorts": [
+                    {
+                        'id': 'demo1',
+                        'title': 'Trending Short #1',
+                        'thumbnail': f"{request.host_url}demo/demo1.mp4",
+                        'channel': 'Demo Channel',
+                        'views': '250000',
+                        'likes': '15000',
+                    },
+                    {
+                        'id': 'demo2',
+                        'title': 'Trending Short #2',
+                        'thumbnail': f"{request.host_url}demo/demo2.mp4",
+                        'channel': 'Demo Channel 2',
+                        'views': '550000',
+                        'likes': '45000',
+                    },
+                    {
+                        'id': 'demo3',
+                        'title': 'Trending Short #3',
+                        'thumbnail': f"{request.host_url}demo/demo3.mp4",
+                        'channel': 'Demo Channel 3',
+                        'views': '1250000',
+                        'likes': '85000',
+                    },
+                    {
+                        'id': 'demo4',
+                        'title': 'Trending Short #4',
+                        'thumbnail': f"{request.host_url}demo/demo4.mp4",
+                        'channel': 'Demo Channel 4',
+                        'views': '750000',
+                        'likes': '65000',
+                    },
+                    {
+                        'id': 'demo5',
+                        'title': 'Trending Short #5',
+                        'thumbnail': f"{request.host_url}demo/demo5.mp4",
+                        'channel': 'Demo Channel 5',
+                        'views': '1450000',
+                        'likes': '95000',
+                    },
+                    {
+                        'id': 'demo6',
+                        'title': 'Trending Short #6',
+                        'thumbnail': f"{request.host_url}demo/demo6.mp4",
+                        'channel': 'Demo Channel 6',
+                        'views': '350000',
+                        'likes': '25000',
+                    }
+                ],
+                "requires_auth": True
+            })
+
+        # Fetch trending shorts from YouTube
+        # Use videoCategoryId=26 for "Howto & Style" which often contains shorts
+        trending_request = youtube.videos().list(
+            part="snippet,statistics,contentDetails",
+            chart="mostPopular",
+            regionCode="US",
+            maxResults=20,
+            videoCategoryId="26"
+        )
+        trending_response = trending_request.execute()
+
+        # Filter for shorts (vertical videos typically under 60 seconds)
+        shorts = []
+        for item in trending_response.get('items', []):
+            # Parse duration to check if it's a short
+            duration = item['contentDetails']['duration']
+            # Convert ISO 8601 duration to seconds
+            duration_seconds = parse_duration(duration)
+
+            # Check if it's likely a short (vertical, short duration)
+            if duration_seconds <= 60:
+                video_id = item['id']
+                snippet = item['snippet']
+                statistics = item['statistics']
+
+                shorts.append({
+                    'id': video_id,
+                    'title': snippet.get('title', ''),
+                    'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', ''),
+                    'channel': snippet.get('channelTitle', ''),
+                    'views': statistics.get('viewCount', '0'),
+                    'likes': statistics.get('likeCount', '0'),
+                    'published_at': snippet.get('publishedAt', '')
+                })
+
+        # If we don't have enough shorts, try another category
+        if len(shorts) < 10:
+            # Try "Entertainment" category (id=24)
+            entertainment_request = youtube.videos().list(
+                part="snippet,statistics,contentDetails",
+                chart="mostPopular",
+                regionCode="US",
+                maxResults=15,
+                videoCategoryId="24"
+            )
+            entertainment_response = entertainment_request.execute()
+
+            for item in entertainment_response.get('items', []):
+                # Skip if we already have this video
+                if any(short['id'] == item['id'] for short in shorts):
+                    continue
+
+                duration = item['contentDetails']['duration']
+                duration_seconds = parse_duration(duration)
+
+                if duration_seconds <= 60:
+                    video_id = item['id']
+                    snippet = item['snippet']
+                    statistics = item['statistics']
+
+                    shorts.append({
+                        'id': video_id,
+                        'title': snippet.get('title', ''),
+                        'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url', ''),
+                        'channel': snippet.get('channelTitle', ''),
+                        'views': statistics.get('viewCount', '0'),
+                        'likes': statistics.get('likeCount', '0'),
+                        'published_at': snippet.get('publishedAt', '')
+                    })
+
+                    # Break if we have enough shorts
+                    if len(shorts) >= 20:
+                        break
+
+        return jsonify({
+            "status": "success",
+            "shorts": shorts
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching trending shorts: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Helper function to parse ISO 8601 duration to seconds
+def parse_duration(duration_str):
+    """Convert ISO 8601 duration string to seconds"""
+    match = re.search(r'PT(\d+H)?(\d+M)?(\d+S)?', duration_str)
+    if not match:
+        return 0
+
+    hours = match.group(1)
+    minutes = match.group(2)
+    seconds = match.group(3)
+
+    hours = int(hours[:-1]) if hours else 0
+    minutes = int(minutes[:-1]) if minutes else 0
+    seconds = int(seconds[:-1]) if seconds else 0
+
+    return hours * 3600 + minutes * 60 + seconds
+
+# Add this route to serve demo videos
+@app.route('/demo/<filename>')
+def serve_demo(filename):
+    try:
+        # Define path to demo videos directory
+        demo_dir = os.path.join(app.root_path, 'demo')
+
+        # Create the directory if it doesn't exist
+        if not os.path.exists(demo_dir):
+            os.makedirs(demo_dir, exist_ok=True)
+
+            # Copy some sample videos from gallery to demo folder if available
+            gallery_dir = os.path.join(app.root_path, 'gallery')
+            if os.path.exists(gallery_dir):
+                video_files = [f for f in os.listdir(gallery_dir) if f.endswith('.mp4')][:6]
+
+                for i, video_file in enumerate(video_files):
+                    try:
+                        target_file = os.path.join(demo_dir, f"demo{i+1}.mp4")
+                        if not os.path.exists(target_file):
+                            shutil.copy(
+                                os.path.join(gallery_dir, video_file),
+                                target_file
+                            )
+                    except Exception as e:
+                        logger.error(f"Error copying demo file {video_file}: {e}")
+
+        # Check if the requested file exists
+        requested_file = os.path.join(demo_dir, filename)
+        if not os.path.exists(requested_file):
+            return jsonify({"status": "error", "message": f"Demo file {filename} not found"}), 404
+
+        return send_from_directory(demo_dir, filename)
+    except Exception as e:
+        logger.error(f"Error serving demo video: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=4000, debug=True)
