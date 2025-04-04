@@ -2,3 +2,224 @@ common cmds
 cd .\lazy-creator\frontend; npm run dev
 cd .\lazy-creator\backend\app; python main.py
 cd .\lazy-creator;mongod --dbpath "E:\MongoDBData"
+
+# GCP Deployment Roadmap for Lazy Creator App
+
+## Overview
+- Backend: Python Flask API → Google Cloud Run
+- Frontend: React SPA → Google App Engine (Standard Environment)
+- Database: MongoDB → MongoDB Atlas with VPC peering to GCP
+
+## 1. Prerequisites
+- GCP Account set up with billing enabled
+- gcloud CLI installed and configured
+- Docker installed locally
+- GitHub/GitLab repository for CI/CD (optional)
+
+## 2. Database Setup (MongoDB Atlas)
+1. Create MongoDB Atlas account
+2. Create a new project and deploy a MongoDB cluster (M10 or higher for production)
+3. Configure network access:
+   - Whitelist GCP IP ranges
+   - Set up VPC peering between MongoDB Atlas and your GCP project
+4. Create database user with proper access rights
+5. Obtain MongoDB connection string
+
+## 3. Backend Deployment (Cloud Run)
+
+### a. Backend Dockerfile Review
+The existing Dockerfile looks good but requires some modifications:
+```
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    git \
+    portaudio19-dev \
+    python3-dev \
+    gcc \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Download NLTK data
+RUN python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
+
+# Create necessary directories
+RUN mkdir -p ./ai_shorts_output ./fonts ./ffmpeg
+
+COPY . .
+
+# Cloud Run specific: Use $PORT environment variable
+ENV PORT 8080
+
+# Configure MongoDB connection
+ENV MONGO_URI="mongodb+srv://USERNAME:PASSWORD@cluster.mongodb.net/youtube_shorts_db"
+
+# Command to run the application
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app.main:app
+```
+
+### b. Backend Deployment Steps
+1. Update the Dockerfile as shown above
+2. Add gunicorn to requirements.txt
+3. Create a Cloud Storage bucket for media files
+4. Modify code to use Cloud Storage instead of local file storage
+5. Deploy to Cloud Run:
+   ```
+   cd backend
+   gcloud builds submit --tag gcr.io/[PROJECT_ID]/lazy-creator-backend
+   gcloud run deploy lazy-creator-backend \
+     --image gcr.io/[PROJECT_ID]/lazy-creator-backend \
+     --platform managed \
+     --allow-unauthenticated \
+     --memory 2Gi \
+     --cpu 2 \
+     --region [REGION] \
+     --set-env-vars="MONGO_URI=mongodb+srv://[USERNAME]:[PASSWORD]@[CLUSTER]/youtube_shorts_db"
+   ```
+
+## 4. Frontend Deployment (App Engine)
+
+### a. Create app.yaml file
+```yaml
+runtime: nodejs18
+service: default
+instance_class: F2
+
+handlers:
+  - url: /static
+    static_dir: dist/static
+    secure: always
+
+  - url: /(.*\.(json|ico|js|css|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot))
+    static_files: dist/\1
+    upload: dist/.*\.(json|ico|js|css|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot)
+    secure: always
+
+  - url: /.*
+    static_files: dist/index.html
+    upload: dist/index.html
+    secure: always
+
+env_variables:
+  VITE_API_URL: "https://lazy-creator-backend-[HASH].run.app/api"
+```
+
+### b. Modify Frontend Configuration
+1. Create .env.production file with backend API URL:
+   ```
+   VITE_API_URL=https://lazy-creator-backend-[HASH].run.app/api
+   ```
+
+### c. Frontend Deployment Steps
+1. Build the frontend:
+   ```
+   cd frontend
+   npm install
+   npm run build
+   ```
+2. Deploy to App Engine:
+   ```
+   gcloud app deploy app.yaml --project [PROJECT_ID]
+   ```
+
+## 5. Setting up Cloud Storage
+
+1. Create buckets for different storage needs:
+   ```
+   gcloud storage buckets create gs://[PROJECT_ID]-uploads --location=[REGION]
+   gcloud storage buckets create gs://[PROJECT_ID]-gallery --location=[REGION]
+   ```
+
+2. Update backend code to use Cloud Storage instead of local storage:
+   - Install google-cloud-storage: `pip install google-cloud-storage`
+   - Modify file upload/download logic to use Cloud Storage buckets
+   - Update video generation logic to work with Cloud Storage paths
+
+## 6. Security & Environment Configuration
+
+1. Set up Secret Manager for sensitive information:
+   ```
+   gcloud secrets create mongodb-uri --data-file=./mongodb-uri.txt
+   gcloud secrets create news-api-key --data-file=./news-api-key.txt
+   gcloud secrets create pexels-api-key --data-file=./pexels-api-key.txt
+   gcloud secrets create pixabay-api-key --data-file=./pixabay-api-key.txt
+   ```
+
+2. Grant Cloud Run service account access to secrets:
+   ```
+   gcloud secrets add-iam-policy-binding mongodb-uri \
+     --member=serviceAccount:service-[PROJECT_NUMBER]@gcp-sa-cloudrun.iam.gserviceaccount.com \
+     --role=roles/secretmanager.secretAccessor
+   ```
+
+## 7. Setting up Domain and SSL
+
+1. Configure custom domain in App Engine:
+   ```
+   gcloud app domain-mappings create www.yourdomain.com
+   ```
+
+2. Set up SSL certificate:
+   ```
+   gcloud app domain-mappings update www.yourdomain.com --certificate-id=[CERT_ID]
+   ```
+
+## 8. Monitoring and Logging
+
+1. Set up Cloud Monitoring:
+   ```
+   gcloud monitoring dashboards create --config-from-file=dashboard.json
+   ```
+
+2. Configure alerts for backend errors:
+   ```
+   gcloud alpha monitoring channels create --display-name="Email Alerts" --type=email --email-address=you@example.com
+   ```
+
+## 9. CI/CD Setup (Optional)
+
+1. Create Cloud Build triggers for automatic deployment:
+   ```
+   gcloud builds triggers create github \
+     --repo-name=[REPO_NAME] \
+     --branch-pattern=main \
+     --build-config=cloudbuild.yaml
+   ```
+
+2. Create cloudbuild.yaml with separate steps for backend and frontend deployment
+
+## 10. Cost Optimization
+
+1. Set up budget alerts:
+   ```
+   gcloud billing budgets create --billing-account=[BILLING_ACCOUNT_ID] \
+     --display-name="Monthly Budget" \
+     --budget-amount=500 \
+     --threshold-rule=percent=80,basis=current-spend
+   ```
+
+2. Consider using Cloud Run min instances=0 to reduce costs when not in use
+
+## 11. Testing the Deployment
+
+1. Test backend API endpoints
+2. Test frontend functionality with MongoDB integration
+3. Verify media upload/download functionality
+4. Test YouTube integration
+
+## 12. Maintenance and Scaling
+
+1. Set up scheduled backups for MongoDB data
+2. Configure auto-scaling for Cloud Run based on load
+3. Implement a rollback strategy for deployments
+
