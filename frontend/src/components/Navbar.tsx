@@ -7,6 +7,8 @@ import { AUTH_CHANGE_EVENT } from "../App";
 import { useTheme } from "next-themes";
 import { useLocation } from "react-router-dom";
 import { setAuthToken } from "@/lib/socket";
+import axios from "axios";
+import { getAPIBaseURL } from "@/lib/socket";
 
 interface NavbarProps {
   username?: string;
@@ -22,6 +24,7 @@ const Navbar = ({ username }: NavbarProps) => {
   const [currentUsername, setCurrentUsername] = useState<string | undefined>(
     undefined
   );
+  const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
 
   // Function to check and update the username directly from localStorage
   const updateUsernameFromStorage = () => {
@@ -39,18 +42,46 @@ const Navbar = ({ username }: NavbarProps) => {
     }
   };
 
+  // Check YouTube connection status
+  const checkYouTubeConnection = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const response = await axios({
+        method: "GET",
+        url: `${getAPIBaseURL()}/api/youtube-auth-status`,
+        headers: {
+          "x-access-token": token,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.data && response.data.authenticated) {
+        setIsYouTubeConnected(true);
+      } else {
+        setIsYouTubeConnected(false);
+      }
+    } catch (error) {
+      console.error("Error checking YouTube connection:", error);
+      setIsYouTubeConnected(false);
+    }
+  };
+
   // Initialize username on mount and when prop changes
   useEffect(() => {
     updateUsernameFromStorage();
     if (username) {
       setCurrentUsername(username);
     }
+    checkYouTubeConnection();
   }, [username]);
 
   // Listen for auth change events
   useEffect(() => {
     const handleAuthChange = () => {
       updateUsernameFromStorage();
+      checkYouTubeConnection();
       forceUpdate(); // Force a re-render
     };
 
@@ -60,6 +91,7 @@ const Navbar = ({ username }: NavbarProps) => {
 
     // Initial check
     updateUsernameFromStorage();
+    checkYouTubeConnection();
 
     return () => {
       window.removeEventListener("storage", handleAuthChange);
@@ -212,14 +244,6 @@ const Navbar = ({ username }: NavbarProps) => {
 
             {displayUsername ? (
               <div className="flex items-center space-x-4">
-                <NavLink to="/create" className="flex items-center">
-                  <Button variant="purple" size="sm" className="rounded-full">
-                    <div className="flex items-center space-x-2">
-                      <Youtube size={16} />
-                      <span className="hidden lg:inline">Connect YouTube</span>
-                    </div>
-                  </Button>
-                </NavLink>
                 <div className="relative group">
                   <button className="flex items-center gap-2 py-1 px-3 rounded-full bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-800/60 transition-colors">
                     <User className="h-4 w-4 text-purple-600 dark:text-purple-400" />

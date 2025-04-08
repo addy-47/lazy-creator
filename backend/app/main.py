@@ -327,7 +327,8 @@ def check_youtube_auth_status(current_user):
         if current_user.get('email') == 'demo@example.com':
             return jsonify({
                 "status": "success",
-                "authenticated": True
+                "authenticated": True,
+                "is_connected": True
             })
 
         user_id = str(current_user['_id'])
@@ -335,7 +336,8 @@ def check_youtube_auth_status(current_user):
 
         return jsonify({
             "status": "success",
-            "authenticated": is_authenticated
+            "authenticated": is_authenticated,
+            "is_connected": is_authenticated
         })
     except Exception as e:
         logger.error(f"Error checking YouTube auth status: {e}")

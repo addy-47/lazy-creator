@@ -404,11 +404,13 @@ const CreateForm = () => {
                 (backgroundSource === "custom" && !backgroundFile)
               }
             >
-              Create Short
-              <ArrowRight
-                size={16}
-                className="ml-2 transition-transform group-hover:translate-x-0.5"
-              />
+              <div className="flex items-center justify-center w-full">
+                <span>Create Short</span>
+                <ArrowRight
+                  size={16}
+                  className="ml-2 transition-transform group-hover:translate-x-0.5"
+                />
+              </div>
             </Button>
           </div>
         </form>

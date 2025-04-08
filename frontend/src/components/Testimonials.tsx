@@ -127,7 +127,7 @@ const Testimonials = () => {
               <div
                 key={index}
                 className={`
-                  absolute inset-0 flex flex-col md:flex-row items-center gap-8 p-6 md:p-10
+                  absolute inset-0 flex flex-col md:flex-row items-center gap-4 md:gap-8 p-4 md:p-10
                   rounded-2xl border border-purple-100 dark:border-purple-900/30
                   bg-white dark:bg-gray-900 shadow-xl shadow-purple-900/5
                   transition-all duration-700 ease-out
@@ -139,7 +139,7 @@ const Testimonials = () => {
                 `}
               >
                 {/* Avatar section */}
-                <div className="flex-shrink-0 w-24 h-24 md:w-32 md:h-32">
+                <div className="flex-shrink-0 w-20 h-20 md:w-32 md:h-32">
                   <div className="relative">
                     <div className="w-full h-full rounded-full overflow-hidden border-4 border-purple-100 dark:border-purple-900/50 shadow-md">
                       <img
@@ -156,7 +156,7 @@ const Testimonials = () => {
                 {/* Content section */}
                 <div className="flex-grow text-center md:text-left">
                   {/* Rating stars */}
-                  <div className="flex justify-center md:justify-start gap-1 mb-3">
+                  <div className="flex justify-center md:justify-start gap-1 mb-2 md:mb-3">
                     {[...Array(5)].map((_, i) => (
                       <Star
                         key={i}
@@ -171,7 +171,7 @@ const Testimonials = () => {
                   </div>
 
                   {/* Testimonial content with animated counter */}
-                  <p className="text-gray-700 dark:text-gray-300 text-lg italic mb-4">
+                  <p className="text-gray-700 dark:text-gray-300 text-base md:text-lg italic mb-3 md:mb-4">
                     "{testimonial.content}"
                   </p>
 

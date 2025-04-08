@@ -693,12 +693,50 @@ const VideoDemo = () => {
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="w-full h-full"
-      width="1280"
-      height="720"
-    ></canvas>
+    <section className="section py-16 md:py-24 bg-white dark:bg-black overflow-hidden relative">
+      {/* Background decorative elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-purple-200/30 dark:bg-purple-900/20 blur-3xl"></div>
+        <div className="absolute top-1/2 -left-24 w-48 h-48 rounded-full bg-purple-200/30 dark:bg-purple-900/20 blur-3xl"></div>
+      </div>
+
+      <div className="container-tight relative z-10">
+        <div className="text-center max-w-3xl mx-auto mb-12 md:mb-16">
+          <h2 className="font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-400 dark:to-purple-600">
+            See It In Action
+          </h2>
+          <p className="text-lg text-gray-600 dark:text-gray-300">
+            Watch how LazyCreator transforms your ideas into engaging YouTube
+            Shorts
+          </p>
+        </div>
+
+        <div className="relative max-w-4xl mx-auto">
+          {/* Video demo canvas */}
+          <div className="relative mx-auto w-full max-w-[320px] md:max-w-[540px] aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-4 border-purple-100 dark:border-purple-900/30">
+            <canvas
+              ref={canvasRef}
+              width={1080}
+              height={1920}
+              className="w-full h-full"
+            ></canvas>
+          </div>
+
+          {/* Controls overlay */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                <span className="text-white text-sm font-medium">
+                  Recording
+                </span>
+              </div>
+              <div className="text-white text-sm">00:15</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 };
 

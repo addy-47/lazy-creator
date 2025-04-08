@@ -19,13 +19,12 @@ import { Video, DemoVideo, UploadData } from "@/components/gallery/types";
 function GalleryPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, username } = useContext(AuthContext);
+  const { isAuthenticated, username, isYouTubeConnected, setYouTubeConnected } =
+    useContext(AuthContext);
   const [videos, setVideos] = useState<Video[]>([]);
   const [demoVideos, setDemoVideos] = useState<DemoVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null);
-  const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
-  const [youtubeAuthChecked, setYoutubeAuthChecked] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState<string | null>(null);
   const [uploadData, setUploadData] = useState<UploadData>({
     title: "",
@@ -38,6 +37,58 @@ function GalleryPage() {
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [trendingLoading, setTrendingLoading] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+
+  // Define checkYouTubeAuth function early so it can be referenced elsewhere
+  const checkYouTubeAuth = async () => {
+    if (isCheckingAuth) return;
+
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    setIsCheckingAuth(true);
+    const toastId = toast.loading("Checking YouTube connection status...");
+
+    try {
+      const response = await axios({
+        method: "GET",
+        url: `${getAPIBaseURL()}/api/youtube-auth-status`,
+        headers: {
+          "x-access-token": token,
+          "Content-Type": "application/json",
+        },
+      });
+
+      toast.dismiss(toastId);
+
+      if (response.data.status === "success") {
+        if (response.data.is_connected) {
+          setYouTubeConnected(true);
+          toast.success("Successfully connected to YouTube!");
+        } else {
+          setYouTubeConnected(false);
+          toast.error("YouTube connection failed. Please try again.");
+        }
+      } else {
+        toast.error("Unable to verify YouTube connection status.");
+      }
+    } catch (error: any) {
+      toast.dismiss(toastId);
+      console.error("YouTube auth status check error:", error);
+
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        toast.error("Your session has expired. Please log in again.");
+        localStorage.removeItem("token");
+        navigate("/auth");
+      } else {
+        toast.error("Failed to check YouTube connection status.");
+      }
+    } finally {
+      setIsCheckingAuth(false);
+      localStorage.removeItem("checkYouTubeAuth");
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -66,49 +117,6 @@ function GalleryPage() {
         toast.error("Error loading your gallery");
       } finally {
         setLoading(false);
-      }
-    };
-
-    const checkYouTubeAuth = async () => {
-      try {
-        // Check for authentication
-        const token = localStorage.getItem("token") || "";
-        const userData = localStorage.getItem("user");
-
-        // Create a proper mock token if using demo mode
-        if (!token && userData) {
-          // This is a demo/development workaround
-          localStorage.setItem("token", "demo-token-for-testing");
-          console.log("Using demo token for YouTube auth check");
-        }
-
-        // Final token check
-        const currentToken = localStorage.getItem("token");
-
-        if (!currentToken) {
-          setYoutubeAuthChecked(true);
-          setIsYouTubeConnected(false);
-          return;
-        }
-
-        const response = await axios({
-          method: "GET",
-          url: `${getAPIBaseURL()}/api/youtube-auth-status`,
-          headers: {
-            "x-access-token": currentToken,
-            "Content-Type": "application/json",
-          },
-          timeout: 5000,
-        });
-
-        if (response.data.status === "success") {
-          setIsYouTubeConnected(response.data.authenticated);
-        }
-        setYoutubeAuthChecked(true);
-      } catch (error) {
-        console.error("Error checking YouTube auth:", error);
-        setYoutubeAuthChecked(true);
-        setIsYouTubeConnected(false);
       }
     };
 
@@ -147,50 +155,21 @@ function GalleryPage() {
     ]);
 
     fetchData();
-    checkYouTubeAuth();
+
+    // Only check YouTube auth status if needed
+    const shouldCheck = localStorage.getItem("checkYouTubeAuth");
+    if (shouldCheck === "true") {
+      checkYouTubeAuth();
+    }
   }, []);
 
   // Check authentication status when returning from YouTube auth
   useEffect(() => {
-    const checkAuthAfterRedirect = async () => {
-      const shouldCheck = localStorage.getItem("checkYouTubeAuth");
+    const shouldCheck = localStorage.getItem("checkYouTubeAuth");
 
-      if (shouldCheck === "true") {
-        // Clear the flag
-        localStorage.removeItem("checkYouTubeAuth");
-
-        // Wait a bit to ensure the auth process completed
-        setTimeout(async () => {
-          try {
-            const token = localStorage.getItem("token");
-            if (!token) return;
-
-            const response = await axios.get(
-              `${getAPIBaseURL()}/api/youtube-auth-status`,
-              {
-                headers: {
-                  "x-access-token": token,
-                },
-              }
-            );
-
-            if (response.data.status === "success") {
-              setIsYouTubeConnected(response.data.authenticated);
-
-              if (response.data.authenticated) {
-                toast.success("YouTube connected successfully!");
-              } else {
-                toast.error("YouTube connection failed. Please try again.");
-              }
-            }
-          } catch (error) {
-            console.error("Error checking YouTube auth after redirect:", error);
-          }
-        }, 2000);
-      }
-    };
-
-    checkAuthAfterRedirect();
+    if (shouldCheck === "true") {
+      checkYouTubeAuth();
+    }
   }, []);
 
   // Handle YouTube auth callback from URL
@@ -255,100 +234,95 @@ function GalleryPage() {
   };
 
   const connectYouTube = async () => {
-    // Check for authentication
-    const token = localStorage.getItem("token") || "";
-    const userData = localStorage.getItem("user");
-
-    // Create a proper mock token if using demo mode
-    if (!token && userData) {
-      // This is a demo/development workaround
-      localStorage.setItem("token", "demo-token-for-testing");
-      console.log("Using demo token for YouTube connection");
-    }
-
-    // Final token check
-    const currentToken = localStorage.getItem("token");
-
-    if (!currentToken) {
-      toast.error("Authentication required. Please log in.");
-      navigate("/auth");
+    if (isConnecting) {
+      // Prevent multiple connection attempts
+      toast.info("YouTube connection already in progress");
       return;
     }
 
-    // Show loading state
+    setIsConnecting(true);
     const toastId = toast.loading("Connecting to YouTube...");
 
     try {
-      // Make API request
+      const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error("You need to be logged in to connect YouTube");
+        navigate("/auth");
+        return;
+      }
+
+      // Set a flag in localStorage that we're expecting a callback
+      localStorage.setItem("checkYouTubeAuth", "true");
+
+      // Get the auth URL
       const response = await axios({
         method: "GET",
         url: `${getAPIBaseURL()}/api/youtube-auth-start`,
         headers: {
-          "x-access-token": currentToken,
-          "Content-Type": "application/json",
+          "x-access-token": token,
         },
         params: {
-          redirect_uri: `${window.location.origin}/youtube-auth-callback`,
+          redirect_uri: `${window.location.origin}/gallery`,
         },
-        // Set timeout to avoid hanging requests
-        timeout: 10000,
       });
 
-      toast.dismiss(toastId);
-
-      // Handle success
       if (response.data.status === "success" && response.data.auth_url) {
-        // Open the auth URL in a new window with appropriate size
+        toast.dismiss(toastId);
+        toast.info("Opening YouTube authentication...");
+
+        // Open auth URL in a new window
         const authWindow = window.open(
           response.data.auth_url,
-          "_blank",
-          "width=800,height=600,scrollbars=yes"
+          "YouTube Authentication",
+          "width=800,height=600"
         );
 
-        // Check if popup was blocked
-        if (!authWindow) {
+        // Set up an interval to check if the window was closed
+        let authCheckInterval: NodeJS.Timeout | null = null;
+        if (authWindow) {
+          authCheckInterval = setInterval(() => {
+            if (authWindow.closed) {
+              if (authCheckInterval) {
+                clearInterval(authCheckInterval);
+                authCheckInterval = null;
+              }
+
+              // Check auth status after window closes
+              setTimeout(() => {
+                checkYouTubeAuth();
+              }, 1000);
+            }
+          }, 500);
+
+          // Add window cleanup after 2 minutes (failsafe)
+          setTimeout(() => {
+            if (authCheckInterval) {
+              clearInterval(authCheckInterval);
+              authCheckInterval = null;
+            }
+            if (!authWindow.closed) {
+              authWindow.close();
+            }
+
+            checkYouTubeAuth();
+          }, 120000);
+        } else {
           toast.error(
-            "Popup blocked! Please allow popups for this site and try again."
+            "Unable to open authentication window. Please enable popups and try again."
           );
-          return;
         }
-
-        // Set flag to check auth status after user returns
-        localStorage.setItem("checkYouTubeAuth", "true");
-
-        toast.info("Please complete authentication in the opened window", {
-          duration: 5000,
-        });
       } else {
-        console.error("YouTube auth response:", response.data);
-        toast.error(
-          response.data.message || "Failed to start YouTube authentication"
-        );
+        toast.dismiss(toastId);
+        toast.error("Failed to start YouTube authentication");
       }
     } catch (error: any) {
       toast.dismiss(toastId);
-
-      console.error("YouTube auth error:", error);
-
-      // Check specific error conditions
-      if (error.response) {
-        // Server responded with error
-        if (error.response.status === 401 || error.response.status === 403) {
-          toast.error("Session expired. Please log in again.");
-          localStorage.removeItem("token");
-          navigate("/auth");
-        } else {
-          toast.error(
-            error.response.data?.message || "Server error. Please try again."
-          );
-        }
-      } else if (error.request) {
-        // No response received
-        toast.error("No response from server. Please check your connection.");
-      } else {
-        // Error in request setup
-        toast.error("Error sending request. Please try again.");
-      }
+      console.error("Error connecting to YouTube:", error);
+      toast.error(
+        error.response?.data?.message || "Failed to connect to YouTube"
+      );
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -723,7 +697,7 @@ function GalleryPage() {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             isAuthenticated={isAuthenticated}
-            youtubeAuthChecked={youtubeAuthChecked}
+            youtubeAuthChecked={true}
             isYouTubeConnected={isYouTubeConnected}
             onConnectYouTube={connectYouTube}
           />

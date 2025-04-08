@@ -49,13 +49,17 @@ const GalleryHeader: React.FC<GalleryHeaderProps> = ({
             onClick={onConnectYouTube}
             className={`flex items-center gap-2 rounded-full ${
               isYouTubeConnected
-                ? "bg-blue-600 hover:bg-blue-700"
-                : "bg-blue-600 hover:bg-blue-700"
+                ? "bg-primary/10 hover:bg-primary/20 text-primary"
+                : "bg-primary hover:bg-primary/90 text-white"
             }`}
             variant={isYouTubeConnected ? "outline" : "default"}
           >
-            <Youtube size={16} />
-            {isYouTubeConnected ? "YouTube Connected" : "Connect YouTube"}
+            <div className="flex items-center gap-2">
+              <Youtube size={16} className="flex-shrink-0" />
+              <span>
+                {isYouTubeConnected ? "YouTube Connected" : "Connect YouTube"}
+              </span>
+            </div>
           </Button>
         )}
       </div>

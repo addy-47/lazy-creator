@@ -1,117 +1,81 @@
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { Button } from "@/components/Button";
+import React, { useEffect, useContext } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { AuthContext } from "../App";
 import { toast } from "sonner";
+import axios from "axios";
+import { getAPIBaseURL } from "@/lib/socket";
 
 export default function YouTubeAuthSuccess() {
-  const [loading, setLoading] = useState(true);
-  const [success, setSuccess] = useState(false);
-  const location = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { setYouTubeConnected } = useContext(AuthContext);
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const state = params.get("state");
+    const checkYouTubeConnection = async () => {
+      try {
+        // Get state parameter from URL
+        const urlParams = new URLSearchParams(location.search);
+        const state = urlParams.get("state");
 
-    if (!state) {
-      toast.error("Authentication failed: Missing state parameter");
-      setLoading(false);
-      return;
-    }
+        if (!state) {
+          toast.error("Authentication failed: Missing state parameter");
+          navigate("/gallery");
+          return;
+        }
 
-    // Delay a bit to let the user see the success message
-    const timer = setTimeout(() => {
-      setLoading(false);
-      setSuccess(true);
+        // Wait a moment to ensure the backend has processed the auth
+        setTimeout(async () => {
+          const token = localStorage.getItem("token");
+          if (!token) {
+            toast.error("Authentication required");
+            navigate("/auth");
+            return;
+          }
 
-      // Redirect back to gallery after a short delay
-      const redirectTimer = setTimeout(() => {
+          // Check if we're connected to YouTube
+          const response = await axios.get(
+            `${getAPIBaseURL()}/api/youtube-auth-status`,
+            {
+              headers: {
+                "x-access-token": token,
+              },
+            }
+          );
+
+          if (response.data.status === "success") {
+            if (response.data.is_connected) {
+              // Update global state
+              setYouTubeConnected(true);
+
+              toast.success("Successfully connected to YouTube!");
+
+              // Redirect to gallery page
+              navigate("/gallery");
+            } else {
+              toast.error("YouTube connection failed");
+              navigate("/gallery");
+            }
+          }
+        }, 1000);
+      } catch (error) {
+        console.error("Error checking YouTube connection:", error);
+        toast.error("Error checking YouTube connection status");
         navigate("/gallery");
-      }, 3000);
+      }
+    };
 
-      return () => clearTimeout(redirectTimer);
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, [location, navigate]);
+    checkYouTubeConnection();
+  }, [navigate, location.search, setYouTubeConnected]);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-grow pt-32 pb-20 px-4 flex items-center justify-center">
-        <div className="max-w-md w-full">
-          <div className="glass-card p-8 text-center">
-            {loading ? (
-              <div className="space-y-6">
-                <div className="animate-spin mx-auto w-12 h-12 border-4 border-primary border-t-transparent rounded-full"></div>
-                <h2 className="text-2xl font-medium">
-                  Finalizing Authentication...
-                </h2>
-                <p className="text-foreground/70">
-                  Please wait while we complete your YouTube account connection.
-                </p>
-              </div>
-            ) : success ? (
-              <div className="space-y-6">
-                <div className="inline-block p-4 rounded-full bg-primary/20 mb-2">
-                  <svg
-                    width="32"
-                    height="32"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-primary"
-                  >
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-medium">YouTube Connected!</h2>
-                <p className="text-foreground/70">
-                  Your YouTube account has been successfully connected. You can
-                  now upload videos directly to your channel.
-                </p>
-                <p className="text-sm text-foreground/60">
-                  Redirecting to Gallery...
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="inline-block p-4 rounded-full bg-destructive/20 mb-2">
-                  <svg
-                    width="32"
-                    height="32"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-destructive"
-                  >
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="15" y1="9" x2="9" y2="15"></line>
-                    <line x1="9" y1="9" x2="15" y2="15"></line>
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-medium">Authentication Failed</h2>
-                <p className="text-foreground/70">
-                  We couldn't connect your YouTube account. Please try again.
-                </p>
-                <Button onClick={() => navigate("/gallery")}>
-                  Return to Gallery
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-      <Footer />
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold mb-4">Connecting to YouTube...</h1>
+        <p className="text-lg text-muted-foreground mb-6">
+          Please wait while we verify your YouTube connection
+        </p>
+        <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto"></div>
+      </div>
     </div>
   );
 }
