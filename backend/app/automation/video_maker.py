@@ -1,546 +1,406 @@
-import os
-import time
-import random
-import subprocess
-import requests
-import numpy as np
-import logging
-from PIL import Image, ImageFilter, ImageDraw, ImageFont
-from moviepy.editor import (
-    VideoFileClip, VideoClip, TextClip, CompositeVideoClip, ImageClip,AudioClip,
+import os # for file operations
+import time # for timing events and creating filenames like timestamps
+import random # for randomizing elements
+import textwrap # for wrapping text into lines but most cases being handled by textclip class in moviepy
+import requests # for making HTTP requests
+import numpy as np # for numerical operations here used for rounding off
+import logging # for logging events
+from PIL import Image, ImageFilter, ImageDraw, ImageFont# for image processing
+from moviepy.editor import ( # for video editing
+    VideoFileClip, VideoClip, TextClip, CompositeVideoClip,ImageClip,
     AudioFileClip, concatenate_videoclips, ColorClip, CompositeAudioClip
 )
+from moviepy.video.fx import all as vfx
 from moviepy.config import change_settings
-change_settings({"IMAGEMAGICK_BINARY": "magick"})
+change_settings({"IMAGEMAGICK_BINARY": "magick"}) # for windows users
 from gtts import gTTS
 from dotenv import load_dotenv
-import shutil
-import tempfile
+import shutil # for file operations like moving and deleting files
+import tempfile # for creating temporary files
+from datetime import datetime # for more detailed time tracking
 import concurrent.futures
-from typing import List, Dict, Union, Optional
+from functools import wraps
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging for easier debugging
+# Do NOT initialize basicConfig here - this will be handled by main.py
 logger = logging.getLogger(__name__)
 
-class YTShortsCreator:
+# Timer function for performance monitoring
+def measure_time(func):
+    """Decorator to measure the execution time of functions"""
+    def wrapper(*args, **kwargs):
+        # Only log timing for major functions (create_youtube_short)
+        if func.__name__ == "create_youtube_short":
+            start_time = time.time()
+            logger.info(f"Starting YouTube short creation")
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            duration = end_time - start_time
+            logger.info(f"Completed YouTube short creation in {duration:.2f} seconds")
+        else:
+            # For all other functions, just run without detailed logging
+            result = func(*args, **kwargs)
+        return result
+    return wrapper
+
+class YTShortsCreator_V:
     def __init__(self, output_dir="output", fps=30):
-        """Initialize YouTube Shorts creator with configurable options"""
+        """
+        Initialize the YouTube Shorts creator with necessary settings
+
+        Args:
+            output_dir (str): Directory to save the output videos
+            fps (int): Frames per second for the output video
+        """
         # Setup directories
         self.output_dir = output_dir
-        self.temp_dir = tempfile.mkdtemp()
+        self.temp_dir = tempfile.mkdtemp()  # Create temp directory for intermediate files
         os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(self.temp_dir, exist_ok=True)
+
+        # Check for enhanced rendering capability
+        self.has_enhanced_rendering = False
+        try:
+            import dill
+            self.has_enhanced_rendering = True
+            logger.info(f"Enhanced parallel rendering available with dill {dill.__version__}")
+        except ImportError:
+            logger.info("Basic rendering capability only (install dill for enhanced parallel rendering)")
 
         # Video settings
-        self.resolution = (1080, 1920)
+        self.resolution = (1080, 1920)  # Portrait mode for shorts (width, height)
         self.fps = fps
-        self.audio_sync_offset = 0.25
+        self.audio_sync_offset = 0.0  # Remove audio delay to improve sync
 
         # Font settings
         self.fonts_dir = os.path.join(os.path.dirname(__file__), 'fonts')
         os.makedirs(self.fonts_dir, exist_ok=True)
-        self.title_font_path = self._get_font_path("default_font.ttf")
-        self.body_font_path = self._get_font_path("default_font.ttf")
+        self.title_font_path = r"D:\youtube-shorts-automation\fonts\default_font.ttf"
+        self.body_font_path = r"D:\youtube-shorts-automation\fonts\default_font.ttf"
 
-        # API configurations
-        load_dotenv()
-        self.pexels_api_key = os.getenv("PEXELS_API_KEY")
-        self.pixabay_api_key = os.getenv("PIXABAY_API_KEY")
-        self.unsplash_api_key = os.getenv("UNSPLASH_API_KEY")
-
-        # Initialize TTS
+        # Initialize TTS (Text-to-Speech)
         self.azure_tts = None
-        if os.getenv("USE_AZURE_TTS", "false").lower() == "true":
+        self.google_tts = None
+
+        # Initialize Google Cloud TTS
+        if os.getenv("USE_GOOGLE_TTS", "true").lower() == "true":
             try:
-                from .voiceover import AzureVoiceover
+                from voiceover import GoogleVoiceover
+                self.google_tts = GoogleVoiceover(
+                    voice=os.getenv("GOOGLE_VOICE", "en-US-Neural2-D"),
+                    output_dir=self.temp_dir
+                )
+                logger.info("Google Cloud TTS initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Google Cloud TTS: {e}. Will use gTTS instead.")
+
+        # Initialize Azure TTS as fallback (if configured)
+        elif os.getenv("USE_AZURE_TTS", "false").lower() == "true":
+            try:
+                from voiceover import AzureVoiceover
                 self.azure_tts = AzureVoiceover(
                     voice=os.getenv("AZURE_VOICE", "en-US-JennyNeural"),
                     output_dir=self.temp_dir
                 )
+                logger.info("Azure TTS initialized successfully")
             except Exception as e:
-                logger.warning(f"Azure TTS failed: {e}")
+                logger.warning(f"Failed to initialize Azure TTS: {e}. Will use gTTS instead.")
 
-        # Setup transitions and cache
-        self._setup_transitions()
-        self.media_cache = {}
+        # Define transition effects with named functions instead of lambdas
+        def fade_transition(clip, duration):
+            return clip.fadein(duration).fadeout(duration)
 
-    def _get_font_path(self, font_name):
+        def slide_left_transition(clip, duration):
+            def position_func(t):
+                return ((t/duration) * self.resolution[0] - clip.w if t < duration else 0, 'center')
+            return clip.set_position(position_func)
 
-        """Get font path with fallback to system font"""
-        font_path = os.path.join(self.fonts_dir, font_name)
-        if not os.path.exists(font_path):
-            try:
-                from matplotlib.font_manager import findfont, FontProperties
-                font_path = findfont(FontProperties(family=['sans-serif']))
-            except:
-                font_path = "Arial"
-        return font_path
+        def zoom_in_transition(clip, duration):
+            def size_func(t):
+                return max(1, 1 + 0.5 * min(t/duration, 1))
+            return clip.resize(size_func)
 
-    def _setup_transitions(self):
-
-        """Define transition effects"""
-        self.transitions = {
-            "fade": lambda clip, duration: clip.fadein(duration).fadeout(duration),
-            "slide_left": lambda clip, duration: clip.set_position(
-                lambda t: ((t/duration) * self.resolution[0] - clip.w if t < duration else 0, 'center')),
-            "zoom_in": lambda clip, duration: clip.resize(lambda t: max(1, 1 + 0.5 * min(t/duration, 1))),
-            "slide_up": lambda clip, duration: clip.set_position(
-                lambda t: ('center', (t/duration) * self.resolution[1] - clip.h if t < duration else 0))
-        }
-
-        self.video_transitions = {
-            "crossfade": lambda clip1, clip2, duration: concatenate_videoclips([
+        # Define video transition effects between background segments
+        def crossfade_transition(clip1, clip2, duration):
+            return concatenate_videoclips([
                 clip1.set_end(clip1.duration),
                 clip2.set_start(0).crossfadein(duration)
-            ], padding=-duration, method="compose"),
-            "fade_black": lambda clip1, clip2, duration: concatenate_videoclips([
+            ], padding=-duration, method="compose")
+
+        def fade_black_transition(clip1, clip2, duration):
+            return concatenate_videoclips([
                 clip1.fadeout(duration),
                 clip2.fadein(duration)
-            ]),
-            "slide_left": lambda clip1, clip2, duration: concatenate_videoclips([
-                clip1.set_end(clip1.duration),
-                clip2.set_start(0).set_position(lambda t: (
-                    (t/duration) * self.resolution[0] if t < duration else 0, 'center'))
-            ], padding=-duration, method="compose")
+            ])
+
+        # Replace lambda functions with named functions
+        self.transitions = {
+            "fade": fade_transition,
+            "slide_left": slide_left_transition,
+            "zoom_in": zoom_in_transition
         }
 
-    def _download_file(self, url, file_path):
+        # Define video transition effects between background segments
+        self.video_transitions = {
+            "crossfade": crossfade_transition,
+            "fade_black": fade_black_transition
+        }
 
-        """Download file with retries and progress tracking"""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                with requests.get(url, stream=True, timeout=10) as r:
-                    r.raise_for_status()
-                    with open(file_path, 'wb') as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                return True
-            except Exception as e:
-                logger.warning(f"Download attempt {attempt + 1} failed: {str(e)}")
-                if attempt == max_retries - 1:
-                    return False
-                time.sleep(1)
+        # Load Pexels API key for background videos
+        load_dotenv()
+        self.pexels_api_key = os.getenv("PEXELS_API_KEY")
+        self.pixabay_api_key = os.getenv("PIXABAY_API_KEY")
 
-    def create_youtube_short(self, config: Dict) -> str:
+    @measure_time
+    def _fetch_videos(self, query, count=5, min_duration=5):
         """
-        Create YouTube Short with flexible configuration
+        Fetch background videos from multiple sources with randomized API selection
 
         Args:
-            config (dict): Configuration dictionary with:
-                - title (str): Video title
-                - script_sections (list): List of dicts with text/duration
-                - max_duration (int): 10,15,20,25,30 etc.
-                - background_type: "image" or "video"
-                - background_source: "provided" or "custom"
-                - background_path: Required if custom source
-                - background_query: Required if provided source
-                - add_captions (bool): Whether to add captions
-                - style (str): Visual style
-                - voice_style (str): TTS style
+            query (str): Search term for videos
+            count (int): Number of videos to fetch
+            min_duration (int): Minimum video duration in seconds
 
         Returns:
-            str: Path to created video
+            list: Paths to downloaded video files
         """
-        start_time = time.time()
+        # Determine how many videos to fetch from each source
+        videos = []
 
-        # Validate configuration
-        self._validate_config(config)
+        # Randomly decide which API to try first
+        apis = ["pexels", "pixabay"]
+        random.shuffle(apis)  # Shuffle the list to try APIs in random order
 
-        # Set output filename
-        output_filename = self._get_output_filename(config.get("output_filename"))
+        # Try each API in sequence
+        for api in apis:
+            logger.info(f"Fetching {count} videos using {api} API")
 
-        # Process script sections and durations
-        script_sections = self._process_script_sections(
-            config["script_sections"],
-            config["max_duration"]
-        )
-
-        # Start audio processing in parallel with background preparation
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Start background preparation
-            background_future = executor.submit(
-                self._prepare_background,
-                config["background_type"],
-                config["background_source"],
-                config.get("background_path"),
-                config.get("background_query"),
-                sum(s['duration'] for s in script_sections),
-                script_sections
-            )
-
-            # Start audio generation in parallel
-            audio_future = executor.submit(
-                self._generate_tts_audio,
-                script_sections
-            )
-
-            # Get results from futures
-            background = background_future.result()
-            audio_clips, updated_script_sections = audio_future.result()
-
-        # Update script sections with any timing changes from audio generation
-        script_sections = updated_script_sections
-
-        # Create combined audio
-        combined_audio = CompositeAudioClip(audio_clips) if audio_clips else None
-
-        # Create text overlays
-        text_clips = self._create_text_overlays(
-            config.get("title"),
-            script_sections,
-            config.get("add_captions", False)
-        )
-
-        # Render final video
-        self._render_final_video(
-            background,
-            text_clips,
-            combined_audio,
-            output_filename
-        )
-
-        logger.info(f"Video created in {time.time()-start_time:.1f}s")
-        return output_filename
-
-    def _validate_config(self, config: Dict) -> None:
-        """Validate input configuration"""
-        required = ['script_sections', 'max_duration', 'background_type', 'background_source']
-        missing = [field for field in required if field not in config]
-        if missing:
-            raise ValueError(f"Missing required config fields: {missing}")
-
-        if config['background_source'] == 'custom' and not config.get('background_path'):
-            raise ValueError("Custom background requires background_path")
-
-        if config['background_source'] == 'provided' and not config.get('background_query'):
-            raise ValueError("Provided background requires background_query")
-
-    def _get_output_filename(self, user_filename: Optional[str]) -> str:
-        """Generate output filename if not provided"""
-        if user_filename:
-            # Check if user_filename already contains a path
-            if os.path.sep in user_filename or '/' in user_filename:
-                return user_filename  # Use as is if it's a full path
-            else:
-                return os.path.join(self.output_dir, user_filename)
-        return os.path.join(self.output_dir, f"short_{int(time.time())}.mp4")
-
-    def _process_script_sections(self, sections: List[Dict], max_duration: int) -> List[Dict]:
-        """Process script sections and adjust durations"""
-        total_duration = sum(s.get('duration', 5) for s in sections)
-
-        if total_duration > max_duration:
-            scale_factor = max_duration / total_duration
-            logger.info(f"Scaling durations by {scale_factor:.2f}")
-            for section in sections:
-                section['duration'] = section.get('duration', 5) * scale_factor
-
-        return sections
-
-    def _prepare_background(self, background_type: str, background_source: str,
-                      background_path: Optional[str], background_query: Optional[str],
-                      total_duration: float, script_sections: List[Dict]) -> VideoClip:
-        """Prepare background with proper segmentation"""
-        # Calculate segment durations
-        segment_durations = self._calculate_segment_durations(script_sections)
-        transition_duration = 0.5
-
-        # Add transition time to all segments except last
-        for i in range(len(segment_durations)-1):
-            segment_durations[i] += transition_duration
-
-        # Fetch/process backgrounds
-        if background_source == "custom":
-            if background_type == "video":
-                clip = VideoFileClip(background_path)
-                return self._process_background_clip(clip, total_duration)
-            else:  # image
-                return ImageClip(background_path, duration=total_duration)\
-                    .resize(height=self.resolution[1])\
-                    .set_position('center')
-        else:
-            # Fetch multiple backgrounds for provided source
-            bg_paths = []
-            for _ in segment_durations:
-                paths = self._fetch_videos(background_query, count=1, min_duration=5) if background_type == "video" \
-                    else [self._fetch_unsplash_image(background_query)]
-                if paths:
-                    bg_paths.append(paths[0])
-
-            if not bg_paths:
-                raise ValueError("No backgrounds available")
-
-            # Process in parallel
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                futures = []
-                for path, duration in zip(bg_paths, segment_durations):
-                    if background_type == "video":
-                        futures.append(executor.submit(
-                            self._process_background_clip,
-                            VideoFileClip(path),
-                            duration
-                        ))
-                    else:  # image
-                        futures.append(executor.submit(
-                            lambda p, d: ImageClip(p, duration=d)
-                                        .resize(height=self.resolution[1])
-                                        .set_position('center'),
-                            path, duration
-                        ))
-
-                bg_clips = [f.result() for f in concurrent.futures.as_completed(futures)]
-
-            # Create seamless background
-            background = bg_clips[0]
-            for i in range(1, len(bg_clips)):
-                next_clip = bg_clips[i].crossfadein(transition_duration)
-                background = concatenate_videoclips(
-                    [background, next_clip],
-                    padding=-transition_duration,
-                    method="compose"
-                )
-
-            return background
-
-    def _process_custom_video(self, video_path: str, duration: float) -> VideoClip:
-        """Process user-provided video background"""
-        clip = VideoFileClip(video_path)
-        return self._process_background_clip(clip, duration)
-
-    def _process_custom_image(self, image_path: str, duration: float) -> VideoClip:
-        """Process user-provided image background"""
-        img = ImageClip(image_path, duration=duration)
-        return img.resize(height=self.resolution[1]).set_position('center')
-
-    def _create_provided_video_background(self, query: str, total_duration: float,
-                                        script_sections: List[Dict]) -> VideoClip:
-        """Create video background from API sources"""
-        segment_durations = self._calculate_segment_durations(script_sections)
-
-        bg_paths = []
-        for _ in range(len(segment_durations)):
-            paths = self._fetch_videos(query, count=1, min_duration=5)
-            if paths:
-                bg_paths.append(paths[0])
-            else:
-                raise ValueError(f"No videos found for query: {query}")
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(
-                    self._process_background_clip,
-                    VideoFileClip(path),
-                    duration
-                )
-                for path, duration in zip(bg_paths, segment_durations)
-            ]
-            bg_clips = [f.result() for f in concurrent.futures.as_completed(futures)]
-
-        return self._create_seamless_background(bg_clips, total_duration)
-
-    def _create_provided_image_background(self, query: str, total_duration: float,
-                                        script_sections: List[Dict]) -> VideoClip:
-        """Create image background from Unsplash"""
-        image_path = self._fetch_unsplash_image(query)
-        img = ImageClip(image_path, duration=total_duration)
-        return img.resize(height=self.resolution[1]).set_position('center')
-
-    def _fetch_unsplash_image(self, query: str) -> str:
-        """Fetch image from Unsplash API"""
-        cache_key = f"unsplash_{query}"
-        if cache_key in self.media_cache:
-            return self.media_cache[cache_key]
-
-        try:
-            url = f"https://api.unsplash.com/photos/random?query={query}&orientation=portrait&client_id={self.unsplash_api_key}"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-
-            image_url = response.json()['urls']['regular']
-            image_path = os.path.join(self.temp_dir, f"unsplash_{query.replace(' ', '_')}.jpg")
-
-            with requests.get(image_url, stream=True) as img_r:
-                img_r.raise_for_status()
-                with open(image_path, 'wb') as f:
-                    for chunk in img_r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-
-            self.media_cache[cache_key] = image_path
-            return image_path
-
-        except Exception as e:
-            logger.error(f"Unsplash API error: {e}")
-            raise ValueError(f"Could not fetch image for query: {query}")
-
-    def _calculate_segment_durations(self, script_sections: List[Dict]) -> List[float]:
-        """Calculate durations for each background segment"""
-        # Always use at least 3 segments (intro, middle, outro)
-        num_segments = max(3, min(5, len(script_sections)))  # 3-5 segments max
-
-        segment_durations = []
-
-        # Intro segment (first section)
-        segment_durations.append(script_sections[0]['duration'])
-
-        # Middle segments (distribute remaining time)
-        middle_duration = sum(s['duration'] for s in script_sections[1:-1])
-        num_middle_segments = num_segments - 2  # subtract intro and outro
-
-        if num_middle_segments > 0:
-            middle_per_segment = middle_duration / num_middle_segments
-            segment_durations.extend([middle_per_segment] * num_middle_segments)
-
-        # Outro segment (last section)
-        if len(script_sections) > 1:
-            segment_durations.append(script_sections[-1]['duration'])
-
-        return segment_durations
-
-    def _create_seamless_background(self, bg_clips: List[VideoClip], total_duration: float) -> VideoClip:
-        """Create seamless background with transitions"""
-        transition_duration = 0.5
-        final_bg = bg_clips[0]
-
-        for i in range(1, len(bg_clips)):
-            next_clip = bg_clips[i].crossfadein(transition_duration)
-            final_bg = concatenate_videoclips(
-                [final_bg, next_clip],
-                padding=-transition_duration,
-                method="compose"
-            )
-
-        if abs(final_bg.duration - total_duration) > 0.5:
-            if final_bg.duration < total_duration:
-                needed = total_duration - final_bg.duration + 0.8
-                extra = self._process_background_clip(bg_clips[-1].copy(), needed)
-                extra = extra.crossfadein(transition_duration)
-                final_bg = concatenate_videoclips(
-                    [final_bg, extra],
-                    padding=-transition_duration,
-                    method="compose"
-                )
-            else:
-                final_bg = final_bg.subclip(0, total_duration)
-
-        return final_bg
-
-    def _process_background_clip(self, clip: VideoClip, target_duration: float,
-                               blur_background: bool = False, edge_blur: bool = False) -> VideoClip:
-        """Process background clip to match duration and apply effects"""
-        # Scale resolution down for processing to save CPU cycles
-        processing_scale = 0.5  # Process at half resolution
-        original_size = clip.size
-
-        if clip.size[0] > 540:  # Only scale down if resolution is high enough
-            clip = clip.resize(width=int(clip.size[0] * processing_scale))
-
-        # Handle duration
-        if clip.duration < target_duration:
-            loops = int(np.ceil(target_duration / clip.duration))
-            clips = [clip] * loops
-            clip = concatenate_videoclips(clips)
-
-        clip = clip.subclip(0, target_duration)
-
-        # Only apply effects if specifically requested (they're CPU intensive)
-        if blur_background:
-            clip = self.custom_blur(clip, radius=2)  # Reduced blur radius
-        if edge_blur:
-            clip = self.custom_edge_blur(clip, edge_width=50, radius=5)  # Reduced parameters
-
-        # Scale back to original size for final output
-        if clip.size != original_size:
-            clip = clip.resize(width=original_size[0])
-
-        return clip
-
-    def _generate_tts_audio(self, script_sections: List[Dict]) -> tuple:
-        """Generate TTS audio for all sections"""
-        audio_clips = []
-        current_time = 0
-
-        for i, section in enumerate(script_sections):
-            text = section['text']
-            tts_path = os.path.join(self.temp_dir, f"tts_{i}.mp3")
-
-            if self.azure_tts:
+            if api == "pexels":
                 try:
-                    tts_path = self.azure_tts.generate_speech(
-                        text,
-                        output_filename=tts_path,
-                        voice_style=section.get('voice_style', 'normal')
-                    )
+                    api_videos = self._fetch_from_pexels(query, count, min_duration)
+                    if api_videos:  # If we got videos, add them and stop trying
+                        videos.extend(api_videos)
+                        break
                 except Exception as e:
-                    logger.warning(f"Azure TTS failed: {e}. Using gTTS.")
-                    tts = gTTS(text, lang='en', slow=True)
-                    tts.save(tts_path)
-            else:
-                tts = gTTS(text, lang='en', slow=True)
-                tts.save(tts_path)
+                    logger.error(f"Error fetching videos from Pexels: {e}")
+                    # Continue to next API
+            else:  # pixabay
+                try:
+                    api_videos = self._fetch_from_pixabay(query, count, min_duration)
+                    if api_videos:  # If we got videos, add them and stop trying
+                        videos.extend(api_videos)
+                        break
+                except Exception as e:
+                    logger.error(f"Error fetching videos from Pixabay: {e}")
+                    # Continue to next API
 
-            speech = AudioFileClip(tts_path)
-            speech_duration = speech.duration
+        # If we have fewer videos than requested, but at least one, return what we have
+        if not videos:
+            logger.warning(f"Could not fetch any videos for query: {query}")
 
-            if speech_duration > section['duration'] - 0.5:
-                section['duration'] = speech_duration * 1.15
+        return videos[:count]
 
-            speech = speech.set_start(current_time + 0.2)
-            audio_clips.append(speech)
-            current_time += section['duration']
+    @measure_time
+    def _fetch_from_pixabay(self, query, count, min_duration):
+        """
+        Fetch background videos from Pixabay API
 
-        return audio_clips, script_sections
+        Args:
+            query (str): Search term for videos
+            count (int): Number of videos to fetch
+            min_duration (int): Minimum video duration in seconds
 
-    def _create_text_overlays(self, title: Optional[str], script_sections: List[Dict],
-                            add_captions: bool) -> List[VideoClip]:
-        """Create all text overlays for the video"""
-        text_clips = []
-        current_time = 0
+        Returns:
+            list: Paths to downloaded video files
+        """
+        try:
+            url = f"https://pixabay.com/api/videos/?key={self.pixabay_api_key}&q={query}&min_width=1080&min_height=1920&per_page=20"
+            response = requests.get(url) # make a request to the API
+            if response.status_code == 200: # if the request is successful
+                data = response.json()  # changes the response in json to py dict data
+                videos = data.get("hits", []) # get the videos from the data
+                video_paths = []
+                # Randomly select videos from the top 10
+                top_videos = videos[:10]
+                # Then randomly select 'count' videos from the top 10
+                if len(top_videos) > count:
+                    selected_videos = random.sample(top_videos, count)
+                else:
+                    selected_videos = top_videos
 
-        for i, section in enumerate(script_sections):
-            text = section['text']
-            duration = section['duration']
+                def download_and_check_video(video):
+                    try:
+                        video_url = video["videos"]["large"]["url"]
+                        video_path = os.path.join(self.temp_dir, f"pixabay_{video['id']}.mp4") # create a path for the video
+                        with requests.get(video_url, stream=True) as r:  # get the video from the url
+                            r.raise_for_status() # raise an error if the request is not successful
+                            with open(video_path, 'wb') as f: # open the video file in write binary mode
+                                for chunk in r.iter_content(chunk_size=8192): # iterate over the content of the video
+                                    f.write(chunk)
+                        clip = VideoFileClip(video_path)
+                        if clip.duration >= min_duration:
+                            clip.close()
+                            return video_path
+                        clip.close()
+                        # Remove the video if it's too short
+                        if os.path.exists(video_path):
+                            os.remove(video_path)
+                        return None
+                    except Exception as e:
+                        logger.error(f"Error downloading video from Pixabay: {e}")
+                        return None
 
-            if i == 0 and title:
-                title_clip = self._create_text_clip(
-                    title, duration=duration, font_size=70,
-                    position=('center', 150), animation="fade",
-                    with_pill=True, pill_color=(0, 0, 0, 160)
-                ).set_start(current_time)
-                text_clips.append(title_clip)
+                # Use ThreadPoolExecutor to download videos in parallel
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(selected_videos), 5)) as executor:
+                    # Submit all download tasks and collect futures
+                    future_to_video = {executor.submit(download_and_check_video, video): video for video in selected_videos}
 
-            if i == 0 or i == len(script_sections) - 1:
-                text_clip = self._create_text_clip(
-                    text, duration=duration, font_size=55,
-                    position=('center', 'center'), animation="fade",
-                    with_pill=True, pill_color=(0, 0, 0, 160)
-                ).set_start(current_time)
-            else:
-                text_clip = self._create_word_by_word_clip(
-                    text, duration=duration, font_size=60,
-                    position=('center', 'center')
-                ).set_start(current_time)
+                    # Process completed futures
+                    for future in concurrent.futures.as_completed(future_to_video):
+                        video_path = future.result()
+                        if video_path:
+                            video_paths.append(video_path)
 
-            text_clips.append(text_clip)
-            current_time += duration
+                return video_paths
 
-            if add_captions:
-                caption = self._create_text_clip(
-                    text, duration=duration, font_size=40,
-                    position=('center', self.resolution[1] - 200),
-                    animation="fade"
-                ).set_start(current_time - duration)
-                text_clips.append(caption)
+            # If response wasn't 200, return empty list
+            logger.warning(f"Pixabay API returned status code {response.status_code}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching videos from Pixabay: {e}")
+            return []
 
-        return text_clips
+    @measure_time
+    def _fetch_from_pexels(self, query, count=5, min_duration=15):
+        """
+        Fetch background videos from Pexels API
 
-    def _create_text_clip(self, text: str, duration: float = 5, font_size: int = 60,
-                         font_path: Optional[str] = None, color: str = 'white',
-                         position: Union[str, tuple] = 'center', animation: str = "fade",
-                         animation_duration: float = 1.0, shadow: bool = False,
-                         outline: bool = False, with_pill: bool = False,
-                         pill_color: tuple = (0, 0, 0, 160), pill_radius: int = 30) -> VideoClip:
-        """Create text clip with effects"""
+        Args:
+            query (str): Search term for videos
+            count (int): Number of videos to fetch
+            min_duration (int): Minimum video duration in seconds
+
+        Returns:
+            list: Paths to downloaded video files
+        """
+        try:
+            url = f"https://api.pexels.com/videos/search?query={query}&per_page=20&orientation=portrait"
+            headers = {"Authorization": self.pexels_api_key}
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                videos = data.get("videos", [])
+                video_paths = []
+                # Randomly select videos from the top 10
+                top_videos = videos[:10]
+                # Then randomly select 'count' videos from those top 10
+                if len(top_videos) > count:
+                    selected_videos = random.sample(top_videos, count)
+                else:
+                    selected_videos = top_videos
+
+                def download_and_check_video(video):
+                    try:
+                        video_files = video.get("video_files", []) # get the video files
+                        if not video_files:
+                            return None
+
+                        video_url = video_files[0].get("link") # get the video link
+                        if not video_url:
+                            return None
+
+                        video_path = os.path.join(self.temp_dir, f"pexels_{video['id']}.mp4")
+                        with requests.get(video_url, stream=True) as r:
+                            r.raise_for_status()
+                            with open(video_path, 'wb') as f:
+                                for chunk in r.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+
+                        clip = VideoFileClip(video_path)
+                        if clip.duration >= min_duration:
+                            clip.close()
+                            return video_path
+                        clip.close()
+                        # Remove the video if it's too short
+                        if os.path.exists(video_path):
+                            os.remove(video_path)
+                        return None
+                    except Exception as e:
+                        logger.error(f"Error downloading video from Pexels: {e}")
+                        return None
+
+                # Use ThreadPoolExecutor to download videos in parallel
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(selected_videos), 5)) as executor:
+                    # Submit all download tasks and collect futures
+                    future_to_video = {executor.submit(download_and_check_video, video): video for video in selected_videos}
+
+                    # Process completed futures
+                    for future in concurrent.futures.as_completed(future_to_video):
+                        video_path = future.result()
+                        if video_path:
+                            video_paths.append(video_path)
+
+                return video_paths
+
+            # If response wasn't 200, return empty list
+            logger.warning(f"Pexels API returned status code {response.status_code}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching videos from Pexels: {e}")
+            return []
+
+    @measure_time
+    def _create_pill_image(self, size, color=(0, 0, 0, 160), radius=30):
+        """
+        Create a pill-shaped background image with rounded corners.
+
+        Args:
+            size (tuple): Size of the image (width, height)
+            color (tuple): Color of the pill background (RGBA)
+            radius (int): Radius of the rounded corners
+
+        Returns:
+            Image: PIL Image with the pill-shaped background
+        """
+        width, height = size
+        img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Draw the rounded rectangle
+        draw.rectangle([(radius, 0), (width - radius, height)], fill=color)
+        draw.rectangle([(0, radius), (width, height - radius)], fill=color)
+        draw.ellipse([(0, 0), (radius * 2, radius * 2)], fill=color)
+        draw.ellipse([(width - radius * 2, 0), (width, radius * 2)], fill=color)
+        draw.ellipse([(0, height - radius * 2), (radius * 2, height)], fill=color)
+        draw.ellipse([(width - radius * 2, height - radius * 2), (width, height)], fill=color)
+
+        return img
+
+    @measure_time
+    def _create_text_clip(self, text, duration=5, font_size=60, font_path=None, color='white',
+                          position='center', animation="fade", animation_duration=1.0, shadow=True,
+                          outline=True, with_pill=False, pill_color=(0, 0, 0, 160), pill_radius=30):
+        """
+        Create a text clip with various effects and animations.
+
+        Args:
+            text (str): Text content
+            duration (float): Duration in seconds
+            font_size (int): Font size
+            font_path (str): Path to font file
+            color (str): Text color
+            position (str): Position of text (top, center, bottom)
+            animation (str): Animation type
+            animation_duration (float): Duration of animation effects
+            shadow (bool): Whether to add shadow
+            outline (bool): Whether to add outline
+            with_pill (bool): Whether to add pill background
+            pill_color (tuple): RGBA color for pill background
+            pill_radius (int): Radius for pill corners
+
+        Returns:
+            TextClip: MoviePy text clip with effects
+        """
         if not font_path:
             font_path = self.body_font_path
 
@@ -555,23 +415,26 @@ class YTShortsCreator:
                 size=(self.resolution[0] - 100, None)
             )
         except Exception as e:
-            logger.warning(f"Text rendering error: {e}. Using default font.")
+            logger.warning(f"Text rendering error with custom font: {e}. Using default.")
             txt_clip = TextClip(
                 txt=text,
                 fontsize=font_size,
                 color=color,
                 method='caption',
                 align='center',
-                size=(self.resolution[0] - 100, None))
+                size=(self.resolution[0] - 100, None)
+            )
 
         txt_clip = txt_clip.set_duration(duration)
         clips = []
 
+        # Add pill-shaped background if requested
         if with_pill:
             pill_image = self._create_pill_image(txt_clip.size, color=pill_color, radius=pill_radius)
             pill_clip = ImageClip(np.array(pill_image), duration=duration)
             clips.append(pill_clip)
 
+        # Add shadow effect
         if shadow:
             shadow_clip = TextClip(
                 txt=text,
@@ -584,7 +447,9 @@ class YTShortsCreator:
             ).set_position((5, 5), relative=True).set_opacity(0.7).set_duration(duration)
             clips.append(shadow_clip)
 
+        # Add outline effect
         if outline:
+            outline_clips = []
             for dx, dy in [(-1,-1), (-1,1), (1,-1), (1,1)]:
                 oc = TextClip(
                     txt=text,
@@ -593,119 +458,199 @@ class YTShortsCreator:
                     color='black',
                     method='caption',
                     align='center',
-                    size=(self.resolution[0] - 100, None))
-                oc.set_position((dx, dy), relative=True).set_opacity(0.5).set_duration(duration)
-                clips.append(oc)
+                    size=(self.resolution[0] - 100, None)
+                ).set_position((dx, dy), relative=True).set_opacity(0.5).set_duration(duration)
+                outline_clips.append(oc)
+            clips.extend(outline_clips)
 
         clips.append(txt_clip)
-        text_composite = CompositeVideoClip(clips).set_position(position)
+        text_composite = CompositeVideoClip(clips)
 
+        # Set the position of the entire composite
+        text_composite = text_composite.set_position(position)
+
+        # Apply animation
         if animation in self.transitions:
-            text_composite = self.transitions[animation](text_composite, animation_duration)
+            anim_func = self.transitions[animation]
+            text_composite = anim_func(text_composite, animation_duration)
 
+        # Create transparent background for the text
         bg = ColorClip(size=self.resolution, color=(0,0,0,0)).set_duration(duration)
-        return CompositeVideoClip([bg, text_composite], size=self.resolution)
+        final_clip = CompositeVideoClip([bg, text_composite], size=self.resolution)
 
-    def _create_word_by_word_clip(self, text: str, duration: float, font_size: int = 60,
-                                font_path: Optional[str] = None,
-                                text_color: tuple = (255, 255, 255, 255),
-                                pill_color: tuple = (0, 0, 0, 160),
-                                position: tuple = ('center', 'center')) -> VideoClip:
-        """Create word-by-word animation"""
+        return final_clip
+
+    @measure_time
+    def _create_word_by_word_clip(self, text, duration, font_size=60, font_path=None,
+                             text_color=(255, 255, 255, 255),
+                             pill_color=(0, 0, 0, 160),  # Semi-transparent black
+                             position=('center', 'center')):
+        """
+        Create a word-by-word animation clip with pill-shaped backgrounds
+
+            text: text to be animated
+            duration: duration of the animation
+            font_size: size of the font
+            font_path: path to the font file
+            text_color: color of the text
+            pill_color: color of the pill background (with transparency)
+            position: position of the text
+
+        Returns:
+            VideoClip: Word-by-word animation clip
+        """
         if not font_path:
             font_path = self.body_font_path
 
+        # Split text into words and calculate durations
         words = text.split()
-        word_durations = self._calculate_word_durations(words, duration)
+        char_counts = [len(word) for word in words]
+        total_chars = sum(char_counts)
+        transition_duration = 0.02  # Faster transitions for better sync
+        total_transition_time = transition_duration * (len(words) - 1)
+        speech_duration = duration * 0.98  # Use more of the time for speech
+        effective_duration = speech_duration - total_transition_time
+
+        word_durations = []
+        min_word_time = 0.2  # Slightly faster minimum word display time
+        for word in words:
+            char_ratio = len(word) / max(1, total_chars)
+            word_time = min_word_time + (effective_duration - min_word_time * len(words)) * char_ratio
+            word_durations.append(word_time)
+
+        # Adjust durations to match total duration
+        actual_sum = sum(word_durations) + total_transition_time
+        if abs(actual_sum - duration) > 0.01:
+            adjust_factor = (duration - total_transition_time) / sum(word_durations)
+            word_durations = [d * adjust_factor for d in word_durations]
 
         clips = []
         current_time = 0
 
-        for word, word_duration in zip(words, word_durations):
-            word_image = self._render_word_on_pill(
-                word, font_size, font_path, text_color, pill_color)
-            word_clip = ImageClip(np.array(word_image), duration=word_duration)
-            clips.append(word_clip)
-            current_time += word_duration
+        for i, (word, word_duration) in enumerate(zip(words, word_durations)):
+            # Create a function to draw the frame with the word on a pill background
+            def make_frame_with_pill(word=word, font_size=font_size, font_path=font_path,
+                                    text_color=text_color, pill_color=pill_color):
+                # Load font
+                font = ImageFont.truetype(font_path, font_size)
 
-        transition_duration = min(0.1, duration * 0.05)
+                # Calculate text size
+                dummy_img = Image.new('RGBA', (1, 1))
+                dummy_draw = ImageDraw.Draw(dummy_img)
+                text_bbox = dummy_draw.textbbox((0, 0), word, font=font)
+                text_width = text_bbox[2] - text_bbox[0]
+                text_height = text_bbox[3] - text_bbox[1]
+
+                # Get ascent and descent for more precise vertical positioning
+                ascent, descent = font.getmetrics()
+
+                # Add padding for the pill
+                padding_x = int(font_size * 0.7)  # Horizontal padding
+                padding_y = int(font_size * 0.35)  # Vertical padding
+
+                # Create image
+                img_width = text_width + padding_x * 2
+                img_height = text_height + padding_y * 2
+
+                # Create a transparent image
+                img = Image.new('RGBA', (img_width, img_height), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+
+                # Create the pill shape (rounded rectangle)
+                radius = img_height // 2
+
+                # Draw the pill
+                # Draw the center rectangle
+                draw.rectangle([(radius, 0), (img_width - radius, img_height)], fill=pill_color)
+                # Draw the left semicircle
+                draw.ellipse([(0, 0), (radius * 2, img_height)], fill=pill_color)
+                # Draw the right semicircle
+                draw.ellipse([(img_width - radius * 2, 0), (img_width, img_height)], fill=pill_color)
+
+                # For horizontal centering:
+                text_x = (img_width - text_width) // 2
+                # For vertical centering:
+                offset_y = (descent - ascent) // 4 # This small adjustment often helps
+                text_y = (img_height - text_height) // 2 + offset_y
+
+                draw.text((text_x, text_y), word, font=font, fill=text_color)
+
+                return img
+
+            # Create the frame with the word on a pill
+            word_image = make_frame_with_pill()
+
+            # Convert to clip
+            word_clip = ImageClip(np.array(word_image), duration=word_duration)
+
+            # Add to clips list
+            clips.append(word_clip)
+
+            # Update current time
+            current_time += word_duration + transition_duration
+
+        # Concatenate clips
         clips_with_transitions = []
         for i, clip in enumerate(clips):
-            if i < len(clips) - 1:
+            if i < len(clips) - 1:  # Not the last clip
                 clip = clip.crossfadein(transition_duration)
             clips_with_transitions.append(clip)
 
         word_sequence = concatenate_videoclips(clips_with_transitions, method="compose")
 
+        # Create a transparent background the size of the entire clip
         bg = ColorClip(size=self.resolution, color=(0,0,0,0)).set_duration(word_sequence.duration)
+
+        # Position the word sequence in the center of the background
         positioned_sequence = word_sequence.set_position(position)
-        return CompositeVideoClip([bg, positioned_sequence], size=self.resolution)
 
-    def _calculate_word_durations(self, words: List[str], total_duration: float) -> List[float]:
-        """Calculate durations for each word"""
-        char_counts = [len(word) for word in words]
-        total_chars = sum(char_counts)
-        transition_duration = 0.05
-        total_transition_time = transition_duration * (len(words) - 1)
-        speech_duration = total_duration * 0.95
-        effective_duration = speech_duration - total_transition_time
+        # Combine the background and positioned sequence
+        final_clip = CompositeVideoClip([bg, positioned_sequence], size=self.resolution)
 
-        word_durations = []
-        min_word_time = 0.3
-        for word in words:
-            char_ratio = len(word) / max(1, total_chars)
-            word_time = min_word_time + (effective_duration - min_word_time * len(words)) * char_ratio * 1.2
-            word_durations.append(word_time)
+        return final_clip
 
-        adjust_factor = (total_duration - total_transition_time) / sum(word_durations)
-        return [d * adjust_factor for d in word_durations]
+    @measure_time
+    def custom_blur(self, clip, radius=5):
+        """
+        Apply a Gaussian blur effect to video clips
 
-    def _render_word_on_pill(self, word: str, font_size: int, font_path: str,
-                           text_color: tuple, pill_color: tuple) -> Image.Image:
-        """Render word on pill-shaped background"""
-        font = ImageFont.truetype(font_path, font_size)
+        Args:
+            clip (VideoClip): Video clip to blur
+            radius (int): Blur radius
 
-        dummy_img = Image.new('RGBA', (1, 1))
-        dummy_draw = ImageDraw.Draw(dummy_img)
-        text_bbox = dummy_draw.textbbox((0, 0), word, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
-
-        padding_x = int(font_size * 0.7)
-        padding_y = int(font_size * 0.35)
-        img_width = text_width + padding_x * 2
-        img_height = text_height + padding_y * 2
-
-        img = Image.new('RGBA', (img_width, img_height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        radius = img_height // 2
-        draw.rectangle([(radius, 0), (img_width - radius, img_height)], fill=pill_color)
-        draw.ellipse([(0, 0), (radius * 2, img_height)], fill=pill_color)
-        draw.ellipse([(img_width - radius * 2, 0), (img_width, img_height)], fill=pill_color)
-
-        text_x = (img_width - text_width) // 2
-        text_y = (img_height - text_height) // 2
-        draw.text((text_x, text_y), word, font=font, fill=text_color)
-
-        return img
-
-    def custom_blur(self, clip: VideoClip, radius: int = 5) -> VideoClip:
-        """Apply Gaussian blur effect"""
+        Returns:
+            VideoClip: Blurred video clip
+        """
         def blur_frame(get_frame, t):
             frame = get_frame(t)
             img = Image.fromarray(frame)
             blurred = img.filter(ImageFilter.GaussianBlur(radius=radius))
             return np.array(blurred)
-        return clip.fl(lambda gf, t: blur_frame(gf, t))
 
-    def custom_edge_blur(self, clip: VideoClip, edge_width: int = 50, radius: int = 10) -> VideoClip:
-        """Apply edge blur effect"""
+        def apply_blur(get_frame, t):
+            return blur_frame(get_frame, t)
+
+        return clip.fl(apply_blur)
+
+    @measure_time
+    def custom_edge_blur(self, clip, edge_width=50, radius=10):
+        """
+        Apply blur only to the edges of a video clip
+
+        Args:
+            clip (VideoClip): Video clip to blur edges of
+            edge_width (int): Width of the edge to blur
+            radius (int): Blur radius
+
+        Returns:
+            VideoClip: Video clip with blurred edges
+        """
         def blur_frame(get_frame, t):
             frame = get_frame(t)
             img = Image.fromarray(frame)
             width, height = img.size
 
+            # Create a mask for the unblurred center
             mask = Image.new('L', (width, height), 0)
             draw = ImageDraw.Draw(mask)
             draw.rectangle(
@@ -713,155 +658,514 @@ class YTShortsCreator:
                 fill=255
             )
 
+            # Blur the entire image
             blurred = img.filter(ImageFilter.GaussianBlur(radius=radius))
+
+            # Composite the blurred image with the original using the mask
             composite = Image.composite(img, blurred, mask)
+
             return np.array(composite)
-        return clip.fl(lambda gf, t: blur_frame(gf, t))
 
-    def _create_pill_image(self, size: tuple, color: tuple = (0, 0, 0, 160),
-                         radius: int = 30) -> Image.Image:
-        """Create pill-shaped background image"""
-        width, height = size
-        img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        def apply_edge_blur(get_frame, t):
+            return blur_frame(get_frame, t)
 
-        draw.rectangle([(radius, 0), (width - radius, height)], fill=color)
-        draw.rectangle([(0, radius), (width, height - radius)], fill=color)
-        draw.ellipse([(0, 0), (radius * 2, radius * 2)], fill=color)
-        draw.ellipse([(width - radius * 2, 0), (width, radius * 2)], fill=color)
-        draw.ellipse([(0, height - radius * 2), (radius * 2, height)], fill=color)
-        draw.ellipse([(width - radius * 2, height - radius * 2), (width, height)], fill=color)
+        return clip.fl(apply_edge_blur)
 
-        return img
+    @measure_time
+    def _process_background_clip(self, clip, target_duration, blur_background=False, edge_blur=False):
+        """
+        Process a background clip to match the required duration
 
-    def _render_final_video(self, background: VideoClip, text_clips: List[VideoClip],
-                          audio: Optional[AudioClip], output_path: str) -> None:
-        """Render final video with all components"""
-        final_clips = [background] + text_clips
-        final_video = CompositeVideoClip(final_clips, size=self.resolution)
+        Args:
+            clip (VideoClip): The video clip to process
+            target_duration (float): The desired duration in seconds
+            blur_background (bool): Whether to apply blur effect
+            edge_blur (bool): Whether to apply edge blur effect
 
-        if audio:
-            final_video = final_video.set_audio(audio)
+        Returns:
+            VideoClip: Processed clip with matching duration
+        """
+        # Handle videos shorter than needed duration with proper looping
+        if clip.duration < target_duration:
+            # Create enough loops to cover the needed duration
+            loops_needed = int(np.ceil(target_duration / clip.duration))
+            looped_clips = []
 
-        final_video.write_videofile(
-            output_path,
-            codec="libx264",
-            audio_codec="aac",
-            fps=self.fps,
-            preset="veryfast",
-            threads=8,
-            ffmpeg_params=["-movflags", "+faststart"],
-            ffmpeg_params_input=["-hwaccel", "auto"]
-        )
-
-    def _fetch_videos(self, query: str, count: int = 5, min_duration: int = 5) -> List[str]:
-        """Fetch background videos from multiple sources"""
-        cache_key = f"{query}_{min_duration}"
-        if cache_key in self.media_cache:
-            cached = self.media_cache[cache_key]
-            if len(cached) >= count:
-                return random.sample(cached, count)
-
-        videos = []
-        apis = ["pexels", "pixabay"]
-        random.shuffle(apis)
-
-        for api in apis:
-            if len(videos) >= count:
-                break
-
-            try:
-                if api == "pexels" and self.pexels_api_key:
-                    api_videos = self._fetch_from_pexels(query, count - len(videos), min_duration)
-                elif api == "pixabay" and self.pixabay_api_key:
-                    api_videos = self._fetch_from_pixabay(query, count - len(videos), min_duration)
+            for loop in range(loops_needed):
+                if loop == loops_needed - 1:
+                    # For the last segment, only take what we need
+                    remaining_needed = target_duration - (loop * clip.duration)
+                    if remaining_needed > 0:
+                        segment = clip.subclip(0, min(remaining_needed, clip.duration))
+                        looped_clips.append(segment)
                 else:
-                    continue
+                    looped_clips.append(clip.copy())
 
-                videos.extend(api_videos)
-            except Exception as e:
-                logger.error(f"Error fetching from {api}: {str(e)}")
+            clip = concatenate_videoclips(looped_clips)
+        else:
+            # If longer than needed, take a random segment
+            if clip.duration > target_duration + 1:
+                max_start = clip.duration - target_duration - 0.5
+                start_time = random.uniform(0, max_start)
+                clip = clip.subclip(start_time, start_time + target_duration)
+            else:
+                # Just take from the beginning if not much longer
+                clip = clip.subclip(0, target_duration)
 
-        if videos:
-            self.media_cache[cache_key] = videos
+        # Resize to match height
+        clip = clip.resize(height=self.resolution[1])
 
-        return videos[:count]
+       # Apply blur effect only if requested
+        if blur_background and not edge_blur:
+            clip = self.custom_blur(clip, radius=5)
+        elif edge_blur:
+            clip = self.custom_edge_blur(clip, edge_width=75, radius=10)
 
-    def _fetch_from_pixabay(self, query: str, count: int, min_duration: int) -> List[str]:
-        """Fetch videos from Pixabay API"""
+        # Center the video if it's not wide enough
+        if clip.w < self.resolution[0]:
+            bg = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(clip.duration)
+            x_pos = (self.resolution[0] - clip.w) // 2
+            clip = CompositeVideoClip([bg, clip.set_position((x_pos, 0))], size=self.resolution)
+
+        # Crop width if wider than needed
+        elif clip.w > self.resolution[0]:
+            x_centering = (clip.w - self.resolution[0]) // 2
+            clip = clip.crop(x1=x_centering, x2=x_centering + self.resolution[0])
+
+        # Make sure we have exact duration to prevent timing issues
+        clip = clip.set_duration(target_duration)
+
+        return clip
+
+    @measure_time
+    def create_youtube_short(self, title, script_sections, background_query="abstract background",
+                            output_filename=None, add_captions=False, style="video", voice_style=None, max_duration=25,
+                            background_queries=None, blur_background=False, edge_blur=False):
+        """
+        Create a YouTube Short with the given script sections.
+
+        Args:
+            title (str): Title for the video
+            script_sections (list): List of dict with text, duration, and voice_style
+            background_query (str): Search term for background video
+            output_filename (str): Output filename, if None one will be generated
+            add_captions (bool): If True, add captions to the video
+            style (str): Style of the video
+            voice_style (str): Voice style from Azure TTS (excited, cheerful, etc)
+            max_duration (int): Maximum video duration in seconds
+            background_queries (list): Optional list of section-specific background queries
+            blur_background (bool): Whether to apply blur effect to background videos
+            edge_blur (bool): Whether to apply edge blur to background videos
+
+        Returns:
+            str: Output file path
+        """
         try:
-            url = f"https://pixabay.com/api/videos/?key={self.pixabay_api_key}&q={query}&min_width=1080&min_height=1920&per_page=20"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
+            if not output_filename:
+                date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                output_filename = os.path.join(self.output_dir, f"short_{date_str}.mp4")
 
-            data = response.json()
-            videos = data.get("hits", [])
-            valid_videos = [v for v in videos if v.get("duration", 0) >= min_duration]
-            selected_videos = random.sample(valid_videos, min(count, len(valid_videos)))
+            # Get total duration from script sections
+            total_raw_duration = sum(section.get('duration', 5) for section in script_sections)
+            duration_scaling_factor = min(1.0, max_duration / total_raw_duration) if total_raw_duration > max_duration else 1.0
 
-            video_paths = []
-            for video in selected_videos:
-                video_id = video["id"]
-                video_path = os.path.join(self.temp_dir, f"pixabay_{video_id}.mp4")
+            # Scale durations if needed to fit max time
+            if duration_scaling_factor < 1.0:
+                logger.info(f"Scaling durations by factor {duration_scaling_factor:.2f} to fit max duration of {max_duration}s")
+                for section in script_sections:
+                    section['duration'] = section['duration'] * duration_scaling_factor
 
-                if os.path.exists(video_path):
-                    video_paths.append(video_path)
-                    continue
+            total_duration = sum(section.get('duration', 5) for section in script_sections)
+            logger.info(f"Total video duration: {total_duration}s")
 
-                video_url = video["videos"]["large"]["url"]
-                if self._download_file(video_url, video_path):
-                    video_paths.append(video_path)
+            # Calculate number of background segments needed (usually one per middle section, excluding first and last)
+            middle_section_count = max(1, len(script_sections) - 2)
+            logger.info(f"Creating video with {middle_section_count} background segments for middle sections")
 
-            return video_paths
+            # Background videos - section specific if provided
+            if background_queries and len(background_queries) == len(script_sections):
+                # Use section-specific queries
+                section_backgrounds = []
+
+                # Start fetching all backgrounds
+                logger.info("Starting background video fetch")
+                start_time = time.time()
+
+                # Process middle sections (excluding first and last sections)
+                for i, query in enumerate(background_queries[1:-1], 1):
+                    # Get multiple videos for variety
+                    section_videos = self._fetch_videos(query, count=1, min_duration=int(script_sections[i]['duration']) + 2)
+                    if section_videos:
+                        section_backgrounds.append(section_videos[0])
+                    else:
+                        # If no video found for section, try the generic background query
+                        fallback_videos = self._fetch_videos(background_query, count=1, min_duration=int(script_sections[i]['duration']) + 2)
+                        if fallback_videos:
+                            section_backgrounds.append(fallback_videos[0])
+
+                # Add backgrounds for first and last sections
+                first_section_videos = self._fetch_videos(background_queries[0], count=1, min_duration=int(script_sections[0]['duration']) + 2)
+                if first_section_videos:
+                    section_backgrounds.insert(0, first_section_videos[0])
+                else:
+                    # If no specific video found, add a generic one
+                    first_generic = self._fetch_videos(background_query, count=1, min_duration=int(script_sections[0]['duration']) + 2)
+                    if first_generic:
+                        section_backgrounds.insert(0, first_generic[0])
+
+                last_section_videos = self._fetch_videos(background_queries[-1], count=1, min_duration=int(script_sections[-1]['duration']) + 2)
+                if last_section_videos:
+                    section_backgrounds.append(last_section_videos[0])
+                else:
+                    # If no specific video found, add a generic one
+                    last_generic = self._fetch_videos(background_query, count=1, min_duration=int(script_sections[-1]['duration']) + 2)
+                    if last_generic:
+                        section_backgrounds.append(last_generic[0])
+
+                # Ensure we have enough backgrounds
+                while len(section_backgrounds) < len(script_sections):
+                    # Add generic backgrounds if needed
+                    generic_videos = self._fetch_videos(background_query, count=1, min_duration=5)
+                    if generic_videos:
+                        section_backgrounds.append(generic_videos[0])
+
+                end_time = time.time()
+                logger.info(f"Completed background video fetch in {end_time - start_time:.2f} seconds")
+                background_videos = section_backgrounds
+            else:
+                # Use a single query for all backgrounds
+                logger.info("Starting background video fetch")
+                start_time = time.time()
+                background_videos = self._fetch_videos(background_query, count=len(script_sections), min_duration=5)
+                end_time = time.time()
+                logger.info(f"Completed background video fetch in {end_time - start_time:.2f} seconds")
+
+            # Generate TTS for each section
+            logger.info("Starting TTS audio generation")
+            start_time = time.time()
+
+            audio_files = []
+            audio_durations = []
+
+            for i, section in enumerate(script_sections):
+                text = section['text']
+                section_voice_style = section.get('voice_style', voice_style)
+
+                # Generate temporary filename
+                section_audio_file = os.path.join(self.temp_dir, f"section_{i}.mp3")
+
+                # Azure TTS or gTTS
+                if self.google_tts:
+                    try:
+                        audio_path = self.google_tts.generate_speech(
+                            text,
+                            output_filename=section_audio_file,
+                            voice_style=section_voice_style
+                        )
+                    except Exception as e:
+                        logger.error(f"Google Cloud TTS error: {e}. Falling back to gTTS.")
+                        tts = gTTS(text=text, lang='en', slow=False)
+                        tts.save(section_audio_file)
+                        audio_path = section_audio_file
+                elif self.azure_tts:
+                    try:
+                        audio_path = self.azure_tts.generate_speech(
+                            text,
+                            output_filename=section_audio_file,
+                            voice_style=section_voice_style
+                        )
+                    except Exception as e:
+                        logger.error(f"Azure TTS error: {e}. Falling back to gTTS.")
+                        tts = gTTS(text=text, lang='en', slow=False)
+                        tts.save(section_audio_file)
+                        audio_path = section_audio_file
+                else:
+                    tts = gTTS(text=text, lang='en', slow=False)
+                    tts.save(section_audio_file)
+                    audio_path = section_audio_file
+
+                audio_files.append(audio_path)
+
+                # Check actual audio duration and update section duration if needed
+                try:
+                    temp_audio = AudioFileClip(audio_path)
+                    actual_duration = temp_audio.duration
+                    section['actual_audio_duration'] = actual_duration  # Store actual duration for safety checks
+                    audio_durations.append(actual_duration)
+                    temp_audio.close()
+                except Exception as e:
+                    logger.error(f"Error checking audio duration for section {i}: {e}")
+                    section['actual_audio_duration'] = section['duration']  # Fallback to planned duration
+                    audio_durations.append(section['duration'])
+
+            end_time = time.time()
+            logger.info(f"Completed TTS audio generation in {end_time - start_time:.2f} seconds")
+
+            # Update total duration based on actual audio durations
+            total_actual_duration = sum(audio_durations)
+            logger.info(f"Updated total duration: {total_actual_duration}s")
+
+            # Make sure we have enough background videos
+            if len(background_videos) < len(script_sections):
+                # Fetch more background videos if needed
+                logger.info(f"Fetching {len(script_sections) - len(background_videos)} more background videos")
+                more_videos = self._fetch_videos(
+                    background_query,
+                    count=len(script_sections) - len(background_videos),
+                    min_duration=5
+                )
+                background_videos.extend(more_videos)
+
+            # Process background videos
+            logger.info("Starting background processing")
+            start_time = time.time()
+
+            background_clips = []
+            for i, (video_path, section) in enumerate(zip(background_videos, script_sections)):
+                try:
+                    # Get the actual audio duration instead of planned duration
+                    section_duration = section.get('actual_audio_duration', section.get('duration', 5))
+
+                    if os.path.exists(video_path):
+                        video_clip = VideoFileClip(video_path)
+
+                        # Apply processing to fit duration and style
+                        processed_clip = self._process_background_clip(
+                            video_clip,
+                            section_duration,
+                            blur_background=blur_background,
+                            edge_blur=edge_blur
+                        )
+
+                        # Store processed clip
+                        background_clips.append(processed_clip)
+                    else:
+                        logger.warning(f"Background video {i} not found: {video_path}")
+                        # Create a black background as fallback
+                        black_bg = ColorClip(size=self.resolution, color=(0, 0, 0), duration=section_duration)
+                        background_clips.append(black_bg)
+                except Exception as e:
+                    logger.error(f"Error processing background clip {i}: {e}")
+                    # Create a black background as fallback for this section
+                    section_duration = section.get('actual_audio_duration', section.get('duration', 5))
+                    black_bg = ColorClip(size=self.resolution, color=(0, 0, 0), duration=section_duration)
+                    background_clips.append(black_bg)
+
+            end_time = time.time()
+            logger.info(f"Completed background processing in {end_time - start_time:.2f} seconds")
+
+            # Create audio and video for each section
+            section_clips = []
+
+            for i, (section, audio_path, bg_clip) in enumerate(zip(script_sections, audio_files, background_clips)):
+                try:
+                    # Load audio with extra safety check
+                    audio_clip = AudioFileClip(audio_path)
+                    section_duration = audio_clip.duration  # Use actual audio duration
+
+                    # Ensure background clip is long enough
+                    if bg_clip.duration < section_duration:
+                        logger.warning(f"Section duration ({section_duration:.2f}s) exceeds available background ({bg_clip.duration:.2f}s), looping")
+                        # Instead of using vfx.loop which causes serialization issues, manually create a looped clip
+                        loops_needed = int(np.ceil(section_duration / bg_clip.duration))
+                        looped_clips = []
+
+                        for _ in range(loops_needed):
+                            looped_clips.append(bg_clip.copy())
+
+                        # Concatenate the loops
+                        bg_clip = concatenate_videoclips(looped_clips)
+                        # Trim to exact duration needed
+                        bg_clip = bg_clip.subclip(0, section_duration)
+
+                    # Set audio to background
+                    bg_with_audio = bg_clip.set_duration(section_duration).set_audio(audio_clip)
+
+                    # Add text captions if requested
+                    if add_captions:
+                        # Use different text approaches based on section position
+                        if i == 0 or i == len(script_sections) - 1:  # First section (intro) or last section (outro)
+                            # Use regular text clip for intro and outro
+                            text_clip = self._create_text_clip(
+                                section['text'],
+                                duration=section_duration,
+                                animation="fade",
+                                with_pill=True,
+                                font_size=70,  # Slightly larger font for intro/outro
+                                position=('center', 'center')
+                            )
+                        else:  # Middle sections
+                            # Use word-by-word animation for middle sections
+                            text_clip = self._create_word_by_word_clip(
+                                text=section['text'],
+                                duration=section_duration,
+                                font_size=60,
+                                position=('center', 'center'),
+                                text_color=(255, 255, 255, 255),
+                                pill_color=(0, 0, 0, 160)
+                            )
+
+                        # Composite the text over the background
+                        section_clip = CompositeVideoClip([bg_with_audio, text_clip])
+                    else:
+                        # Always add text overlay regardless of add_captions setting
+                        # But still respect the intro/middle/outro distinction
+                        if i == 0 or i == len(script_sections) - 1:  # First section (intro) or last section (outro)
+                            # Use regular text clip for intro and outro
+                            text_clip = self._create_text_clip(
+                                section['text'],
+                                duration=section_duration,
+                                animation="fade",
+                                with_pill=True,
+                                font_size=70,  # Larger font size for better visibility
+                                position=('center', 'center')
+                            )
+                        else:  # Middle sections
+                            # Use word-by-word animation for middle sections
+                            text_clip = self._create_word_by_word_clip(
+                                text=section['text'],
+                                duration=section_duration,
+                                font_size=60,
+                                position=('center', 'center'),
+                                text_color=(255, 255, 255, 255),
+                                pill_color=(0, 0, 0, 160)
+                            )
+
+                        # Composite the text over the background
+                        section_clip = CompositeVideoClip([bg_with_audio, text_clip])
+
+                    section_clips.append(section_clip)
+
+                except Exception as e:
+                    logger.error(f"Error creating section {i}: {e}")
+                    # Create a black clip with text as fallback
+                    fallback_duration = section.get('actual_audio_duration', section.get('duration', 5))
+                    black_bg = ColorClip(size=self.resolution, color=(0, 0, 0), duration=fallback_duration)
+
+                    try:
+                        # Try to add audio if possible
+                        audio_clip = AudioFileClip(audio_path)
+                        black_bg = black_bg.set_audio(audio_clip)
+                    except Exception as audio_err:
+                        logger.error(f"Error adding audio to fallback clip: {audio_err}")
+
+                    # Add text to explain the error
+                    error_text = TextClip(
+                        "Error loading section",
+                        color='white',
+                        size=self.resolution,
+                        fontsize=60,
+                        method='caption',
+                        align='center'
+                    ).set_duration(fallback_duration)
+
+                    section_clip = CompositeVideoClip([black_bg, error_text])
+                    section_clips.append(section_clip)
+
+            # Process and validate section clips
+            validated_section_clips = []
+            for i, clip in enumerate(section_clips):
+                try:
+                    # Ensure audio duration is valid for this section
+                    if clip.audio is not None:
+                        # Get actual duration of the audio and clip
+                        audio_duration = clip.audio.duration
+                        clip_duration = clip.duration
+
+                        # If audio is too short, loop or extend it
+                        if audio_duration < clip_duration:
+                            logger.warning(f"Audio for section {i} is shorter than clip ({audio_duration}s vs {clip_duration}s), extending")
+                            # Create a new audio that exactly matches the clip duration
+                            from moviepy.audio.AudioClip import CompositeAudioClip, AudioClip
+                            extended_audio = clip.audio.set_duration(clip_duration)
+                            clip = clip.set_audio(extended_audio)
+
+                        # If audio is longer, trim it
+                        elif audio_duration > clip_duration:
+                            logger.warning(f"Audio for section {i} is longer than clip ({audio_duration}s vs {clip_duration}s), trimming")
+                            trimmed_audio = clip.audio.subclip(0, clip_duration)
+                            clip = clip.set_audio(trimmed_audio)
+
+                    validated_section_clips.append(clip)
+                except Exception as e:
+                    logger.error(f"Error validating section clip {i}: {e}")
+                    # Use clip as-is if validation fails
+                    validated_section_clips.append(clip)
+
+            # Try parallel rendering first
+            try:
+                logger.info("Using parallel renderer for improved performance")
+
+                # Check for dill library - needed for optimal parallel rendering
+                try:
+                    import dill
+                    logger.info(f"Found dill {dill.__version__} for improved serialization")
+                except ImportError:
+                    logger.warning("Dill library not found - parallel rendering may be less efficient")
+                    logger.warning("Consider installing dill with: pip install dill")
+
+                from parallel_renderer import render_clips_in_parallel
+                output_filename = render_clips_in_parallel(
+                    validated_section_clips,
+                    output_filename,
+                    temp_dir=self.temp_dir,
+                    fps=self.fps,
+                    preset="veryfast"
+                )
+            except Exception as parallel_error:
+                logger.warning(f"Parallel renderer failed: {parallel_error}. Using standard rendering.")
+
+                # Use standard rendering as fallback
+                logger.info("Starting standard video rendering")
+                try:
+                    # Concatenate all section clips
+                    final_clip = concatenate_videoclips(validated_section_clips)
+
+                    # Write final video
+                    final_clip.write_videofile(
+                        output_filename,
+                        fps=self.fps,
+                        codec="libx264",
+                        audio_codec="aac",
+                        threads=2,
+                        preset="veryfast",
+                        ffmpeg_params=[
+                            "-pix_fmt", "yuv420p",  # For compatibility with all players
+                            "-profile:v", "main",   # Better compatibility with mobile devices
+                            "-crf", "22",           # Better quality-to-size ratio
+                            "-maxrate", "3M",       # Maximum bitrate for streaming
+                            "-bufsize", "6M"        # Buffer size for rate control
+                        ]
+                    )
+                finally:
+                    # Clean up all clips
+                    for clip in validated_section_clips:
+                        try:
+                            clip.close()
+                        except:
+                            pass
+
+            # Final cleanup
+            self._cleanup()
+
+            return output_filename
 
         except Exception as e:
-            logger.error(f"Pixabay API error: {str(e)}")
-            return []
-
-    def _fetch_from_pexels(self, query: str, count: int, min_duration: int) -> List[str]:
-        """Fetch videos from Pexels API"""
-        try:
-            headers = {"Authorization": self.pexels_api_key}
-            url = f"https://api.pexels.com/videos/search?query={query}&per_page=20&orientation=portrait"
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-
-            data = response.json()
-            videos = data.get("videos", [])
-            valid_videos = [v for v in videos if v.get("duration", 0) >= min_duration]
-            selected_videos = random.sample(valid_videos, min(count, len(valid_videos)))
-
-            video_paths = []
-            for video in selected_videos:
-                video_id = video["id"]
-                video_path = os.path.join(self.temp_dir, f"pexels_{video_id}.mp4")
-
-                if os.path.exists(video_path):
-                    video_paths.append(video_path)
-                    continue
-
-                video_files = video.get("video_files", [])
-                if not video_files:
-                    continue
-
-                video_url = max(video_files, key=lambda x: x.get("width", 0)).get("link")
-                if video_url and self._download_file(video_url, video_path):
-                    video_paths.append(video_path)
-
-            return video_paths
-
-        except Exception as e:
-            logger.error(f"Pexels API error: {str(e)}")
-            return []
-
-    def __del__(self):
-        """Cleanup when instance is destroyed"""
-        self._cleanup()
+            logger.error(f"Error in create_youtube_short: {e}")
+            # If there's a temp directory, clean it up
+            if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
+                try:
+                    shutil.rmtree(self.temp_dir)
+                except Exception as cleanup_error:
+                    logger.error(f"Error cleaning up temp directory: {cleanup_error}")
+            raise
 
     def _cleanup(self):
-        """Clean up temporary resources"""
+        """Clean up temporary files"""
         try:
-            shutil.rmtree(self.temp_dir, ignore_errors=True)
-            logger.info("Temporary files cleaned up")
+            shutil.rmtree(self.temp_dir)
+            logger.info("Temporary files cleaned up successfully.")
         except Exception as e:
-            logger.warning(f"Cleanup error: {str(e)}")
+            logger.warning(f"Error cleaning up temporary files: {str(e)}")
+
+

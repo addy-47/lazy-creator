@@ -12,10 +12,12 @@ import shutil
 from functools import wraps
 import requests
 import re
+import tempfile
 
 from automation.shorts_main import generate_youtube_short
 from automation.youtube_upload import upload_video, get_authenticated_service, check_auth_status
 from automation.youtube_auth import get_auth_url, get_credentials_from_code
+from storage import cloud_storage
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -24,13 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['GALLERY_FOLDER'] = 'gallery'
 app.config['TOKEN_EXPIRATION'] = 86400  # 24 hours in seconds
-
-# Ensure directories exist
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['GALLERY_FOLDER'], exist_ok=True)
 
 # MongoDB Configuration
 mongo_uri = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
@@ -132,86 +128,186 @@ def generate_short(current_user):
         background_source = request.form.get('background_source', 'provided')
         background_file = request.files.get('background_file')
 
+        # Always initialize background_path to None
+        background_path = None
+
         # Validate inputs
         if background_source == 'custom' and not background_file:
             return jsonify({"status": "error", "message": "Background file is required for custom source"}), 400
 
+        # Get user ID for proper storage attribution
+        user_id = str(current_user['_id'])
+
         # Handle file upload for custom background
-        background_path = None
         if background_file:
             filename = secure_filename(background_file.filename)
-            background_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            background_file.save(background_path)
+            # Pass user_id to save_uploaded_file for proper association
+            background_path = cloud_storage.save_uploaded_file(
+                background_file,
+                filename,
+                user_id=user_id
+            )
 
         # Create a video entry with 'processing' status and link to user account
         video_data = {
             'original_prompt': prompt,
             'duration': duration,
             'background_type': background_type,
+            'background_source': background_source,
+            'background_path': background_path,  # Store the background path in the database
             'created_at': datetime.utcnow(),
-            'status': 'processing',  # Add status field
-            'progress': 0,  # Add progress field
+            'status': 'processing',
+            'progress': 0,
             'uploaded_to_yt': False,
             'youtube_id': None,
-            'user_id': str(current_user['_id'])  # Link video to user account
+            'user_id': user_id
         }
 
         # Insert into database and get ID
         video_id = videos_collection.insert_one(video_data).inserted_id
 
-        # Start background processing (in a real app, use a task queue like Celery)
-        # For now, we'll simulate it with a thread
+        # Return immediate response with video ID
+        response = {
+            "status": "processing",
+            "message": "Video generation started",
+            "video_id": str(video_id)
+        }
+
+        # Start background processing
         import threading
 
         def process_video():
             try:
-                # Call the generation function
-                video_path = generate_youtube_short(
-                    topic=prompt,
-                    max_duration=duration,
-                    background_type=background_type,
-                    background_source=background_source,
-                    background_path=background_path
-                )
+                # Make background_path accessible in this function
+                nonlocal background_path
 
-                # Create a unique filename
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"{prompt.replace(' ', '_')}_{timestamp}.mp4"
-                gallery_path = os.path.join(app.config['GALLERY_FOLDER'], filename)
+                logger.info(f"Started video generation for user {user_id}, video {video_id}")
 
-                # Move the video to the gallery folder
-                shutil.move(video_path, gallery_path)
-
-                # Update the database with completed status and file info
+                # Update database status to processing
                 videos_collection.update_one(
                     {'_id': ObjectId(video_id)},
                     {'$set': {
-                        'status': 'completed',
-                        'progress': 100,
-                        'filename': filename,
-                        'path': gallery_path,
-                        'user_id': str(current_user['_id'])  # Ensure user ID is set in the final update
+                        'status': 'processing',
+                        'progress': 10
                     }}
                 )
 
-                # Notify frontend that generation is complete (attempt to call frontend's callback URL)
-                try:
-                    # Extract origin from request headers to build callback URL
-                    origin = request.headers.get('Origin', 'http://localhost:3500')
-                    # Make a POST request to the frontend callback URL
-                    callback_url = f"{origin}/api/generation-complete-callback/{video_id}"
-                    requests.post(callback_url, json={
-                        'status': 'success',
-                        'video_id': str(video_id),
-                        'filename': filename
-                    }, timeout=5)
-                except Exception as callback_error:
-                    logger.error(f"Failed to notify frontend of completion: {callback_error}")
-                    # Continue even if notification fails
+                # Create a temporary directory for processing
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    # Process background path if it exists
+                    processed_background_path = background_path
+
+                    # If background is a GCS path, use it directly with signed URL
+                    if processed_background_path and isinstance(processed_background_path, str) and processed_background_path.startswith('gs://'):
+                        try:
+                            # Parse the gs:// URL to get bucket and blob names
+                            parts = processed_background_path.replace('gs://', '').split('/', 1)
+                            if len(parts) == 2:
+                                bucket_name, blob_name = parts
+                                # Get a signed URL for streaming
+                                processed_background_path = cloud_storage.get_signed_url(blob_name, bucket_name, expiration=3600)
+                                logger.info(f"Using streaming URL for background video")
+                        except Exception as bg_error:
+                            logger.error(f"Error getting signed URL for background: {bg_error}")
+                            # Continue without the background, the generation code will use a default
+                            processed_background_path = None
+
+                    # Ensure background_path is defined before passing it to generate_youtube_short
+                    processed_background_source = background_source
+                    if processed_background_source == "custom" and not processed_background_path:
+                        logger.warning("Custom background source specified but no background path provided")
+                        processed_background_source = "provided"  # Fallback to provided background
+
+                    # Call the generation function
+                    logger.info(f"Generating YouTube short for prompt: '{prompt}'")
+                    logger.info(f"Using background_path: {processed_background_path}, background_source: {processed_background_source}, background_type: {background_type}")
+
+                    try:
+                        video_path = generate_youtube_short(
+                            topic=prompt,
+                            max_duration=duration,
+                            background_type=background_type,
+                            background_source=processed_background_source,
+                            background_path=processed_background_path
+                        )
+
+                        # Check if video was generated successfully
+                        if not video_path or not os.path.exists(video_path):
+                            raise FileNotFoundError(f"Generated video file not found at {video_path}")
+
+                        # Update progress
+                        videos_collection.update_one(
+                            {'_id': ObjectId(video_id)},
+                            {'$set': {
+                                'progress': 60,
+                                'status': 'uploading'
+                            }}
+                        )
+
+                        # Create a unique filename
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        safe_prompt = re.sub(r'[^\w\s-]', '', prompt.lower()).strip().replace(' ', '_')[:50]  # Limit length for filesystems
+                        filename = f"{safe_prompt}_{timestamp}.mp4"
+
+                        # Set path in GCS to include user ID for better organization
+                        blob_name = f"videos/{user_id}/{filename}"
+
+                        # Upload to Cloud Storage with user_id metadata
+                        gcs_path = cloud_storage.upload_file(
+                            video_path,
+                            blob_name,
+                            user_id=user_id,
+                            metadata={
+                                'prompt': prompt,
+                                'duration': str(duration),
+                                'video_id': str(video_id)
+                            }
+                        )
+
+                        # For local storage, format as gs:// path for consistency
+                        if cloud_storage.use_local_storage and not gcs_path.startswith('gs://'):
+                            gcs_path = f"gs://{cloud_storage.media_bucket}/{blob_name}"
+
+                        # Update the database with completed status and file info
+                        videos_collection.update_one(
+                            {'_id': ObjectId(video_id)},
+                            {'$set': {
+                                'status': 'completed',
+                                'progress': 100,
+                                'filename': filename,
+                                'path': gcs_path,
+                                'user_id': user_id,
+                                'completed_at': datetime.utcnow()
+                            }}
+                        )
+
+                        logger.info(f"Video generation completed for user {user_id}, video {video_id}")
+
+                        # Notify frontend that generation is complete
+                        try:
+                            origin = request.headers.get('Origin', 'http://localhost:3500')
+                            callback_url = f"{origin}/api/generation-complete-callback/{video_id}"
+                            requests.post(callback_url, json={
+                                'status': 'success',
+                                'video_id': str(video_id),
+                                'filename': filename,
+                                'path': gcs_path
+                            }, timeout=5)
+                        except Exception as callback_error:
+                            logger.error(f"Failed to notify frontend of completion: {callback_error}")
+                    except Exception as gen_error:
+                        logger.error(f"Error in video generation for video {video_id}: {gen_error}")
+                        # Update database with error status
+                        videos_collection.update_one(
+                            {'_id': ObjectId(video_id)},
+                            {'$set': {
+                                'status': 'error',
+                                'error_message': str(gen_error)
+                            }}
+                        )
 
             except Exception as e:
-                logger.error(f"Error in background processing: {e}")
-                # Update with error status
+                logger.error(f"Error in background processing for video {video_id}: {e}")
                 videos_collection.update_one(
                     {'_id': ObjectId(video_id)},
                     {'$set': {
@@ -220,21 +316,15 @@ def generate_short(current_user):
                     }}
                 )
 
-        # Start the processing thread
+        # Start the background thread and return immediately
         thread = threading.Thread(target=process_video)
         thread.daemon = True
         thread.start()
 
-        return jsonify({
-            "status": "success",
-            "message": "YouTube Short generation started",
-            "video": {
-                "id": str(video_id),
-            }
-        })
+        return jsonify(response), 202
 
     except Exception as e:
-        logger.error(f"Error generating YouTube Short: {e}")
+        logger.error(f"Error in generate-short endpoint: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # Check video status
@@ -306,13 +396,24 @@ def download_video(current_user, video_id):
     try:
         video = videos_collection.find_one({
             '_id': ObjectId(video_id),
-            'user_id': str(current_user['_id'])  # Ensure video belongs to current user
+            'user_id': str(current_user['_id'])
         })
 
-        if not video or video.get('status') != 'completed' or not os.path.exists(video.get('path', '')):
+        if not video or video.get('status') != 'completed':
             return jsonify({"status": "error", "message": "File not found"}), 404
 
-        return send_file(video['path'], as_attachment=True)
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+            # Download from Cloud Storage
+            gcs_path = video.get('path')
+            if not gcs_path or not gcs_path.startswith('gs://'):
+                return jsonify({"status": "error", "message": "Invalid file path"}), 404
+
+            # Extract bucket and blob name from gs:// path
+            _, bucket_name, blob_name = gcs_path.split('/', 2)
+            cloud_storage.download_file(blob_name, temp_file.name, bucket_name)
+
+            return send_file(temp_file.name, as_attachment=True)
 
     except Exception as e:
         logger.error(f"Error downloading video: {e}")
@@ -486,7 +587,6 @@ def upload_to_youtube(current_user, video_id):
 @token_required
 def delete_video(current_user, video_id):
     try:
-        # Find the video by ID only - remove user_email filter since videos don't have this field
         video = videos_collection.find_one({
             '_id': ObjectId(video_id)
         })
@@ -494,14 +594,14 @@ def delete_video(current_user, video_id):
         if not video:
             return jsonify({"status": "error", "message": "Video not found"}), 404
 
-        # Delete file if exists - Use os.path for Windows compatibility
-        video_path = video.get('path', '')
-        if video_path and os.path.isfile(video_path):
+        # Delete from Cloud Storage if path exists
+        gcs_path = video.get('path')
+        if gcs_path and gcs_path.startswith('gs://'):
+            _, bucket_name, blob_name = gcs_path.split('/', 2)
             try:
-                os.remove(video_path)
-            except OSError as e:
-                logger.warning(f"Could not delete file {video_path}: {e}")
-                # Continue even if file deletion fails - clean up database entry
+                cloud_storage.delete_file(blob_name, bucket_name)
+            except Exception as e:
+                logger.warning(f"Could not delete file from Cloud Storage: {e}")
 
         # Delete from database
         videos_collection.delete_one({'_id': ObjectId(video_id)})
@@ -518,20 +618,17 @@ def delete_video(current_user, video_id):
 def delete_video_compatibility(current_user, video_id):
     return delete_video(current_user, video_id)
 
-# Serve gallery videos - No auth required for direct viewing
+# Serve gallery videos
 @app.route('/gallery/<filename>', methods=['GET'])
 def serve_gallery_file(filename):
     try:
-        # Ensure gallery directory exists
-        gallery_path = os.path.abspath(app.config['GALLERY_FOLDER'])
-        os.makedirs(gallery_path, exist_ok=True)
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+            # Download from Cloud Storage
+            blob_name = f"videos/{filename}"
+            cloud_storage.download_file(blob_name, temp_file.name)
+            return send_file(temp_file.name)
 
-        if not os.path.exists(os.path.join(gallery_path, filename)):
-            logger.error(f"Gallery file not found: {filename}")
-            return jsonify({"status": "error", "message": "File not found"}), 404
-
-        # Normalize path for Windows compatibility
-        return send_from_directory(gallery_path, filename)
     except Exception as e:
         logger.error(f"Error serving gallery file: {e}")
         return jsonify({"status": "error", "message": str(e)}), 404
@@ -741,35 +838,13 @@ def parse_duration(duration_str):
 @app.route('/demo/<filename>')
 def serve_demo(filename):
     try:
-        # Define path to demo videos directory
-        demo_dir = os.path.join(app.root_path, 'demo')
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+            # Download from Cloud Storage
+            blob_name = f"demo/{filename}"
+            cloud_storage.download_file(blob_name, temp_file.name)
+            return send_file(temp_file.name)
 
-        # Create the directory if it doesn't exist
-        if not os.path.exists(demo_dir):
-            os.makedirs(demo_dir, exist_ok=True)
-
-            # Copy some sample videos from gallery to demo folder if available
-            gallery_dir = os.path.join(app.root_path, 'gallery')
-            if os.path.exists(gallery_dir):
-                video_files = [f for f in os.listdir(gallery_dir) if f.endswith('.mp4')][:6]
-
-                for i, video_file in enumerate(video_files):
-                    try:
-                        target_file = os.path.join(demo_dir, f"demo{i+1}.mp4")
-                        if not os.path.exists(target_file):
-                            shutil.copy(
-                                os.path.join(gallery_dir, video_file),
-                                target_file
-                            )
-                    except Exception as e:
-                        logger.error(f"Error copying demo file {video_file}: {e}")
-
-        # Check if the requested file exists
-        requested_file = os.path.join(demo_dir, filename)
-        if not os.path.exists(requested_file):
-            return jsonify({"status": "error", "message": f"Demo file {filename} not found"}), 404
-
-        return send_from_directory(demo_dir, filename)
     except Exception as e:
         logger.error(f"Error serving demo video: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500

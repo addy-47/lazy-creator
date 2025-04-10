@@ -19,13 +19,10 @@ WORKDIR /app
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 # Download NLTK data
 RUN python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
-
-# Create necessary directories
-RUN mkdir -p ./ai_shorts_output ./fonts ./ffmpeg
 
 # Copy project files
 COPY . .
@@ -38,6 +35,11 @@ ENV USE_AZURE_TTS="false"
 ENV AZURE_VOICE="en-US-JennyNeural"
 ENV YOUTUBE_TOPIC="Artificial Intelligence"
 ENV ENABLE_YOUTUBE_UPLOAD="false"
+ENV MEDIA_BUCKET="lazycreator-media"
+ENV UPLOADS_BUCKET="lazycreator-uploads"
 
-# Command to run the application
-CMD ["python", "main.py"]
+# Cloud Run specific: Use $PORT environment variable
+ENV PORT 8080
+
+# Command to run the application with gunicorn
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app

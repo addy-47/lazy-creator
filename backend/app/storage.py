@@ -1,0 +1,396 @@
+import os
+import logging
+from pathlib import Path
+import tempfile
+import shutil
+import time
+import uuid
+
+logger = logging.getLogger(__name__)
+
+# Try to import Google Cloud Storage, but don't fail if it's not available
+try:
+    from google.cloud import storage
+    from google.cloud.exceptions import NotFound
+    GOOGLE_CLOUD_AVAILABLE = True
+except ImportError:
+    GOOGLE_CLOUD_AVAILABLE = False
+    logger.warning("Google Cloud Storage not available. Using local storage fallback.")
+
+class CloudStorage:
+    def __init__(self):
+        self.use_local_storage = not GOOGLE_CLOUD_AVAILABLE
+
+        # Load environment variables
+        self.media_bucket = os.getenv('MEDIA_BUCKET', 'lazycreator-media')
+        self.uploads_bucket = os.getenv('UPLOADS_BUCKET', 'lazycreator-uploads')
+        self.local_storage_dir = os.getenv('LOCAL_STORAGE_DIR', os.path.join(os.path.dirname(__file__), 'local_storage'))
+
+        if self.use_local_storage:
+            # Set up local storage directories
+            os.makedirs(os.path.join(self.local_storage_dir, self.media_bucket), exist_ok=True)
+            os.makedirs(os.path.join(self.local_storage_dir, self.uploads_bucket), exist_ok=True)
+            logger.info(f"Using local storage at {self.local_storage_dir}")
+        else:
+            # Use Google Cloud Storage
+            try:
+                self.client = storage.Client()
+
+                # Check if buckets exist, create them if not
+                self._ensure_bucket_exists(self.media_bucket)
+                self._ensure_bucket_exists(self.uploads_bucket)
+
+                logger.info("Using Google Cloud Storage")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Google Cloud Storage: {e}. Using local storage fallback.")
+                self.use_local_storage = True
+
+                # Set up local storage directories
+                os.makedirs(os.path.join(self.local_storage_dir, self.media_bucket), exist_ok=True)
+                os.makedirs(os.path.join(self.local_storage_dir, self.uploads_bucket), exist_ok=True)
+                logger.info(f"Using local storage at {self.local_storage_dir}")
+
+    def _ensure_bucket_exists(self, bucket_name):
+        """Ensure the specified bucket exists, create it if it doesn't."""
+        try:
+            self.client.get_bucket(bucket_name)
+            logger.info(f"Bucket {bucket_name} exists")
+        except NotFound:
+            logger.info(f"Bucket {bucket_name} not found, creating...")
+            self.client.create_bucket(bucket_name)
+            logger.info(f"Created bucket {bucket_name}")
+        except Exception as e:
+            logger.error(f"Error checking bucket {bucket_name}: {e}")
+            raise
+
+    def _get_user_folder(self, user_id=None):
+        """Get a user-specific folder path for better organization."""
+        if user_id:
+            return f"users/{user_id}"
+        return "anonymous"
+
+    def upload_file(self, file_path, destination_blob_name, bucket_name=None, user_id=None, metadata=None):
+        """Upload a file to the specified bucket with improved user session tracking."""
+        try:
+            # Generate a timestamp for versioning
+            timestamp = int(time.time())
+
+            # Organize by user if provided
+            if user_id:
+                user_folder = self._get_user_folder(user_id)
+                # Keep the original filename but organize by user
+                dest_parts = destination_blob_name.split('/')
+                filename = dest_parts[-1]
+                destination_blob_name = f"{user_folder}/{filename}"
+
+            # Add default metadata
+            if metadata is None:
+                metadata = {}
+
+            metadata.update({
+                'uploaded_at': str(timestamp),
+                'original_path': file_path
+            })
+
+            if user_id:
+                metadata['user_id'] = user_id
+
+            if self.use_local_storage:
+                # Local storage implementation
+                bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
+
+                # Create parent directories if they don't exist
+                os.makedirs(bucket_dir, exist_ok=True)
+
+                # Create subdirectories for the blob if needed
+                blob_dir = os.path.dirname(destination_blob_name)
+                if blob_dir:
+                    os.makedirs(os.path.join(bucket_dir, blob_dir), exist_ok=True)
+
+                # Ensure the source file exists
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"Source file not found: {file_path}")
+
+                # Copy the file
+                destination_path = os.path.join(bucket_dir, destination_blob_name)
+                shutil.copy2(file_path, destination_path)
+                logger.info(f"File uploaded to local storage: {destination_path}")
+
+                # Create a metadata file
+                if metadata:
+                    import json
+                    metadata_path = f"{destination_path}.metadata.json"
+                    with open(metadata_path, 'w') as f:
+                        json.dump(metadata, f)
+
+                # Return a standard GCS-style path for consistency
+                return f"gs://{bucket_name or self.media_bucket}/{destination_blob_name}"
+            else:
+                # Google Cloud Storage implementation
+                bucket = self.client.bucket(bucket_name or self.media_bucket)
+                blob = bucket.blob(destination_blob_name)
+
+                # Set metadata
+                for key, value in metadata.items():
+                    blob.metadata[key] = str(value)
+
+                # Upload with retry logic
+                max_retries = 3
+                retry_delay = 2  # seconds
+
+                for attempt in range(max_retries):
+                    try:
+                        blob.upload_from_filename(file_path)
+                        logger.info(f"File uploaded to GCS: gs://{bucket_name or self.media_bucket}/{destination_blob_name}")
+                        return f"gs://{bucket_name or self.media_bucket}/{destination_blob_name}"
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Upload attempt {attempt+1} failed: {e}. Retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            logger.error(f"Upload failed after {max_retries} attempts: {e}")
+                            raise
+        except Exception as e:
+            logger.error(f"Error uploading file: {e}")
+            raise
+
+    def download_file(self, blob_name, destination_path, bucket_name=None):
+        """Download a file from the specified bucket."""
+        try:
+            if self.use_local_storage:
+                # Local storage implementation
+                bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
+                source_path = os.path.join(bucket_dir, blob_name)
+
+                # Check if the source file exists
+                if not os.path.exists(source_path):
+                    raise FileNotFoundError(f"File not found in local storage: {source_path}")
+
+                # Create the destination directory if it doesn't exist
+                dest_dir = os.path.dirname(destination_path)
+                if dest_dir:
+                    os.makedirs(dest_dir, exist_ok=True)
+
+                # Copy the file
+                shutil.copy2(source_path, destination_path)
+                logger.info(f"File downloaded from local storage: {source_path} to {destination_path}")
+                return destination_path
+            else:
+                # Google Cloud Storage implementation
+                bucket = self.client.bucket(bucket_name or self.media_bucket)
+                blob = bucket.blob(blob_name)
+
+                # Check if blob exists
+                if not blob.exists():
+                    raise FileNotFoundError(f"File not found in GCS: gs://{bucket_name or self.media_bucket}/{blob_name}")
+
+                # Create the destination directory if it doesn't exist
+                dest_dir = os.path.dirname(destination_path)
+                if dest_dir:
+                    os.makedirs(dest_dir, exist_ok=True)
+
+                # Download with retry logic
+                max_retries = 3
+                retry_delay = 2  # seconds
+
+                for attempt in range(max_retries):
+                    try:
+                        blob.download_to_filename(destination_path)
+                        logger.info(f"File downloaded from GCS: gs://{bucket_name or self.media_bucket}/{blob_name} to {destination_path}")
+                        return destination_path
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Download attempt {attempt+1} failed: {e}. Retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            logger.error(f"Download failed after {max_retries} attempts: {e}")
+                            raise
+        except Exception as e:
+            logger.error(f"Error downloading file: {e}")
+            raise
+
+    def delete_file(self, blob_name, bucket_name=None):
+        """Delete a file from the specified bucket."""
+        try:
+            if self.use_local_storage:
+                # Local storage implementation
+                bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
+                file_path = os.path.join(bucket_dir, blob_name)
+                deleted = False
+
+                # Delete the main file
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted = True
+                    logger.info(f"File deleted from local storage: {file_path}")
+
+                # Also delete metadata file if it exists
+                metadata_path = f"{file_path}.metadata.json"
+                if os.path.exists(metadata_path):
+                    os.remove(metadata_path)
+                    logger.info(f"Metadata file deleted: {metadata_path}")
+
+                return deleted
+            else:
+                # Google Cloud Storage implementation
+                bucket = self.client.bucket(bucket_name or self.media_bucket)
+                blob = bucket.blob(blob_name)
+
+                # Check if blob exists before attempting to delete
+                if not blob.exists():
+                    logger.warning(f"File does not exist in GCS: gs://{bucket_name or self.media_bucket}/{blob_name}")
+                    return False
+
+                blob.delete()
+                logger.info(f"File deleted from GCS: gs://{bucket_name or self.media_bucket}/{blob_name}")
+                return True
+        except Exception as e:
+            logger.error(f"Error deleting file: {e}")
+            raise
+
+    def get_public_url(self, blob_name, bucket_name=None, expiration=3600):
+        """Get a public URL for a file in the specified bucket."""
+        if self.use_local_storage:
+            # For local storage, return a file:// URL
+            bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
+            file_path = os.path.join(bucket_dir, blob_name)
+            return f"file://{os.path.abspath(file_path)}"
+        else:
+            # Google Cloud Storage implementation - generate a signed URL that expires
+            bucket = self.client.bucket(bucket_name or self.media_bucket)
+            blob = bucket.blob(blob_name)
+
+            try:
+                url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=expiration,
+                    method="GET"
+                )
+                logger.info(f"Generated signed URL for gs://{bucket_name or self.media_bucket}/{blob_name}")
+                return url
+            except Exception as e:
+                logger.error(f"Error generating signed URL: {e}")
+                # Fallback to public_url if signed URL generation fails
+                return blob.public_url
+
+    def save_uploaded_file(self, file, filename, user_id=None):
+        """Save an uploaded file to the uploads bucket with user tracking."""
+        try:
+            # Generate a unique filename if needed to prevent overwrites
+            if user_id:
+                # Include user_id in the path
+                safe_filename = f"{user_id}/{uuid.uuid4()}_{filename}"
+            else:
+                safe_filename = f"{uuid.uuid4()}_{filename}"
+
+            metadata = {
+                'original_filename': filename,
+                'uploaded_at': str(int(time.time()))
+            }
+
+            if user_id:
+                metadata['user_id'] = user_id
+
+            if self.use_local_storage:
+                # Local storage implementation
+                uploads_dir = os.path.join(self.local_storage_dir, self.uploads_bucket)
+
+                # Create user directory if needed
+                if user_id:
+                    user_dir = os.path.join(uploads_dir, user_id)
+                    os.makedirs(user_dir, exist_ok=True)
+                    file_path = os.path.join(user_dir, os.path.basename(safe_filename))
+                else:
+                    os.makedirs(uploads_dir, exist_ok=True)
+                    file_path = os.path.join(uploads_dir, safe_filename)
+
+                file.save(file_path)
+
+                # Save metadata
+                import json
+                metadata_path = f"{file_path}.metadata.json"
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f)
+
+                logger.info(f"Uploaded file saved to local storage: {file_path}")
+                return file_path
+            else:
+                # Google Cloud Storage implementation - save to a temp file first
+                with tempfile.NamedTemporaryFile(delete=False) as temp:
+                    file.save(temp.name)
+                    temp_path = temp.name
+
+                # Now upload the temp file to GCS
+                bucket = self.client.bucket(self.uploads_bucket)
+                blob = bucket.blob(safe_filename)
+
+                # Set metadata
+                for key, value in metadata.items():
+                    blob.metadata[key] = str(value)
+
+                blob.upload_from_filename(temp_path)
+
+                # Delete temp file
+                try:
+                    os.unlink(temp_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp file {temp_path}: {e}")
+
+                logger.info(f"Uploaded file saved to GCS: gs://{self.uploads_bucket}/{safe_filename}")
+                return f"gs://{self.uploads_bucket}/{safe_filename}"
+        except Exception as e:
+            logger.error(f"Error saving uploaded file: {e}")
+            raise
+
+    def list_user_files(self, user_id, bucket_name=None):
+        """List all files for a specific user."""
+        try:
+            if not user_id:
+                logger.warning("No user_id provided for list_user_files")
+                return []
+
+            files = []
+
+            if self.use_local_storage:
+                # Local storage implementation
+                bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
+                user_dir = os.path.join(bucket_dir, "users", user_id)
+
+                if not os.path.exists(user_dir):
+                    logger.info(f"User directory not found: {user_dir}")
+                    return []
+
+                # Walk through user directory and collect files
+                for root, _, filenames in os.walk(user_dir):
+                    for filename in filenames:
+                        if not filename.endswith('.metadata.json'):  # Skip metadata files
+                            rel_path = os.path.relpath(os.path.join(root, filename), bucket_dir)
+                            files.append({
+                                'name': filename,
+                                'path': rel_path,
+                                'full_path': f"gs://{bucket_name or self.media_bucket}/{rel_path}"
+                            })
+            else:
+                # Google Cloud Storage implementation
+                bucket = self.client.bucket(bucket_name or self.media_bucket)
+                prefix = f"users/{user_id}/"
+                blobs = bucket.list_blobs(prefix=prefix)
+
+                for blob in blobs:
+                    files.append({
+                        'name': os.path.basename(blob.name),
+                        'path': blob.name,
+                        'full_path': f"gs://{bucket_name or self.media_bucket}/{blob.name}",
+                        'size': blob.size,
+                        'updated': blob.updated
+                    })
+
+            return files
+        except Exception as e:
+            logger.error(f"Error listing files for user {user_id}: {e}")
+            return []
+
+# Create a singleton instance
+cloud_storage = CloudStorage()
