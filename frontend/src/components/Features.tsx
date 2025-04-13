@@ -4,7 +4,7 @@ import {
   Clock,
   Image,
   Upload,
-  MessageSquare,
+  ImagePlus,
 } from "lucide-react";
 import { useRef, useEffect } from "react";
 import StickFigureAnimation from "./StickFigureAnimation";
@@ -76,15 +76,15 @@ const features = [
     ),
   },
   {
-    icon: <MessageSquare className="h-6 w-6 text-purple-500" />,
-    title: "Latest AI News",
+    icon: <ImagePlus className="h-6 w-6 text-purple-500" />,
+    title: "Thumbnail Creation",
     description:
-      "Stay current with predefined prompts featuring the latest AI news and trending topics.",
+      "Generate eye-catching thumbnails automatically from your Shorts with AI-powered optimization.",
     hoverContent: (
       <div className="space-y-2 text-sm">
-        <p>→ Daily trending topic updates</p>
-        <p>→ Niche-specific content suggestions</p>
-        <p>→ Viral prediction algorithms</p>
+        <p>→ AI-generated thumbnails</p>
+        <p>→ Custom branding options</p>
+        <p>→ Click-through optimization</p>
       </div>
     ),
   },

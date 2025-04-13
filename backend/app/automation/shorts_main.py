@@ -4,7 +4,6 @@ import os # for environment variables and file paths
 from pathlib import Path # for file paths and directory creation
 from dotenv import load_dotenv # for loading environment variables
 from .script_generator import (
-    generate_script,
     generate_batch_video_queries,
     parse_script_to_cards,
     generate_comprehensive_content
@@ -185,7 +184,13 @@ def create_youtube_short(
             topic = get_latest_ai_news()
             logger.info(f"Generating script for topic: {topic}")
 
-        max_tokens = 200
+        # Get comprehensive content with proper max_duration parameter
+        content_package = generate_comprehensive_content(topic, max_duration=max_duration)
+        script = content_package['script']
+        logger.info("Content package generated successfully")
+        logger.info(f"Script length: {len(script.split())} words")
+
+        script_cards = parse_script_to_cards(script, max_duration=max_duration)
 
         # Determine optimal section count based on duration
         num_sections = 3  # default for 15 seconds
@@ -195,22 +200,6 @@ def create_youtube_short(
             num_sections = 4  # 4 sections for medium videos
 
         logger.info(f"Using {num_sections} script sections for {max_duration}s duration")
-
-        prompt = f"""
-        Generate a YouTube Shorts script focused entirely on the topic: '{topic}'
-        for the date {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.
-        The script should not exceed {max_duration} seconds and should be organized into exactly {num_sections} sections:
-        1. Start with an attention-grabbing opening (intro section).
-        2. Then have {num_sections - 2} middle sections with key points about this topic.
-        3. End with a clear call to action (outro section).
-        Use short, concise sentences and suggest 3-4 trending hashtags (e.g., #AI, #TechNews).
-        Keep it under {max_tokens} tokens.
-        """
-
-        script = generate_script(prompt, max_tokens=max_tokens)
-        logger.info("Raw script generated successfully")
-
-        script_cards = parse_script_to_cards(script)
 
         # Ensure we have the optimal number of script sections
         if len(script_cards) > num_sections:
@@ -343,7 +332,7 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
 
         # Use the comprehensive content generator to get a complete package
         logger.info(f"Generating comprehensive content for topic: {topic}")
-        content_package = generate_comprehensive_content(topic)
+        content_package = generate_comprehensive_content(topic, max_duration=max_duration)
 
         update_progress(20, "Content created, processing script")
 

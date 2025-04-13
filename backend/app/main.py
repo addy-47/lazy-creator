@@ -314,6 +314,10 @@ def generate_short(current_user):
                         # Update progress to 80% after video generation
                         safe_update_progress(video_id, 80, 'uploading')
 
+                        # Get comprehensive content from the generation function if it's available
+                        # This should be added to the shorts_main.py function to return both the video path
+                        # and the comprehensive content
+
                         # Check if video was generated successfully
                         if not video_path or not os.path.exists(video_path):
                             raise FileNotFoundError(f"Generated video file not found at {video_path}")
@@ -345,6 +349,36 @@ def generate_short(current_user):
                         # For local storage, format as gs:// path for consistency
                         if cloud_storage.use_local_storage and not gcs_path.startswith('gs://'):
                             gcs_path = f"gs://{cloud_storage.media_bucket}/{blob_name}"
+
+                        # Try to extract and store comprehensive content from the video generation process
+                        try:
+                            # Import here to avoid circular imports
+                            from automation.script_generator import generate_comprehensive_content
+
+                            # Generate comprehensive content separately for the video
+                            comprehensive_content = generate_comprehensive_content(
+                                topic=prompt,
+                                max_duration=duration
+                            )
+
+                            # Ensure script is included in comprehensive_content
+                            if 'script' in comprehensive_content:
+                                # Make sure script property is accessible for the frontend display
+                                script = comprehensive_content['script']
+                                logger.info(f"Generated script with {len(script.split())} words for video {video_id}")
+
+                            logger.info(f"Generated comprehensive content for video {video_id}")
+
+                            # Update the database with comprehensive content
+                            videos_collection.update_one(
+                                {'_id': ObjectId(video_id)},
+                                {'$set': {
+                                    'comprehensive_content': comprehensive_content
+                                }}
+                            )
+                        except Exception as content_error:
+                            logger.error(f"Error generating comprehensive content for video {video_id}: {content_error}")
+                            # Continue without comprehensive content - it's optional
 
                         # Update the database with completed status and file info using safe progress update
                         safe_update_progress(video_id, 100, 'completed')
@@ -477,6 +511,12 @@ def get_gallery(current_user):
         for video in videos:
             video['id'] = str(video['_id'])
             video.pop('_id', None)
+
+            # Include generated title in the frontend for display in gallery
+            if 'comprehensive_content' in video and 'title' in video['comprehensive_content']:
+                video['display_title'] = video['comprehensive_content']['title']
+            else:
+                video['display_title'] = video.get('original_prompt', 'Untitled Video')
 
             # Ensure path includes user ID for proper access
             if 'path' in video and isinstance(video['path'], str) and 'filename' in video:
@@ -707,14 +747,57 @@ def upload_to_youtube(current_user, video_id):
         title = data.get('title', f"Short Video - {video.get('filename', 'Video')}")
         description = data.get('description', f"Created with LazyCreator\nOriginal prompt: {video.get('original_prompt', '')}")
         tags = data.get('tags', ["shorts", "ai", "automation"])
+        use_thumbnail = data.get('useThumbnail', False)
 
-        # Upload the video
-        youtube_response = upload_video(
+        thumbnail_path = None
+        # Generate thumbnail if requested
+        if use_thumbnail:
+            try:
+                from automation.thumbnail import ThumbnailGenerator
+
+                # Create temporary directories for processing
+                temp_dir = tempfile.mkdtemp()
+
+                # Initialize thumbnail generator
+                thumbnail_generator = ThumbnailGenerator(output_dir=temp_dir)
+
+                # Get script sections from video if available
+                script_sections = video.get('script_sections', [])
+                if not script_sections and 'original_prompt' in video:
+                    # Create a simple script section if none exists
+                    script_sections = [{'text': video['original_prompt']}]
+
+                # Get the thumbnail prompt if it exists in the metadata
+                thumbnail_prompt = None
+                if 'comprehensive_content' in video and 'thumbnail_hf_prompt' in video['comprehensive_content']:
+                    thumbnail_prompt = video['comprehensive_content']['thumbnail_hf_prompt']
+
+                # Generate the thumbnail
+                logger.info(f"Generating thumbnail for video {video_id} with title: {title}")
+                thumbnail_path = thumbnail_generator.generate_thumbnail(
+                    title=title,
+                    script_sections=script_sections,
+                    prompt=thumbnail_prompt,
+                    style="photorealistic"
+                )
+
+                if not thumbnail_path or not os.path.exists(thumbnail_path):
+                    logger.warning(f"Failed to generate thumbnail for video {video_id}")
+                    thumbnail_path = None
+                else:
+                    logger.info(f"Generated thumbnail at {thumbnail_path}")
+            except Exception as thumbnail_error:
+                logger.error(f"Error generating thumbnail: {thumbnail_error}")
+                thumbnail_path = None
+
+        # Upload the video with optional thumbnail
+        youtube_id = upload_video(
             youtube,
             video['path'],
             title,
             description,
-            tags
+            tags.split(',') if isinstance(tags, str) else tags,
+            thumbnail_path=thumbnail_path
         )
 
         # Update video metadata
@@ -722,19 +805,27 @@ def upload_to_youtube(current_user, video_id):
             {'_id': ObjectId(video_id)},
             {'$set': {
                 'uploaded_to_yt': True,
-                'youtube_id': youtube_response.get('id'),
+                'youtube_id': youtube_id,
                 'youtube_title': title,
                 'youtube_description': description,
                 'youtube_tags': tags,
                 'uploaded_at': datetime.utcnow(),
-                'uploaded_by': current_user['email']
+                'uploaded_by': current_user['email'],
+                'used_custom_thumbnail': thumbnail_path is not None
             }}
         )
+
+        # Clean up the thumbnail temporary file if it exists
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            try:
+                os.remove(thumbnail_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove temporary thumbnail file: {e}")
 
         return jsonify({
             "status": "success",
             "message": "Video uploaded to YouTube successfully",
-            "youtube_id": youtube_response.get('id')
+            "youtube_id": youtube_id
         })
 
     except Exception as e:

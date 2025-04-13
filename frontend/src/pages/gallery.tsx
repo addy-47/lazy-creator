@@ -30,6 +30,7 @@ function GalleryPage() {
     title: "",
     description: "",
     tags: "",
+    useThumbnail: false,
   });
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
   const [activeSection, setActiveSection] = useState<"my-videos" | "explore">(
@@ -372,7 +373,7 @@ function GalleryPage() {
 
     try {
       // Get upload data from state
-      const { title, description, tags } = uploadData;
+      const { title, description, tags, useThumbnail } = uploadData;
 
       if (!title) {
         toast.error("Title is required");
@@ -399,6 +400,7 @@ function GalleryPage() {
           title,
           description,
           tags: tags.split(",").map((tag) => tag.trim()),
+          useThumbnail,
         },
       });
 
@@ -434,6 +436,7 @@ function GalleryPage() {
         title: "",
         description: "",
         tags: "",
+        useThumbnail: false,
       });
     }
   };
@@ -561,12 +564,28 @@ function GalleryPage() {
   const handleShowUploadForm = (videoId: string) => {
     const video = videos.find((v) => v.id === videoId);
     if (video) {
-      // Set default title and description based on the video
-      setUploadData({
-        title: `AI Short: ${video.original_prompt}`,
-        description: `AI-generated Short about ${video.original_prompt}`,
-        tags: "shorts,AI,technology",
-      });
+      // Check if we have comprehensive_content available
+      if (video.comprehensive_content) {
+        // Use AI-generated title and description from comprehensive_content if available
+        setUploadData({
+          title:
+            video.comprehensive_content.title ||
+            `AI Short: ${video.original_prompt}`,
+          description:
+            video.comprehensive_content.description ||
+            `AI-generated Short about ${video.original_prompt}`,
+          tags: "shorts,AI,technology",
+          useThumbnail: false, // Default to not using AI-generated thumbnail
+        });
+      } else {
+        // Fallback to original prompt if no comprehensive_content
+        setUploadData({
+          title: `AI Short: ${video.original_prompt}`,
+          description: `AI-generated Short about ${video.original_prompt}`,
+          tags: "shorts,AI,technology",
+          useThumbnail: false,
+        });
+      }
       setShowUploadForm(videoId);
     }
   };
@@ -789,6 +808,9 @@ function GalleryPage() {
           videoId={showUploadForm}
           isUploading={uploading === showUploadForm}
           uploadData={uploadData}
+          generatedContent={
+            videos.find((v) => v.id === showUploadForm)?.comprehensive_content
+          }
           onUploadDataChange={setUploadData}
           onClose={() => setShowUploadForm(null)}
           onUpload={handleUpload}

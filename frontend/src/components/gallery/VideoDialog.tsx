@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Download, Youtube, X } from "lucide-react";
+import { Download, Youtube, X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/Button";
 import { getAPIBaseURL } from "@/lib/socket";
 
@@ -7,10 +7,17 @@ interface Video {
   id: string;
   filename: string;
   original_prompt: string;
+  display_title?: string;
   duration: number;
   created_at: string;
   uploaded_to_yt: boolean;
   youtube_id: string | null;
+  comprehensive_content?: {
+    title?: string;
+    description?: string;
+    script?: string;
+    thumbnail_hf_prompt?: string;
+  };
 }
 
 interface VideoDialogProps {
@@ -31,6 +38,18 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
   onOpenYouTube,
 }) => {
   const [videoUrl, setVideoUrl] = useState<string>("");
+  const [showFullScript, setShowFullScript] = useState(false);
+
+  // Get title, description, and script from comprehensive_content if available
+  const title =
+    video.display_title ||
+    video.comprehensive_content?.title ||
+    video.original_prompt;
+  const description = video.comprehensive_content?.description || "";
+  const script = video.comprehensive_content?.script || "";
+
+  // Check if this is an older video without comprehensive content
+  const isLegacyVideo = !video.comprehensive_content && !video.display_title;
 
   // Generate secure URL with auth token
   useEffect(() => {
@@ -64,7 +83,7 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
           <X size={20} />
         </button>
 
-        <div className="flex flex-col md:flex-row gap-4 overflow-y-auto p-1">
+        <div className="flex flex-col md:flex-row gap-4 overflow-hidden p-1 h-full">
           {/* Video container */}
           <div className="w-full md:w-[45%] aspect-[9/16] bg-black rounded-xl overflow-hidden shrink-0">
             <video
@@ -77,16 +96,70 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
           </div>
 
           {/* Info and buttons */}
-          <div className="w-full flex flex-col">
-            <h3 className="text-lg font-medium line-clamp-2 mb-3">
-              {video.original_prompt}
-            </h3>
+          <div className="w-full flex flex-col overflow-hidden">
+            <div
+              className="overflow-y-auto pr-2 flex-grow"
+              style={{ scrollbarWidth: "thin" }}
+            >
+              <h3 className="text-lg font-semibold mb-2">{title}</h3>
 
-            <p className="text-sm text-foreground/70 mb-4">
-              Created: {new Date(video.created_at).toLocaleString()}
-            </p>
+              {description && (
+                <p className="text-sm text-foreground/80 mb-4">{description}</p>
+              )}
 
-            <div className="mt-auto space-y-3">
+              <p className="text-xs text-foreground/60 mb-3">
+                Created: {new Date(video.created_at).toLocaleString()}
+              </p>
+
+              {isLegacyVideo && (
+                <div className="text-xs text-amber-500 dark:text-amber-400 mb-4 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-md">
+                  This is a video created before the AI-generated content
+                  feature was added. New videos will include title, description
+                  and script information.
+                </div>
+              )}
+
+              {script ? (
+                <div className="mt-2 mb-4">
+                  <h4 className="text-sm font-medium mb-2 flex items-center">
+                    <span className="mr-2">Script</span>
+                    <div className="h-px bg-border flex-grow"></div>
+                  </h4>
+                  <div
+                    className={`text-sm text-foreground/70 whitespace-pre-wrap ${
+                      !showFullScript ? "line-clamp-6" : ""
+                    }`}
+                  >
+                    {script}
+                  </div>
+                  {script.split("\n").length > 6 && (
+                    <button
+                      onClick={() => setShowFullScript(!showFullScript)}
+                      className="text-xs text-primary mt-1 flex items-center"
+                    >
+                      {showFullScript ? "Show less" : "Show more"}
+                      <ChevronDown
+                        className={`ml-1 w-3 h-3 transition-transform ${
+                          showFullScript ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  )}
+                </div>
+              ) : isLegacyVideo ? (
+                <div className="mt-2 mb-4">
+                  <h4 className="text-sm font-medium mb-2 flex items-center">
+                    <span className="mr-2">Original Prompt</span>
+                    <div className="h-px bg-border flex-grow"></div>
+                  </h4>
+                  <p className="text-sm text-foreground/70">
+                    {video.original_prompt}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-3 pt-3 border-t border-border mt-3">
               <div className="w-full">
                 <button
                   onClick={() => onDownload(video.id)}

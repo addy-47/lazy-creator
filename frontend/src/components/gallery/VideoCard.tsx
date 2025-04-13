@@ -7,10 +7,16 @@ interface Video {
   id: string;
   filename: string;
   original_prompt: string;
+  display_title?: string;
   duration: number;
   created_at: string;
   uploaded_to_yt: boolean;
   youtube_id: string | null;
+  comprehensive_content?: {
+    title?: string;
+    description?: string;
+    thumbnail_hf_prompt?: string;
+  };
 }
 
 interface VideoCardProps {
@@ -107,7 +113,7 @@ const VideoCard: React.FC<VideoCardProps> = ({
         {/* Video Info Overlay */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-all duration-300">
           <p className="text-white text-sm font-medium line-clamp-2">
-            {video.original_prompt}
+            {video.display_title || video.original_prompt}
           </p>
           <p className="text-white/70 text-xs mt-1 flex items-center">
             <span className="inline-block h-1 w-1 rounded-full bg-primary mr-2"></span>
