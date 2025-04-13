@@ -95,13 +95,72 @@ const GeneratingAnimation = ({
     };
   }, [videoId, isCompleted, checkVideoStatus]);
 
+  // Effect to trigger onComplete when isCompleted changes
+  useEffect(() => {
+    if (isCompleted) {
+      // Wait a moment to allow UI to show 100% before redirecting
+      const completeTimer = setTimeout(() => {
+        onComplete();
+      }, 1500);
+
+      return () => clearTimeout(completeTimer);
+    }
+  }, [isCompleted, onComplete]);
+
+  // Track last progress value to prevent regression
+  const [lastProgress, setLastProgress] = useState(0);
+
+  // Function to safely update progress
+  const safeSetProgress = useCallback((newProgress: number) => {
+    setLastProgress((prev) => {
+      // Only increase progress, never decrease
+      const finalProgress = Math.max(prev, newProgress);
+      setProgress(finalProgress);
+      return finalProgress;
+    });
+  }, []);
+
+  // Fallback timer-based progress when WebSocket is not available
+  useEffect(() => {
+    if (usingWebSocket || !duration || isCompleted) return;
+
+    if (timeLeft <= 0) {
+      // Check one last time for completion status
+      checkVideoStatus().then((isComplete) => {
+        if (!isComplete) {
+          // If not complete yet, show 99% but don't redirect
+          safeSetProgress(99);
+        }
+      });
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => Math.max(0, prev - 1));
+      // Calculate progress as a percentage of elapsed time - max out at 95% for timer-based updates
+      const elapsedTime = duration - timeLeft + 1;
+      const calculatedProgress = Math.min(95, (elapsedTime / duration) * 100);
+      safeSetProgress(calculatedProgress);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [
+    timeLeft,
+    onComplete,
+    duration,
+    usingWebSocket,
+    isCompleted,
+    checkVideoStatus,
+    safeSetProgress,
+  ]);
+
   // Connect to WebSocket for progress updates if videoId is provided
   useEffect(() => {
     if (videoId) {
       // Subscribe to progress updates via WebSocket
       subscribeToProgress(videoId, (updatedProgress) => {
-        setProgress(updatedProgress);
         setUsingWebSocket(true);
+        safeSetProgress(updatedProgress);
 
         // Update current step based on progress
         const nextStep = generationSteps.findIndex(
@@ -126,52 +185,7 @@ const GeneratingAnimation = ({
         unsubscribeFromProgress(videoId);
       };
     }
-  }, [videoId, currentStep, generationSteps]);
-
-  // Effect to trigger onComplete when isCompleted changes
-  useEffect(() => {
-    if (isCompleted) {
-      // Wait a moment to allow UI to show 100% before redirecting
-      const completeTimer = setTimeout(() => {
-        onComplete();
-      }, 1500);
-
-      return () => clearTimeout(completeTimer);
-    }
-  }, [isCompleted, onComplete]);
-
-  // Fallback timer-based progress when WebSocket is not available
-  useEffect(() => {
-    if (usingWebSocket || !duration || isCompleted) return;
-
-    if (timeLeft <= 0) {
-      // Check one last time for completion status
-      checkVideoStatus().then((isComplete) => {
-        if (!isComplete) {
-          // If not complete yet, show 99% but don't redirect
-          setProgress(99);
-        }
-      });
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => Math.max(0, prev - 1));
-      // Calculate progress as a percentage of elapsed time - max out at 95% for timer-based updates
-      const elapsedTime = duration - timeLeft + 1;
-      const calculatedProgress = Math.min(95, (elapsedTime / duration) * 100);
-      setProgress(calculatedProgress);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [
-    timeLeft,
-    onComplete,
-    duration,
-    usingWebSocket,
-    isCompleted,
-    checkVideoStatus,
-  ]);
+  }, [videoId, currentStep, generationSteps, safeSetProgress]);
 
   // Update steps based on time-based progress
   useEffect(() => {

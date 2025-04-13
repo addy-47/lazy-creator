@@ -18,7 +18,7 @@ from gtts import gTTS
 from dotenv import load_dotenv
 import shutil # for file operations like moving and deleting files
 import tempfile # for creating temporary files
-# Import text clip functions from shorts_maker_V
+# Import text clip functions from shorts_maker_V with proper relative imports
 from .video_maker import YTShortsCreator_V
 from datetime import datetime # for more detailed time tracking
 
@@ -72,8 +72,44 @@ class YTShortsCreator_I:
         # Font settings
         self.fonts_dir = os.path.join(os.path.dirname(__file__), 'fonts')
         os.makedirs(self.fonts_dir, exist_ok=True)
-        self.title_font_path = r"D:\youtube-shorts-automation\fonts\default_font.ttf"
-        self.body_font_path = r"D:\youtube-shorts-automation\fonts\default_font.ttf"
+        # Use relative font paths
+        self.title_font_path = os.path.join(self.fonts_dir, 'default_font.ttf')
+        self.body_font_path = os.path.join(self.fonts_dir, 'default_font.ttf')
+
+        # Check if font files exist
+        if not os.path.exists(self.title_font_path) or not os.path.exists(self.body_font_path):
+            logger.warning("Default font files not found, using system default fonts")
+            try:
+                # Try to copy a system font to the fonts directory
+                if os.name == 'nt':  # Windows
+                    possible_fonts = [
+                        r"C:\Windows\Fonts\arial.ttf",
+                        r"C:\Windows\Fonts\calibri.ttf",
+                        r"C:\Windows\Fonts\segoeui.ttf"
+                    ]
+                    for font_path in possible_fonts:
+                        if os.path.exists(font_path):
+                            shutil.copy(font_path, self.title_font_path)
+                            shutil.copy(font_path, self.body_font_path)
+                            logger.info(f"Copied system font {font_path} to fonts directory")
+                            break
+                else:  # Linux/Mac
+                    possible_fonts = [
+                        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                        "/System/Library/Fonts/Helvetica.ttc",
+                        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+                    ]
+                    for font_path in possible_fonts:
+                        if os.path.exists(font_path):
+                            shutil.copy(font_path, self.title_font_path)
+                            shutil.copy(font_path, self.body_font_path)
+                            logger.info(f"Copied system font {font_path} to fonts directory")
+                            break
+            except Exception as e:
+                logger.error(f"Error copying system font: {e}")
+                # If all else fails, set to None and let MoviePy use its default
+                self.title_font_path = None
+                self.body_font_path = None
 
         # Create an instance of YTShortsCreator_V to use its text functions
         self.v_creator = YTShortsCreator_V(output_dir=output_dir, fps=fps)
@@ -85,7 +121,7 @@ class YTShortsCreator_I:
         # Initialize Google Cloud TTS
         if os.getenv("USE_GOOGLE_TTS", "true").lower() == "true":
             try:
-                from voiceover import GoogleVoiceover
+                from .voiceover import GoogleVoiceover
                 self.google_tts = GoogleVoiceover(
                     voice=os.getenv("GOOGLE_VOICE", "en-US-Neural2-D"),
                     output_dir=self.temp_dir
@@ -97,7 +133,7 @@ class YTShortsCreator_I:
         # Initialize Azure TTS as fallback (if configured)
         elif os.getenv("USE_AZURE_TTS", "false").lower() == "true":
             try:
-                from voiceover import AzureVoiceover
+                from .voiceover import AzureVoiceover
                 self.azure_tts = AzureVoiceover(
                     voice=os.getenv("AZURE_VOICE", "en-US-JennyNeural"),
                     output_dir=self.temp_dir
@@ -153,6 +189,11 @@ class YTShortsCreator_I:
         self.hf_model = os.getenv("HF_MODEL", "stabilityai/stable-diffusion-2-1")
         self.hf_api_url = f"https://api-inference.huggingface.co/models/{self.hf_model}"
         self.hf_headers = {"Authorization": f"Bearer {self.huggingface_api_key}"}
+
+        # Watermark settings
+        self.watermark_text = "Lazy Creator"  # Default watermark text
+        self.watermark_font_size = 40  # Smaller font size for watermark
+        self.watermark_opacity = 0.7  # Semi-transparent
 
     @measure_time
     def _generate_image_from_prompt(self, prompt, style="photorealistic", file_path=None):
@@ -279,6 +320,84 @@ class YTShortsCreator_I:
         This method is intentionally disabled. Fallback now uses shorts_maker_V instead.
         """
         logger.warning("Stock image fetch called but is disabled. Will fall back to shorts_maker_V.")
+        return None
+
+    @measure_time
+    def fetch_image_unsplash(self, query, file_path=None):
+        """
+        Fetch an image from Unsplash API based on query
+
+        Args:
+            query (str): Search query for Unsplash
+            file_path (str): Path to save the image, if None a path will be generated
+
+        Returns:
+            str: Path to the downloaded image or None if failed
+        """
+        if not file_path:
+            file_path = os.path.join(self.temp_dir, f"unsplash_img_{int(time.time())}_{random.randint(1000, 9999)}.jpg")
+
+        # Load Unsplash API key from environment
+        unsplash_api_key = os.getenv("UNSPLASH_API_KEY")
+
+        # Check if Unsplash API key is available
+        if not unsplash_api_key:
+            logger.error("No Unsplash API key provided. Cannot fetch stock image.")
+            return None
+
+        try:
+            # Clean query for Unsplash search
+            clean_query = query.replace("photorealistic", "").replace("digital art", "").replace("YouTube Shorts", "")
+            # Remove any double spaces
+            while "  " in clean_query:
+                clean_query = clean_query.replace("  ", " ")
+            clean_query = clean_query.strip(" ,")
+
+            logger.info(f"Searching Unsplash with query: {clean_query}")
+
+            # Make request to Unsplash API
+            unsplash_api_url = "https://api.unsplash.com/search/photos"
+            params = {
+                "query": clean_query,
+                "orientation": "portrait",  # For shorts videos
+                "per_page": 30,
+                "client_id": unsplash_api_key
+            }
+
+            response = requests.get(unsplash_api_url, params=params, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                # Check if we have results
+                if data["results"] and len(data["results"]) > 0:
+                    # Pick a random image from top results for variety
+                    max_index = min(10, len(data["results"]))
+                    image_data = random.choice(data["results"][:max_index])
+                    image_url = image_data["urls"]["regular"]
+
+                    # Download the image
+                    img_response = requests.get(image_url, timeout=10)
+                    if img_response.status_code == 200:
+                        with open(file_path, "wb") as f:
+                            f.write(img_response.content)
+                        logger.info(f"Unsplash image downloaded to {file_path}")
+
+                        # Add attribution as required by Unsplash API guidelines
+                        attribution = f"Photo by {image_data['user']['name']} on Unsplash"
+                        logger.info(f"Image attribution: {attribution}")
+
+                        return file_path
+                    else:
+                        logger.error(f"Failed to download image from Unsplash: {img_response.status_code}")
+                else:
+                    logger.error("No results found on Unsplash")
+            else:
+                logger.error(f"Unsplash API error: {response.status_code} - {response.text}")
+
+        except Exception as e:
+            logger.error(f"Error fetching image from Unsplash: {e}")
+
         return None
 
     @measure_time
@@ -440,6 +559,64 @@ class YTShortsCreator_I:
         """
         return self.v_creator._create_pill_image(size, color, radius)
 
+    def _create_watermark(self, duration):
+        """
+        Create a semi-transparent watermark for the video
+        """
+        if not self.body_font_path:
+            logger.warning("No font available for watermark")
+            return None
+
+        try:
+            # Reduce memory usage by limiting watermark size and using smaller font
+            max_size = (min(self.resolution[0] // 5, 250), None)  # Limit width to smaller of 1/5 of video width or 250px
+
+            # Create watermark text clip with reduced size
+            txt_clip = TextClip(
+                txt=self.watermark_text,
+                font=self.body_font_path,
+                fontsize=min(self.watermark_font_size, 24),  # Cap font size
+                color='white',
+                align='East',
+                size=max_size
+            )
+
+            # Set position to top right with some padding
+            padding = 20
+            txt_clip = txt_clip.set_position((('right', padding), ('top', padding)))
+            txt_clip = txt_clip.set_opacity(self.watermark_opacity)
+            txt_clip = txt_clip.set_duration(duration)
+
+            return txt_clip
+        except Exception as e:
+            logger.error(f"Error creating watermark: {e}")
+            return None
+
+    def _safely_create_composite(self, clips, duration=None):
+        """
+        Safely create a composite video clip with memory error handling
+
+        Args:
+            clips: List of clips to composite
+            duration: Optional duration to set for the composite
+
+        Returns:
+            CompositeVideoClip or the first clip if compositing fails
+        """
+        import numpy
+        if len(clips) == 1:
+            return clips[0]
+
+        try:
+            composite = CompositeVideoClip(clips)
+            if duration is not None:
+                composite = composite.set_duration(duration)
+            return composite
+        except (MemoryError, numpy._core._exceptions._ArrayMemoryError) as e:
+            logger.warning(f"Memory error in clip compositing: {e}. Using first clip only.")
+            # Return just the main clip as fallback
+            return clips[0]
+
     @measure_time
     def _create_tts_audio(self, text, filename=None, voice_style="none"):
         """
@@ -545,563 +722,311 @@ class YTShortsCreator_I:
     @measure_time
     def create_youtube_short(self, title, script_sections, background_query="abstract background",
                         output_filename=None, add_captions=True, style="photorealistic", voice_style=None, max_duration=25,
-                        background_queries=None, blur_background=False, edge_blur=False):
+                        background_queries=None, blur_background=False, edge_blur=False, custom_background_path=None):
         """
-        Create a YouTube Short using AI-generated images for each script section
-        Falls back to shorts_maker_V (video-based) if image generation fails
+        Create a YouTube short video with AI-generated image backgrounds
 
         Args:
-            title (str): Title of the short
-            script_sections (list): List of dictionaries with text and duration for each section
-            background_query (str): Fallback query for image generation
-            output_filename (str): Output file path
-            add_captions (bool): Whether to add captions to the video
-            style (str): Style of images to generate (e.g., "digital art", "cinematic", "photorealistic")
-            voice_style (str): Style of TTS voice
-            max_duration (int): Maximum duration in seconds
-            background_queries (list): List of queries for each section's background
-            blur_background (bool): Whether to apply blur effect to backgrounds
-            edge_blur (bool): Whether to apply edge blur to backgrounds
+            title (str): Title for the short
+            script_sections (list): List of dictionaries with text and duration
+            background_query (str): Query to search for background if needed
+            output_filename (str): Filename for the output
+            add_captions (bool): Whether to add captions
+            style (str): Visual style to use for image generation
+            voice_style (str): Style for voiceover
+            max_duration (int): Maximum duration of the short
+            background_queries (list): Specific queries for each section
+            blur_background (bool): Whether to blur the background
+            edge_blur (bool): Whether to apply edge blur effect
+            custom_background_path (str): Path to custom background image if provided
 
         Returns:
-            str: Path to the created video
+            str: Path to the output video file
         """
         try:
-            # Helper variable to track if we should fall back to video mode
-            should_fallback_to_video = False
-
+            # Set output filename if not provided
             if not output_filename:
                 timestamp = int(time.time())
-                output_filename = os.path.join(self.output_dir, f"youtube_short_{timestamp}.mp4")
+                output_filename = f"shorts_{timestamp}.mp4"
 
-            # Start timing the overall process
-            overall_start_time = time.time()
-            logger.info(f"Creating YouTube Short: {title}")
+            # Ensure output_filename is a string
+            if not isinstance(output_filename, str):
+                output_filename = str(output_filename)
 
-            # Ensure the output directory exists
-            os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+            # Ensure output filename has .mp4 extension
+            if not output_filename.endswith('.mp4'):
+                output_filename += '.mp4'
 
-            # Try to generate AI images for sections
-            hugging_face_failed = False
+            # Full path for output
+            output_path = os.path.join(self.output_dir, output_filename)
 
-            # Test first image generation to see if Hugging Face API works
-            test_query = background_queries[0] if background_queries and len(background_queries) > 0 else background_query
-            logger.info(f"Testing Hugging Face API with query: {test_query}")
-            test_image = self._generate_image_from_prompt(test_query, style=style)
+            # Start timing the process
+            start_time = time.time()
 
-            if test_image is None:
-                # Hugging Face API failed, fallback to shorts_maker_V
-                logger.warning("⚠️ FALLBACK: Hugging Face API failed for image generation")
-                logger.warning("⚠️ SWITCHING to shorts_maker_V to create video with stock videos instead of AI images")
-                hugging_face_failed = True
-                should_fallback_to_video = True
+            # 1. Generate TTS audio and cards for each script section
+            video_clips = []
+            card_durations = []
+            card_audios = []
+            total_duration = 0
 
-            # If initial test failed, use video mode
-            if should_fallback_to_video:
-                # Create video using shorts_maker_V
-                logger.info("Creating video using shorts_maker_V with the same script sections")
-                return self.v_creator.create_youtube_short(
-                    title=title,
-                    script_sections=script_sections,
-                    background_query=background_query,
-                    output_filename=output_filename,
-                    add_captions=add_captions,
-                    style="video",  # Force video style since we're using shorts_maker_V
-                    voice_style=voice_style,
-                    max_duration=max_duration,
-                    background_queries=background_queries,
-                    blur_background=blur_background,
-                    edge_blur=edge_blur
-                )
+            # Generate audio for each card
+            for i, card in enumerate(script_sections):
+                # Support both dictionary format or plain text
+                if isinstance(card, dict):
+                    text = card.get('text', '')
+                    duration = card.get('duration', 5)
+                    card_voice_style = card.get('voice_style', voice_style)
+                else:
+                    text = str(card)
+                    duration = 5
+                    card_voice_style = voice_style
 
-            # If we get here, Hugging Face is working, proceed with image-based short
-            # Identify intro and outro sections
-            intro_section = script_sections[0] if script_sections else None
-            outro_section = script_sections[-1] if len(script_sections) > 1 else None
+                # Generate TTS audio
+                audio_path = self._create_tts_audio(text, voice_style=card_voice_style)
 
-            # Middle sections (excluding intro and outro)
-            middle_sections = script_sections[1:-1] if len(script_sections) > 2 else []
-
-            # Generate audio clips with TTS for each section
-            tts_start_time = time.time()
-            logger.info(f"Starting TTS audio generation")
-
-            audio_clips = []
-            section_durations = []  # Store actual durations after TTS generation
-
-            for i, section in enumerate(script_sections):
-                section_text = section["text"]
-                section_voice_style = section.get("voice_style", voice_style)
-                min_section_duration = section.get("duration", 5)
-
-                # Create TTS audio for this section
-                audio_path = None
-                try:
-                    audio_path = self._create_tts_audio(section_text, voice_style=section_voice_style)
-                except Exception as e:
-                    logger.error(f"Error creating TTS for section {i}: {e}")
-
-                # If audio file was created successfully, get its actual duration
-                if audio_path and os.path.exists(audio_path):
+                if audio_path:
+                    # Check actual audio duration
                     try:
-                        # Get actual audio duration
                         audio_clip = AudioFileClip(audio_path)
-                        actual_duration = audio_clip.duration
-
-                        # Check if audio has valid duration - fix for empty audio files
-                        if actual_duration <= 0:
-                            logger.warning(f"Audio file for section {i} has zero duration, creating fallback silent audio")
-                            # Create silent audio as fallback
-                            from moviepy.audio.AudioClip import AudioClip
-                            import numpy as np
-
-                            def make_frame(t):
-                                return np.zeros(2)  # Stereo silence
-
-                            # Use minimum section duration for silent audio
-                            audio_clip = AudioClip(make_frame=make_frame, duration=min_section_duration)
-                            audio_clip = audio_clip.set_fps(44100)
-                            actual_duration = min_section_duration
-
-                        # Ensure minimum duration
-                        actual_duration = max(actual_duration, min_section_duration)
-
-                        # Store the final duration
-                        section_durations.append(actual_duration)
-                        audio_clips.append((i, audio_clip, actual_duration))
+                        audio_duration = audio_clip.duration
+                        # Ensure minimum duration of 3 seconds and at least the audio duration
+                        duration = max(duration, audio_duration + 0.5, 3)
+                        audio_clip.close()
                     except Exception as e:
-                        logger.error(f"Error processing audio for section {i}: {e}")
-                        section_durations.append(min_section_duration)
+                        logger.error(f"Error checking audio duration: {e}")
+
+                # Keep track of total duration
+                total_duration += duration
+                card_durations.append(duration)
+                card_audios.append(audio_path)
+
+            # Ensure each section gets at least 3 seconds or scale down if total exceeds max_duration
+            if total_duration > max_duration:
+                # Scale factor to fit within max_duration
+                scale_factor = max_duration / total_duration
+                card_durations = [d * scale_factor for d in card_durations]
+                total_duration = max_duration
+                logger.info(f"Scaled down durations to fit within {max_duration} seconds")
+
+            logger.info(f"Total video duration will be approximately {total_duration:.2f} seconds")
+
+            # 2. Generate background images for each section
+            background_image_paths = []
+
+            # Use custom background if provided
+            if custom_background_path and os.path.exists(custom_background_path):
+                logger.info(f"Using custom background image: {custom_background_path}")
+                # Use the same custom background for all sections
+                for _ in range(len(script_sections)):
+                    background_image_paths.append(custom_background_path)
+            else:
+                # Check if we have specific queries for each section
+                if not background_queries:
+                    # If no section-specific queries, use the main query for all
+                    background_queries = [background_query] * len(script_sections)
+
+                # Generate or fetch background images for each section
+                # Use parallel processing if available
+                if self.has_enhanced_rendering and len(background_queries) > 1:
+                    try:
+                        import concurrent.futures
+                        logger.info(f"Using parallel processing for {len(background_queries)} image generations")
+
+                        def generate_image_for_section(args):
+                            i, query = args
+                            logger.info(f"Generating image for section {i+1} with prompt: {query}")
+
+                            # Try to generate an image using HuggingFace
+                            bg_image = self._generate_image_from_prompt(query, style=style)
+
+                            # If Hugging Face fails, try Unsplash instead
+                            if not bg_image:
+                                logger.info(f"Hugging Face image generation failed, falling back to Unsplash for section {i+1}")
+                                bg_image = self.fetch_image_unsplash(query)
+
+                                # If both fail, use a solid color background as last resort
+                                if not bg_image:
+                                    logger.warning(f"Both image generation methods failed for section {i+1}, using solid color background")
+                                    bg_image = self._create_text_based_image(script_sections[i].get('text', ''),
+                                                                        os.path.join(self.temp_dir, f"fallback_bg_{i}.png"))
+
+                            return i, bg_image
+
+                        # Create a list of (index, query) pairs
+                        tasks = [(i, query) for i, query in enumerate(background_queries) if i < len(script_sections)]
+
+                        # Skip parallel processing if no tasks
+                        if not tasks:
+                            logger.warning("No valid image generation tasks found")
+                            return []
+
+                        # Use ThreadPoolExecutor for parallel processing with at least 1 worker
+                        num_workers = max(1, min(4, len(tasks)))
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+                            results = list(executor.map(generate_image_for_section, tasks))
+
+                        # Sort results by index and extract image paths
+                        results.sort(key=lambda x: x[0])
+                        background_image_paths = [result[1] for result in results]
+
+                        logger.info(f"Completed parallel image generation for {len(background_image_paths)} sections")
+                    except Exception as e:
+                        logger.error(f"Error in parallel image generation: {e}. Falling back to sequential processing.")
+                        # Fall back to sequential processing
+                        for i, query in enumerate(background_queries):
+                            if i >= len(script_sections):
+                                break
+
+                            logger.info(f"Generating image for section {i+1} with prompt: {query}")
+
+                            # Try to generate an image using HuggingFace
+                            bg_image = self._generate_image_from_prompt(query, style=style)
+
+                            # If Hugging Face fails, try Unsplash instead (not video_maker)
+                            if not bg_image:
+                                logger.info(f"Hugging Face image generation failed, falling back to Unsplash for section {i+1}")
+                                bg_image = self.fetch_image_unsplash(query)
+
+                                # If both fail, use a solid color background as last resort
+                                if not bg_image:
+                                    logger.warning(f"Both image generation methods failed for section {i+1}, using solid color background")
+                                    bg_image = self._create_text_based_image(script_sections[i].get('text', ''),
+                                                                os.path.join(self.temp_dir, f"fallback_bg_{i}.png"))
+
+                            background_image_paths.append(bg_image)
                 else:
-                    # If no audio was created, use minimum duration
-                    section_durations.append(min_section_duration)
+                    # Sequential processing
+                    for i, query in enumerate(background_queries):
+                        if i >= len(script_sections):
+                            break
 
-            # Update script sections with actual durations
-            for i, duration in enumerate(section_durations):
-                if i < len(script_sections):
-                    script_sections[i]['duration'] = duration
+                        logger.info(f"Generating image for section {i+1} with prompt: {query}")
 
-            # Recalculate total duration based on actual audio lengths
-            total_duration = sum(section_durations)
+                        # Try to generate an image using HuggingFace
+                        bg_image = self._generate_image_from_prompt(query, style=style)
 
-            logger.info(f"Completed TTS audio generation in {time.time() - tts_start_time:.2f} seconds")
-            logger.info(f"Updated total duration: {total_duration:.1f}s")
+                        # If Hugging Face fails, try Unsplash instead (not video_maker)
+                        if not bg_image:
+                            logger.info(f"Hugging Face image generation failed, falling back to Unsplash for section {i+1}")
+                            bg_image = self.fetch_image_unsplash(query)
 
-            # Process each section
-            section_clips = []
+                            # If both fail, use a solid color background as last resort
+                            if not bg_image:
+                                logger.warning(f"Both image generation methods failed for section {i+1}, using solid color background")
+                                bg_image = self._create_text_based_image(script_sections[i].get('text', ''),
+                                                            os.path.join(self.temp_dir, f"fallback_bg_{i}.png"))
 
-            # Process intro section
-            if intro_section and not should_fallback_to_video:
-                intro_text = intro_section['text']
-                intro_duration = intro_section['duration']
+                        background_image_paths.append(bg_image)
 
-                # Generate image for intro
-                image_start_time = time.time()
-                logger.info(f"Generating image for intro section")
+            # 3. Create video clips for each section using the generated/fetched images
+            for i, (bg_image, audio_path, duration) in enumerate(zip(background_image_paths, card_audios, card_durations)):
+                # Create clip with text overlay if needed
+                if bg_image:
+                    # Get text for this card
+                    text = script_sections[i].get('text', '') if isinstance(script_sections[i], dict) else str(script_sections[i])
 
-                if background_queries and len(background_queries) > 0:
-                    intro_image_query = background_queries[0]
-                else:
-                    intro_image_query = background_query
-
-                intro_image_path = self._generate_image_from_prompt(intro_image_query, style=style)
-                logger.info(f"Completed image generation for intro in {time.time() - image_start_time:.2f} seconds")
-
-                if not intro_image_path:
-                    # If intro image generation failed, fallback to video
-                    logger.warning("⚠️ FALLBACK: Image generation failed for intro")
-                    should_fallback_to_video = True
-
-                if not should_fallback_to_video:
-                    # Create title text if provided
-                    if title:
-                        title_clip = self.v_creator._create_text_clip(
-                            title,
-                            duration=intro_duration,
-                            font_size=70,
-                            position=("center", 150),
-                            animation="fade",
-                            animation_duration=0.8,
-                            with_pill=True,
-                            pill_color=(0, 0, 0, 180),
-                            pill_radius=30
+                    # Create a still image clip with text overlay if captions enabled
+                    if add_captions:
+                        # Create still image clip with text
+                        clip = self._create_still_image_clip(
+                            bg_image,
+                            duration=duration,
+                            text=text,
+                            font_size=60,
+                            with_zoom=True
                         )
                     else:
-                        title_clip = None
-
-                    # Create base image clip
-                    intro_base_clip = self._create_still_image_clip(
-                        intro_image_path,
-                        duration=intro_duration,
-                        with_zoom=True
-                    )
-
-                    # Create intro text
-                    intro_text_clip = self.v_creator._create_text_clip(
-                        intro_text,
-                        duration=intro_duration,
-                        font_size=60,
-                        position=('center', 'center'),
-                        animation="fade",
-                        animation_duration=0.8,
-                        with_pill=True,
-                        pill_color=(0, 0, 0, 160),
-                        pill_radius=30
-                    )
-
-                    # Combine image with text
-                    clips_to_combine = [intro_base_clip]
-                    if title_clip:
-                        clips_to_combine.append(title_clip)
-                    clips_to_combine.append(intro_text_clip)
-
-                    intro_clip = CompositeVideoClip(clips_to_combine, size=self.resolution)
-
-                    # Add audio if available
-                    for idx, audio_clip, duration in audio_clips:
-                        if idx == 0:  # First section is intro
-                            # Verify audio clip is valid before using it
-                            try:
-                                if audio_clip.duration <= 0:
-                                    logger.warning(f"Intro audio clip has invalid duration: {audio_clip.duration}s. Creating silent audio.")
-                                    # Create silent audio as fallback
-                                    from moviepy.audio.AudioClip import AudioClip
-                                    import numpy as np
-
-                                    def make_frame(t):
-                                        return np.zeros(2)  # Stereo silence
-
-                                    # Create silent audio matching the intro duration
-                                    silent_audio = AudioClip(make_frame=make_frame, duration=intro_duration)
-                                    silent_audio = silent_audio.set_fps(44100)
-                                    intro_clip = intro_clip.set_audio(silent_audio)
-                                else:
-                                    intro_clip = intro_clip.set_audio(audio_clip)
-                            except Exception as e:
-                                logger.error(f"Error setting audio for intro: {e}")
-                            break
-
-                    section_clips.append(intro_clip)
-
-            # If we need to fall back to video mode, do it now
-            if should_fallback_to_video:
-                return self.v_creator.create_youtube_short(
-                    title=title,
-                    script_sections=script_sections,
-                    background_query=background_query,
-                    output_filename=output_filename,
-                    add_captions=add_captions,
-                    style="video",
-                    voice_style=voice_style,
-                    max_duration=max_duration,
-                    background_queries=background_queries,
-                    blur_background=blur_background,
-                    edge_blur=edge_blur
-                )
-
-            # Process middle sections
-            if middle_sections and not should_fallback_to_video:
-                middle_clips = []
-
-                for i, section in enumerate(middle_sections):
-                    section_text = section['text']
-                    section_duration = section['duration']
-                    section_idx = i + 1  # Middle sections start at index 1
-
-                    # Get the image prompt for this section
-                    if background_queries and section_idx < len(background_queries):
-                        image_query = background_queries[section_idx]
-                    else:
-                        image_query = background_query
-
-                    # Generate image for this section
-                    image_start_time = time.time()
-                    logger.info(f"Generating image for middle section {section_idx}")
-
-                    try:
-                        image_path = self._generate_image_from_prompt(image_query, style=style)
-                        logger.info(f"Completed image generation in {time.time() - image_start_time:.2f} seconds")
-
-                        if not image_path:
-                            # If image generation failed, fallback to video
-                            logger.warning(f"⚠️ FALLBACK: Image generation failed for section {section_idx}")
-                            should_fallback_to_video = True
-                            break
-
-                        # Create base image clip
-                        base_clip = self._create_still_image_clip(
-                            image_path,
-                            duration=section_duration,
+                        # Create still image clip without text
+                        clip = self._create_still_image_clip(
+                            bg_image,
+                            duration=duration,
                             with_zoom=True
                         )
 
-                        # Create word-by-word text animation
-                        word_clip = self.v_creator._create_word_by_word_clip(
-                            text=section_text,
-                            duration=section_duration,
-                            font_size=60,
-                            position=('center', 'center'),
-                            text_color=(255, 255, 255, 255),
-                            pill_color=(0, 0, 0, 160)
-                        )
-
-                        # Combine image with text
-                        section_clip = CompositeVideoClip([base_clip, word_clip], size=self.resolution)
-
-                        # Add audio if available
-                        for idx, audio_clip, duration in audio_clips:
-                            if idx == section_idx:
-                                # Verify audio clip is valid before using it
-                                try:
-                                    if audio_clip.duration <= 0:
-                                        logger.warning(f"Section {idx} audio clip has invalid duration: {audio_clip.duration}s. Creating silent audio.")
-                                        # Create silent audio as fallback
-                                        from moviepy.audio.AudioClip import AudioClip
-                                        import numpy as np
-
-                                        def make_frame(t):
-                                            return np.zeros(2)  # Stereo silence
-
-                                        # Create silent audio matching the section duration
-                                        silent_audio = AudioClip(make_frame=make_frame, duration=section_duration)
-                                        silent_audio = silent_audio.set_fps(44100)
-                                        section_clip = section_clip.set_audio(silent_audio)
-                                    else:
-                                        section_clip = section_clip.set_audio(audio_clip)
-                                except Exception as e:
-                                    logger.error(f"Error setting audio for section {idx}: {e}")
-                                break
-
-                        middle_clips.append(section_clip)
-
-                    except Exception as e:
-                        logger.error(f"Error processing middle section {section_idx}: {e}")
-                        # Fallback to video for all sections if any middle section fails
-                        logger.warning(f"⚠️ FALLBACK: Error in section {section_idx}, switching to video")
-                        should_fallback_to_video = True
-                        break
-
-                # If we need to fall back to video mode, do it now
-                if should_fallback_to_video:
-                        return self.v_creator.create_youtube_short(
-                            title=title,
-                            script_sections=script_sections,
-                            background_query=background_query,
-                            output_filename=output_filename,
-                            add_captions=add_captions,
-                            style="video",
-                            voice_style=voice_style,
-                            max_duration=max_duration,
-                            background_queries=background_queries,
-                            blur_background=blur_background,
-                            edge_blur=edge_blur
-                        )
-
-                section_clips.extend(middle_clips)
-
-            # Process outro section
-            if outro_section and outro_section != intro_section and not should_fallback_to_video:
-                outro_text = outro_section['text']
-                outro_duration = outro_section['duration']
-                outro_idx = len(script_sections) - 1
-
-                # Generate image for outro
-                image_start_time = time.time()
-                logger.info(f"Generating image for outro section")
-
-                if background_queries and outro_idx < len(background_queries):
-                    outro_image_query = background_queries[outro_idx]
-                else:
-                    outro_image_query = background_query
-
-                outro_image_path = self._generate_image_from_prompt(outro_image_query, style=style)
-                logger.info(f"Completed image generation for outro in {time.time() - image_start_time:.2f} seconds")
-
-                if not outro_image_path:
-                    # If outro image generation failed, fallback to video
-                    logger.warning("⚠️ FALLBACK: Image generation failed for outro")
-                    should_fallback_to_video = True
-
-                # If we need to fall back to video mode, do it now
-                if should_fallback_to_video:
-                        return self.v_creator.create_youtube_short(
-                            title=title,
-                            script_sections=script_sections,
-                            background_query=background_query,
-                            output_filename=output_filename,
-                            add_captions=add_captions,
-                            style="video",
-                            voice_style=voice_style,
-                            max_duration=max_duration,
-                            background_queries=background_queries,
-                            blur_background=blur_background,
-                            edge_blur=edge_blur
-                        )
-
-                # Create base image clip
-                outro_base_clip = self._create_still_image_clip(
-                    outro_image_path,
-                    duration=outro_duration,
-                                with_zoom=True
-                            )
-
-                # Create outro text
-                outro_text_clip = self.v_creator._create_text_clip(
-                    outro_text,
-                    duration=outro_duration,
-                                    font_size=60,
-                                    position=('center', 'center'),
-                                    animation="fade",
-                                    animation_duration=0.8,
-                                    with_pill=True,
-                                    pill_color=(0, 0, 0, 160),
-                                    pill_radius=30
-                                )
-
-                # Combine image with text
-                outro_clip = CompositeVideoClip([outro_base_clip, outro_text_clip], size=self.resolution)
-
-                # Add audio if available
-                for idx, audio_clip, duration in audio_clips:
-                    if idx == len(script_sections) - 1:  # Last section is outro
-                        # Verify audio clip is valid before using it
+                    # Apply blur effects if requested
+                    if blur_background:
                         try:
-                            if audio_clip.duration <= 0:
-                                logger.warning(f"Outro audio clip has invalid duration: {audio_clip.duration}s. Creating silent audio.")
-                                # Create silent audio as fallback
-                                from moviepy.audio.AudioClip import AudioClip
-                                import numpy as np
-
-                                def make_frame(t):
-                                    return np.zeros(2)  # Stereo silence
-
-                                # Create silent audio matching the outro duration
-                                silent_audio = AudioClip(make_frame=make_frame, duration=outro_duration)
-                                silent_audio = silent_audio.set_fps(44100)
-                                outro_clip = outro_clip.set_audio(silent_audio)
-                            else:
-                                outro_clip = outro_clip.set_audio(audio_clip)
+                            clip = self.v_creator.custom_blur(clip, radius=15)
+                            logger.info(f"Applied blur effect to clip {i+1}")
                         except Exception as e:
-                            logger.error(f"Error setting audio for outro: {e}")
-                        break
+                            logger.error(f"Error applying blur effect: {e}")
+                    elif edge_blur:
+                        try:
+                            clip = self.v_creator.custom_edge_blur(clip)
+                            logger.info(f"Applied edge blur effect to clip {i+1}")
+                        except Exception as e:
+                            logger.error(f"Error applying edge blur effect: {e}")
 
-                section_clips.append(outro_clip)
+                    # Add audio to the clip if available
+                    if audio_path and os.path.exists(audio_path):
+                        try:
+                            audio = AudioFileClip(audio_path)
 
-            # Add captions at the bottom if requested
-            if add_captions and not should_fallback_to_video:
-                for i, clip in enumerate(section_clips):
-                    if i < len(script_sections):
-                        section_text = script_sections[i]['text']
-                        caption = self.v_creator._create_text_clip(
-                            section_text, duration=clip.duration, font_size=40,
-                            font_path=self.body_font_path, position=('center', self.resolution[1] - 200),
-                            animation="fade", animation_duration=0.5
+                            # Ensure audio doesn't extend beyond clip duration
+                            if audio.duration > duration:
+                                audio = audio.subclip(0, duration)
+
+                            # Add audio to the clip
+                            clip = clip.set_audio(audio)
+                            logger.info(f"Added audio to clip {i+1}")
+                        except Exception as e:
+                            logger.error(f"Error adding audio to clip: {e}")
+
+                    video_clips.append(clip)
+
+            # 4. Concatenate all clips
+            if video_clips:
+                logger.info(f"Concatenating {len(video_clips)} clips")
+
+                # Create watermark for the entire video duration
+                total_duration = sum(clip.duration for clip in video_clips)
+                watermark_clip = self._create_watermark(total_duration)
+
+                if watermark_clip:
+                    # Add watermark to all video clips
+                    for i in range(len(video_clips)):
+                        # Use safer composition method
+                        video_clips[i] = self._safely_create_composite(
+                            [video_clips[i], watermark_clip.set_duration(video_clips[i].duration)],
+                            duration=video_clips[i].duration
                         )
-                        section_clips[i] = CompositeVideoClip([clip, caption], size=self.resolution)
 
-            # Check if we have any clips
-            if not section_clips:
-                if not should_fallback_to_video:
-                    logger.warning("No clips were created, falling back to video mode")
-                    should_fallback_to_video = True
+                final_clip = self._safely_create_composite(video_clips, duration=total_duration)
 
-                if should_fallback_to_video:
-                    return self.v_creator.create_youtube_short(
-                        title=title,
-                        script_sections=script_sections,
-                        background_query=background_query,
-                        output_filename=output_filename,
-                        add_captions=add_captions,
-                        style="video",
-                        voice_style=voice_style,
-                        max_duration=max_duration,
-                        background_queries=background_queries,
-                        blur_background=blur_background,
-                        edge_blur=edge_blur
-                    )
-
-            logger.info(f"Successfully processed {len(section_clips)}/{len(script_sections)} sections")
-
-            # Use parallel rendering if available
-            try:
-                # Check for dill library - needed for optimal parallel rendering
-                try:
-                    import dill
-                    logger.info(f"Found dill {dill.__version__} for improved serialization")
-                except ImportError:
-                    logger.warning("Dill library not found - parallel rendering may be less efficient")
-                    logger.warning("Consider installing dill with: pip install dill")
-
-                from parallel_renderer import render_clips_in_parallel
-                logger.info("Using parallel renderer for improved performance")
-
-                # Create temp directory for parallel rendering
-                parallel_temp_dir = os.path.join(self.temp_dir, "parallel_render")
-                os.makedirs(parallel_temp_dir, exist_ok=True)
-
-                # Render clips in parallel
-                render_start_time = time.time()
-                logger.info(f"Starting parallel video rendering")
-
-                output_filename = render_clips_in_parallel(
-                    section_clips,
-                    output_filename,
-                    temp_dir=parallel_temp_dir,
-                    fps=self.fps,
-                    preset="veryfast"
-                )
-
-                logger.info(f"Completed video rendering in {time.time() - render_start_time:.2f} seconds")
-            except Exception as e:
-                logger.warning(f"Parallel renderer failed: {e}. Using standard rendering.")
-
-                # Concatenate all clips
-                concat_start_time = time.time()
-                logger.info(f"Starting standard video rendering")
-
-                final_clip = concatenate_videoclips(section_clips)
-
-                # Ensure we don't exceed maximum duration
-                if final_clip.duration > max_duration:
-                    logger.warning(f"Video exceeds maximum duration ({final_clip.duration}s > {max_duration}s), trimming")
-                    final_clip = final_clip.subclip(0, max_duration)
-
-                # Write the final video with improved settings
-                logger.info(f"Writing video to {output_filename} (duration: {final_clip.duration:.2f}s)")
-
+                # Export the final video
+                logger.info(f"Writing video to {output_path}")
                 final_clip.write_videofile(
-                    output_filename,
+                    output_path,
                     fps=self.fps,
-                    codec="libx264",
-                    audio_codec="aac",
-                    threads=4,
-                    preset="veryfast",
-                    ffmpeg_params=[
-                        "-bufsize", "24M",      # Larger buffer
-                        "-maxrate", "8M",       # Higher max rate
-                        "-b:a", "192k",         # Higher audio bitrate
-                        "-ar", "48000",         # Audio sample rate
-                        "-pix_fmt", "yuv420p"   # Compatible pixel format for all players
-                    ]
+                    codec='libx264',
+                    audio_codec='aac',
+                    temp_audiofile=os.path.join(self.temp_dir, "temp_audio.m4a"),
+                    remove_temp=True,
+                    threads=8,  # Increase threads for parallel rendering
+                    preset='faster'  # Use faster preset for quicker rendering
                 )
 
-                logger.info(f"Completed video rendering in {time.time() - concat_start_time:.2f} seconds")
+                # Clean up
+                final_clip.close()
+                for clip in video_clips:
+                    clip.close()
 
-            # Print summary of creation process
-            overall_duration = time.time() - overall_start_time
-            logger.info(f"YouTube short creation completed in {overall_duration:.2f} seconds")
-            logger.info(f"Video saved to: {output_filename}")
+                process_time = time.time() - start_time
+                logger.info(f"Video created successfully in {process_time:.2f} seconds")
 
-            # Clean up temporary files
-            self._cleanup()
-
-            return output_filename
+                return output_path
+            else:
+                logger.error("Failed to create any video clips")
+                return None
 
         except Exception as e:
             logger.error(f"Error creating YouTube Short: {e}")
             import traceback
-            logger.error(traceback.format_exc())
-            raise
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+        finally:
+            # Clean up temp files
+            self._cleanup()
 
     @measure_time
     def _cleanup(self):

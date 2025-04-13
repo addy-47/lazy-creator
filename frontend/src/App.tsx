@@ -22,6 +22,7 @@ import NotFound from "./pages/NotFound";
 import { createContext, useEffect, useState, useCallback } from "react";
 import PageTransition from "./components/PageTransition";
 import { initSocket, disconnectSocket, setAuthToken } from "./lib/socket";
+import Processing from "./pages/Processing";
 
 // Create authentication context
 export interface AuthContextType {
@@ -185,6 +186,14 @@ const App = () => {
                     </RouteTransition>
                   }
                   path="/gallery"
+                />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <Processing />
+                    </RouteTransition>
+                  }
+                  path="/processing"
                 />
                 <Route
                   element={

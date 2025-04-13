@@ -15,8 +15,63 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import gc
 import shutil
 import subprocess
+import signal
+import atexit
+import weakref
+import threading
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Thread-safe shutdown flag
+_shutdown_requested = threading.Event()
+_temp_files = set()
+_temp_files_lock = threading.Lock()
+
+def request_shutdown():
+    """Set the shutdown flag to request a graceful shutdown"""
+    _shutdown_requested.set()
+
+def is_shutdown_requested():
+    """Check if shutdown has been requested"""
+    return _shutdown_requested.is_set()
+
+def handle_shutdown_signal(signum, frame):
+    """Handle shutdown signals gracefully"""
+    print(f"Received signal {signum}, requesting graceful shutdown...")
+    request_shutdown()
+
+# Install signal handlers for common termination signals
+try:
+    # Only install these in the main process
+    if multiprocessing.current_process().name == 'MainProcess':
+        signal.signal(signal.SIGINT, handle_shutdown_signal)
+        signal.signal(signal.SIGTERM, handle_shutdown_signal)
+        # On Windows, CTRL+C is SIGINT, but we handle it specifically
+        if hasattr(signal, 'SIGBREAK'):  # Windows-specific
+            signal.signal(signal.SIGBREAK, handle_shutdown_signal)
+except (ValueError, OSError):
+    # Ignore errors that might happen in some contexts (e.g. in child processes)
+    pass
+
+def register_temp_file(filepath):
+    """Register a temporary file for cleanup"""
+    with _temp_files_lock:
+        _temp_files.add(filepath)
+
+def cleanup_temp_files():
+    """Clean up registered temporary files"""
+    with _temp_files_lock:
+        for filepath in _temp_files:
+            try:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+            except Exception as e:
+                logging.debug(f"Error removing temp file {filepath}: {e}")
+        _temp_files.clear()
+
+# Register cleanup on process exit
+atexit.register(cleanup_temp_files)
 
 # Simple workaround flag to avoid patching errors
 USING_DILL = False
@@ -64,82 +119,50 @@ def render_clip_segment(clip, output_path, fps=30, preset="veryfast", threads=2,
     logger.info(f"Starting render of segment to {output_path}")
 
     try:
-        # Pre-process audio to fix stuttering/repeating issue
-        if clip.audio is not None:
-            # Extract audio to a temporary file
-            temp_audio_path = output_path.replace('.mp4', '_temp_audio.wav')  # Use WAV for highest quality
+        # Register this file for cleanup
+        register_temp_file(output_path)
 
-            try:
-                # Use highest quality settings for audio to prevent stuttering
-                clip.audio.write_audiofile(
-                    temp_audio_path,
-                    fps=48000,  # Higher sample rate for better quality
-                    nbytes=4,   # Use 32-bit audio for highest quality
-                    codec='pcm_s32le',  # Use uncompressed PCM audio to avoid compression artifacts
-                    ffmpeg_params=[
-                        "-ac", "2",      # Force stereo output
-                        "-ar", "48000",  # Explicitly set sample rate
-                        "-sample_fmt", "s32",  # 32-bit audio samples
-                        "-bufsize", "8192k"    # Increased buffer size
-                    ]
-                )
+        # Check if shutdown was requested before starting expensive operation
+        if is_shutdown_requested():
+            logger.info("Shutdown requested, aborting render")
+            return None
 
-                # Check that audio file was created and has content
-                if not os.path.exists(temp_audio_path) or os.path.getsize(temp_audio_path) == 0:
-                    logger.warning(f"Audio extraction failed: {temp_audio_path} is empty or missing")
-                    # Continue without audio
-                else:
-                    try:
-                        # Load it back as a clean AudioFileClip
-                        clean_audio = AudioFileClip(temp_audio_path)
-
-                        # Set audio to the exact duration of the clip to avoid sync issues
-                        clean_audio = clean_audio.set_duration(clip.duration)
-
-                        # Replace the clip's audio
-                        clip = clip.set_audio(clean_audio)
-                        logger.info(f"Successfully preprocessed audio")
-                    except Exception as audio_load_err:
-                        logger.error(f"Error loading clean audio: {audio_load_err}")
-                        # Continue without audio processing
-            except Exception as audio_write_err:
-                logger.warning(f"Error writing audio to file: {audio_write_err}")
-                # Continue without audio processing
-
-        # Use optimized encoding settings
+        # Use optimized encoding settings with reduced memory usage
         # Show progress bar with tqdm if requested
         logger_setting = None if show_progress else "bar"
 
+        # Pre-process and configure to reduce memory usage
+        gc.collect()  # Force garbage collection before each render
+
+        # Memory-efficient rendering settings
         clip.write_videofile(
             output_path,
             fps=fps,
             codec="libx264",
             audio_codec="aac",
             threads=threads,
-            preset=preset,
-            audio_bufsize=8192,  # Increased audio buffer size
+            preset=preset if preset else "ultrafast",  # Use ultrafast preset if none specified
+            audio_bufsize=4096,  # Reduced buffer size to save memory
             ffmpeg_params=[
-                "-bufsize", "24M",      # Larger buffer
-                "-maxrate", "8M",       # Higher max rate
-                "-b:a", "192k",         # Higher audio bitrate
-                "-ar", "48000",         # Audio sample rate
-                "-pix_fmt", "yuv420p"   # Compatible pixel format for all players
+                "-bufsize", "10M",      # Reduced buffer size
+                "-maxrate", "2M",       # Lower max rate to save memory
+                "-pix_fmt", "yuv420p",  # Compatible pixel format for all players
+                "-crf", "28"            # Higher compression (lower quality) to save memory
             ],
             logger=logger_setting  # None shows progress bar, "bar" hides it
         )
         duration = time.time() - start_time
         logger.info(f"Completed render of segment {output_path} in {duration:.2f} seconds")
 
-        # Clean up temp audio file if it exists
-        if os.path.exists(temp_audio_path):
-            try:
-                os.remove(temp_audio_path)
-            except Exception as clean_err:
-                logger.warning(f"Failed to clean up temp audio file: {clean_err}")
-
         return output_path
     except Exception as e:
         logger.error(f"Error rendering segment {output_path}: {e}")
+        # Try to clean up the failed output file
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except:
+                pass
         raise
 
 # Pre-rendering function for complex clips to avoid serialization issues
@@ -168,34 +191,41 @@ def prerender_complex_clip(clip, temp_dir, idx, fps):
     modified_clip = None
 
     try:
-        # Check if the main clip has callable attributes
+        # Check for complex position attributes
         has_callable_pos = hasattr(clip, 'pos') and callable(clip.pos)
         has_callable_size = hasattr(clip, 'size') and callable(clip.size)
 
-        # Check if it's a composite with subclips needing fixes
-        has_complex_subclips = False
-        modified_subclips = []
-
+        # Handle CompositeVideoClip specially
         if isinstance(clip, CompositeVideoClip) and hasattr(clip, 'clips') and clip.clips:
-            # For each subclip, check if it has callable attributes
-            for subclip in clip.clips:
-                subclip_modified = False
-                fixed_subclip = subclip
+            # Check if any subclip has complex attributes
+            modified_subclips = []
+            has_complex_subclips = False
 
-                # Check and fix position
+            for subclip in clip.clips:
+                # Start with the original subclip
+                fixed_subclip = subclip
+                subclip_modified = False
+
+                # Check for callable pos
                 if hasattr(subclip, 'pos') and callable(subclip.pos):
                     try:
                         # Sample the position at the middle of the duration
                         mid_time = subclip.duration / 2
                         mid_pos = subclip.pos(mid_time)
-                        fixed_subclip = subclip.set_position(mid_pos)
+
+                        # Ensure position is a flat tuple, not a nested tuple
+                        if isinstance(mid_pos, tuple) and len(mid_pos) > 0 and isinstance(mid_pos[0], tuple):
+                            # If the position is a nested tuple, flatten it
+                            mid_pos = mid_pos[0]
+                            logger.debug(f"Flattened nested position tuple in subclip of clip {idx}")
+
+                        fixed_subclip = fixed_subclip.set_position(mid_pos)
                         subclip_modified = True
                         logger.debug(f"Fixed callable position in subclip of clip {idx}")
                     except Exception as e:
                         logger.warning(f"Failed to fix callable position in subclip: {e}")
-                        # If fixing fails, use center position
-                        fixed_subclip = subclip.set_position('center')
-                        subclip_modified = True
+                        # Set a safe default position
+                        fixed_subclip = fixed_subclip.set_position('center')
 
                 # Check and fix size
                 if hasattr(subclip, 'size') and callable(subclip.size):
@@ -237,6 +267,13 @@ def prerender_complex_clip(clip, temp_dir, idx, fps):
                     try:
                         mid_time = base_clip.duration / 2
                         mid_pos = base_clip.pos(mid_time)
+
+                        # Ensure position is a flat tuple, not a nested tuple
+                        if isinstance(mid_pos, tuple) and len(mid_pos) > 0 and isinstance(mid_pos[0], tuple):
+                            # If the position is a nested tuple, flatten it
+                            mid_pos = mid_pos[0]
+                            logger.debug(f"Flattened nested position tuple in main clip {idx}")
+
                         base_clip = base_clip.set_position(mid_pos)
                         logger.debug(f"Fixed callable position in main clip {idx}")
                     except Exception as e:
@@ -528,8 +565,44 @@ def render_clip_process(mp_tuple):
             logging.error(f"Clip {idx} is None, skipping")
             return None
 
-        # Different handling based on clip type to optimize performance
+        # If this is a path to a file that doesn't exist, return None
+        if isinstance(clip, str) and not os.path.exists(clip):
+            logging.error(f"Clip path {clip} does not exist, skipping")
+            return None
+
+        # Fix any potential position issues before rendering
+        if hasattr(clip, 'pos') and callable(clip.pos):
+            try:
+                # Sample position at middle of clip
+                mid_time = clip.duration / 2
+                mid_pos = clip.pos(mid_time)
+
+                # Handle nested tuples
+                if isinstance(mid_pos, tuple) and len(mid_pos) > 0 and isinstance(mid_pos[0], tuple):
+                    mid_pos = mid_pos[0]
+                    logging.debug(f"Flattened nested position tuple in clip {idx}")
+
+                clip = clip.set_position(mid_pos)
+                logging.debug(f"Fixed callable position in clip {idx}")
+            except Exception as e:
+                logging.warning(f"Failed to fix position in clip {idx}: {e}")
+                # Set a safe default position
+                try:
+                    clip = clip.set_position('center')
+                except:
+                    pass
+
         if hasattr(clip, 'write_videofile'):
+            try:
+                # Verify clip can actually render a frame
+                test_frame = clip.get_frame(0)
+                if test_frame is None:
+                    logging.error(f"Clip {idx} cannot render frames, skipping")
+                    return None
+            except Exception as e:
+                logging.error(f"Clip {idx} failed frame test: {e}")
+                return None
+
             # Try to use hardware acceleration if available
             hw_accel = ""
             try:
@@ -662,83 +735,126 @@ def render_clips_in_parallel(clips, output_file, fps=30, num_processes=None, log
         logger = logging.getLogger(__name__)
 
     if num_processes is None:
-        num_processes = max(1, min(multiprocessing.cpu_count() - 1, 8))
+        # Use fewer processes to reduce chance of memory issues
+        num_processes = max(1, min(multiprocessing.cpu_count() - 1, 4))
 
     logger.info(f"Rendering {len(clips)} clips in parallel using {num_processes} processes with preset: {preset}")
+
+    # Reset shutdown flag at start
+    _shutdown_requested.clear()
 
     # Function to process rendering in a temp directory
     def process_in_temp_dir(temp_directory):
         # Store paths to rendered clips rather than clip objects to save memory
         processed_clips_paths = []
+        temp_files_to_cleanup = set()
 
-        # First step: Pre-render all complex clips to avoid serialization issues
-        logger.info("Pre-processing complex clips...")
-        for idx, clip in enumerate(clips):
-            if is_complex_clip(clip):
-                logger.debug(f"Pre-rendering complex clip {idx}")
-                try:
-                    # Pre-render complex clips
-                    clip_path = prerender_complex_clip(clip, temp_directory, idx, fps)
-                    if clip_path:
-                        processed_clips_paths.append((idx, clip_path))
-                        logger.info(f"Successfully pre-rendered complex clip {idx}")
-                    else:
-                        logger.warning(f"Failed to pre-render clip {idx}, skipping")
-
-                    # Explicitly close original clip to free memory
-                    try:
-                        if hasattr(clip, 'close'):
-                            clip.close()
-                    except Exception as e:
-                        logger.debug(f"Error closing clip {idx}: {e}")
-                except Exception as e:
-                    logger.error(f"Error pre-rendering clip {idx}: {e}")
-            else:
-                # For simple clips, add to process list
-                processed_clips_paths.append((idx, clip))
-
-        # Second step: Process all clips in parallel
-        logger.info("Rendering clips in parallel...")
-        mp_clips = []
-        for idx, clip_or_path in processed_clips_paths:
-            # If it's already a path (pre-rendered), use it directly
-            if isinstance(clip_or_path, str) and os.path.exists(clip_or_path):
-                mp_clips.append((idx, clip_or_path, temp_directory, fps))
-            else:
-                # Otherwise, it's a clip that needs rendering
-                mp_clips.append((idx, clip_or_path, temp_directory, fps))
-
-        # Clear processed_clips_paths to free memory
-        processed_clips_paths = []
-
-        # Set up a multiprocessing pool and render each clip in parallel
-        rendered_paths = []
-        with multiprocessing.Pool(processes=num_processes) as pool:
-            # Process clips in parallel with progress tracking
-            for result in tqdm(pool.imap_unordered(render_clip_process, mp_clips),
-                              total=len(mp_clips),
-                              desc="Rendering clips in parallel"):
-                if result is not None:
-                    rendered_paths.append(result)
-                    logger.debug(f"Clip rendered: {result}")
-
-                # Force garbage collection periodically
-                if len(rendered_paths) % 5 == 0:
-                    gc.collect()
-
-        # Clear mp_clips list to free memory
-        mp_clips = []
-        gc.collect()
-
-        if not rendered_paths:
-            raise ValueError("No clips were successfully rendered")
-
-        logger.info(f"Successfully rendered {len(rendered_paths)} out of {len(clips)} clips")
-
-        # Third step: Concatenate rendered clips
         try:
-            # Sort clips by index if needed
-            # For direct file concatenation, we don't need to sort if using concat filter
+            # First step: Pre-render all complex clips
+            logger.info("Pre-processing complex clips...")
+            for idx, clip in enumerate(clips):
+                # Check if shutdown requested
+                if _shutdown_requested.is_set():
+                    logger.warning("Shutdown requested during pre-processing, aborting")
+                    raise KeyboardInterrupt("Shutdown requested")
+
+                if is_complex_clip(clip):
+                    logger.debug(f"Pre-rendering complex clip {idx}")
+                    try:
+                        # Pre-render complex clips
+                        clip_path = prerender_complex_clip(clip, temp_directory, idx, fps)
+                        if clip_path:
+                            processed_clips_paths.append((idx, clip_path))
+                            logger.info(f"Successfully pre-rendered complex clip {idx}")
+                        else:
+                            logger.warning(f"Failed to pre-render clip {idx}, skipping")
+
+                        # Explicitly close original clip to free memory
+                        try:
+                            if hasattr(clip, 'close'):
+                                clip.close()
+                        except Exception as e:
+                            logger.debug(f"Error closing clip {idx}: {e}")
+                    except Exception as e:
+                        logger.error(f"Error pre-rendering clip {idx}: {e}")
+                else:
+                    # For simple clips, add to process list
+                    processed_clips_paths.append((idx, clip))
+
+            # Store temp files for cleanup
+            for _, clip_path in processed_clips_paths:
+                if isinstance(clip_path, str):
+                    temp_files_to_cleanup.add(clip_path)
+
+            # Second step: Process all clips in parallel
+            logger.info("Rendering clips in parallel...")
+            mp_clips = []
+            for idx, clip_or_path in processed_clips_paths:
+                # If it's already a path (pre-rendered), use it directly
+                if isinstance(clip_or_path, str) and os.path.exists(clip_or_path):
+                    mp_clips.append((idx, clip_or_path, temp_directory, fps))
+                else:
+                    # Otherwise, it's a clip that needs rendering
+                    mp_clips.append((idx, clip_or_path, temp_directory, fps))
+
+            # Clear processed_clips_paths to free memory
+            processed_clips_paths = []
+
+            # Set up a multiprocessing pool with maxtasksperchild to prevent memory leaks
+            rendered_paths = []
+
+            # Use get_context to ensure proper process creation on all platforms
+            mp_context = multiprocessing.get_context('spawn')
+
+            # Use a smaller chunksize to allow more frequent exit checks
+            with mp_context.Pool(processes=num_processes, maxtasksperchild=2) as pool:
+                try:
+                    # Process clips in parallel with progress tracking
+                    for result in tqdm(pool.imap_unordered(render_clip_process, mp_clips, chunksize=1),
+                                    total=len(mp_clips),
+                                    desc="Rendering clips in parallel"):
+                        # Check for shutdown signal
+                        if _shutdown_requested.is_set():
+                            logger.warning("Shutdown requested during parallel rendering, aborting")
+                            pool.terminate()
+                            pool.join()
+                            raise KeyboardInterrupt("Rendering aborted")
+
+                        if result is not None:
+                            rendered_paths.append(result)
+                            logger.debug(f"Clip rendered: {result}")
+
+                        # Force garbage collection periodically
+                        if len(rendered_paths) % 3 == 0:
+                            gc.collect()
+                except KeyboardInterrupt:
+                    logger.warning("KeyboardInterrupt received, terminating pool")
+                    pool.terminate()
+                    pool.join()
+                    raise
+
+            # Add rendered paths to cleanup list
+            temp_files_to_cleanup.update(rendered_paths)
+
+            # Validate all clips before concatenation
+            valid_paths = []
+            for path in rendered_paths:
+                try:
+                    # Try to open the video file to verify it's valid
+                    with VideoFileClip(path) as test_clip:
+                        if test_clip.duration > 0:
+                            valid_paths.append(path)
+                        else:
+                            logger.warning(f"Skipping clip with zero duration: {path}")
+                except Exception as e:
+                    logger.warning(f"Skipping invalid clip {path}: {e}")
+
+            if not valid_paths:
+                raise ValueError("No valid clips available for concatenation")
+
+            rendered_paths = valid_paths
+
+            # Continue with concatenation...
             logger.info("Concatenating clips using FFmpeg...")
 
             # Create a temporary file list for FFmpeg
@@ -799,115 +915,22 @@ def render_clips_in_parallel(clips, output_file, fps=30, num_processes=None, log
             logger.info(f"Successfully concatenated clips to {output_file}")
             return output_file
 
-        except Exception as e:
-            logger.error(f"Error during FFmpeg concatenation: {e}")
-            logger.info("Falling back to alternative concatenation method")
-
-            try:
-                # Alternative approach: use segment concatenation
-                logger.info("Trying alternative FFmpeg approach...")
-
-                # Use ffmpeg concat with copying instead of re-encoding
-                alt_ffmpeg_cmd = [
-                    "ffmpeg", "-y",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", concat_list_path,
-                    "-c", "copy",  # Just copy streams without re-encoding
-                    "-max_muxing_queue_size", "9999",
-                    output_file
-                ]
-
-                process = subprocess.run(
-                    alt_ffmpeg_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                    text=True
-                )
-
-                if process.returncode == 0:
-                    logger.info(f"Alternative FFmpeg concatenation succeeded!")
-                    return output_file
-                else:
-                    logger.error(f"Alternative FFmpeg approach failed: {process.stderr}")
-            except Exception as alt_e:
-                logger.error(f"Alternative approach failed: {alt_e}")
-
-            # Last resort: MoviePy concatenation
-            logger.info("Falling back to MoviePy concatenation as last resort")
-
-            # If all direct concatenation fails, fall back to MoviePy method
-            final_clips = []
-            chunk_size = min(10, len(rendered_paths))  # Process in chunks
-
-            for i in range(0, len(rendered_paths), chunk_size):
-                chunk = rendered_paths[i:i+chunk_size]
-                chunk_clips = []
-
-                for clip_path in chunk:
-                    try:
-                        clip = VideoFileClip(clip_path)
-                        chunk_clips.append(clip)
-                    except Exception as clip_e:
-                        logger.error(f"Error loading clip from {clip_path}: {clip_e}")
-
-                if chunk_clips:
-                    # Process this chunk
-                    try:
-                        chunk_output = os.path.join(temp_directory, f"chunk_{i}.mp4")
-                        chunk_concat = concatenate_videoclips(chunk_clips)
-                        chunk_concat.write_videofile(
-                            chunk_output,
-                            fps=fps,
-                            preset="ultrafast",  # Speed over quality for intermediate files
-                            codec=codec,
-                            audio_codec=audio_codec,
-                            threads=2
-                        )
-                        # Close all clips in this chunk
-                        for clip in chunk_clips:
+        finally:
+            # Clean up all temporary files
+            for temp_file in temp_files_to_cleanup:
+                try:
+                    if os.path.exists(temp_file):
+                        # Wait for any potential file locks to clear
+                        for _ in range(3):  # Try 3 times
                             try:
-                                clip.close()
+                                os.remove(temp_file)
+                                break
+                            except PermissionError:
+                                time.sleep(0.5)  # Wait before retrying
                             except:
-                                pass
-                        chunk_concat.close()
-
-                        # Add the chunk output to our final list
-                        final_clips.append(chunk_output)
-                    except Exception as chunk_e:
-                        logger.error(f"Error processing chunk {i}: {chunk_e}")
-
-                # Force garbage collection
-                gc.collect()
-
-            if not final_clips:
-                raise ValueError("No clips were successfully processed for concatenation")
-
-            # Final concatenation of chunks
-            if len(final_clips) == 1:
-                # Just one chunk, rename it
-                shutil.copy(final_clips[0], output_file)
-            else:
-                # Multiple chunks, concatenate them
-                final_concat_list = os.path.join(temp_directory, "final_concat.txt")
-                with open(final_concat_list, "w") as f:
-                    for path in final_clips:
-                        f.write(f"file '{os.path.abspath(path)}'\n")
-
-                final_cmd = [
-                    "ffmpeg", "-y",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", final_concat_list,
-                    "-c", "copy",
-                    output_file
-                ]
-
-                subprocess.run(final_cmd, check=True)
-
-            logger.info(f"Successfully created final output at {output_file}")
-            return output_file
+                                break
+                except Exception as e:
+                    logger.debug(f"Could not remove temp file {temp_file}: {e}")
 
     # Use provided temp_dir or create a new one
     if temp_dir:

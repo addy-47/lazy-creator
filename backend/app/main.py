@@ -13,6 +13,11 @@ from functools import wraps
 import requests
 import re
 import tempfile
+import threading
+import uuid
+import atexit
+import signal
+import sys
 
 from automation.shorts_main import generate_youtube_short
 from automation.youtube_upload import upload_video, get_authenticated_service, check_auth_status
@@ -34,6 +39,31 @@ client = MongoClient(mongo_uri)
 db = client['youtube_shorts_db']
 users_collection = db['users']
 videos_collection = db['videos']
+
+# Track all video generation threads to allow graceful shutdown
+active_threads = []
+shutdown_flag = threading.Event()
+
+# Signal handler for graceful shutdown
+def handle_shutdown_signal(signum, frame):
+    print(f"Received shutdown signal {signum}, shutting down gracefully...")
+    shutdown_flag.set()
+    # Give threads time to clean up
+    for thread in active_threads:
+        if thread.is_alive():
+            thread.join(timeout=5.0)
+    sys.exit(0)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, handle_shutdown_signal)
+signal.signal(signal.SIGTERM, handle_shutdown_signal)
+
+# Register cleanup on normal exit
+def cleanup_on_exit():
+    shutdown_flag.set()
+    print("Performing cleanup on exit...")
+
+atexit.register(cleanup_on_exit)
 
 # Authentication Decorator
 def token_required(f):
@@ -116,6 +146,47 @@ def login():
 
     return jsonify({'message': 'Invalid credentials!'}), 401
 
+# Progress tracking helper - ensure progress never decreases
+def safe_update_progress(video_id, new_progress, status=None):
+    """
+    Update the progress of a video generation, ensuring it never decreases.
+
+    Args:
+        video_id: The ID of the video to update
+        new_progress: The new progress value (0-100)
+        status: Optional status update
+    """
+    try:
+        # Get current progress
+        video = videos_collection.find_one({'_id': ObjectId(video_id)})
+
+        if not video:
+            logger.warning(f"Cannot update progress for video {video_id}: not found")
+            return False
+
+        current_progress = video.get('progress', 0)
+
+        # Ensure progress never decreases
+        if new_progress < current_progress:
+            logger.warning(f"Attempted to decrease progress from {current_progress} to {new_progress} for video {video_id}, keeping higher value")
+            new_progress = current_progress
+
+        # Update fields
+        update_fields = {'progress': new_progress}
+        if status:
+            update_fields['status'] = status
+
+        # Update database
+        videos_collection.update_one(
+            {'_id': ObjectId(video_id)},
+            {'$set': update_fields}
+        )
+
+        return True
+    except Exception as e:
+        logger.error(f"Error in safe_update_progress: {e}")
+        return False
+
 # Generate YouTube Short
 @app.route('/api/generate-short', methods=['POST'])
 @token_required
@@ -174,8 +245,6 @@ def generate_short(current_user):
         }
 
         # Start background processing
-        import threading
-
         def process_video():
             try:
                 # Make background_path accessible in this function
@@ -223,39 +292,48 @@ def generate_short(current_user):
                     logger.info(f"Using background_path: {processed_background_path}, background_source: {processed_background_source}, background_type: {background_type}")
 
                     try:
+                        # Update progress to 30% after script generation
+                        safe_update_progress(video_id, 30)
+
+                        # Create a progress callback function
+                        def progress_callback(progress):
+                            # Map the 0-100 progress from generate_youtube_short to 30-80 range
+                            mapped_progress = int(30 + (progress * 0.5))  # 0->30, 100->80
+                            safe_update_progress(video_id, mapped_progress)
+
+                        # Generate the video with progress tracking
                         video_path = generate_youtube_short(
                             topic=prompt,
                             max_duration=duration,
                             background_type=background_type,
                             background_source=processed_background_source,
-                            background_path=processed_background_path
+                            background_path=processed_background_path,
+                            progress_callback=progress_callback
                         )
+
+                        # Update progress to 80% after video generation
+                        safe_update_progress(video_id, 80, 'uploading')
 
                         # Check if video was generated successfully
                         if not video_path or not os.path.exists(video_path):
                             raise FileNotFoundError(f"Generated video file not found at {video_path}")
 
-                        # Update progress
-                        videos_collection.update_one(
-                            {'_id': ObjectId(video_id)},
-                            {'$set': {
-                                'progress': 60,
-                                'status': 'uploading'
-                            }}
-                        )
-
                         # Create a unique filename
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        safe_prompt = re.sub(r'[^\w\s-]', '', prompt.lower()).strip().replace(' ', '_')[:50]  # Limit length for filesystems
+                        safe_prompt = re.sub(r'[^\w\s-]', '', prompt.lower()).strip().replace(' ', '_')[:50]
                         filename = f"{safe_prompt}_{timestamp}.mp4"
 
                         # Set path in GCS to include user ID for better organization
-                        blob_name = f"videos/{user_id}/{filename}"
+                        blob_name = f"users/{user_id}/{filename}"  # Use 'users/' prefix for better organization
+
+                        # Update progress to 80% before upload
+                        safe_update_progress(video_id, 80, 'uploading')
 
                         # Upload to Cloud Storage with user_id metadata
                         gcs_path = cloud_storage.upload_file(
                             video_path,
                             blob_name,
+                            bucket_name=cloud_storage.media_bucket,  # Explicitly use media bucket
                             user_id=user_id,
                             metadata={
                                 'prompt': prompt,
@@ -268,12 +346,11 @@ def generate_short(current_user):
                         if cloud_storage.use_local_storage and not gcs_path.startswith('gs://'):
                             gcs_path = f"gs://{cloud_storage.media_bucket}/{blob_name}"
 
-                        # Update the database with completed status and file info
+                        # Update the database with completed status and file info using safe progress update
+                        safe_update_progress(video_id, 100, 'completed')
                         videos_collection.update_one(
                             {'_id': ObjectId(video_id)},
                             {'$set': {
-                                'status': 'completed',
-                                'progress': 100,
                                 'filename': filename,
                                 'path': gcs_path,
                                 'user_id': user_id,
@@ -285,19 +362,34 @@ def generate_short(current_user):
 
                         # Notify frontend that generation is complete
                         try:
-                            origin = request.headers.get('Origin', 'http://localhost:3500')
-                            callback_url = f"{origin}/api/generation-complete-callback/{video_id}"
-                            requests.post(callback_url, json={
-                                'status': 'success',
-                                'video_id': str(video_id),
-                                'filename': filename,
-                                'path': gcs_path
-                            }, timeout=5)
+                            # Create a copy of request values for use outside request context
+                            req_origin = request.headers.get('Origin', 'http://localhost:3500')
+
+                            # Define function for app context
+                            def send_notification():
+                                try:
+                                    callback_url = f"{req_origin}/api/generation-complete-callback/{video_id}"
+                                    requests.post(callback_url, json={
+                                        'status': 'success',
+                                        'video_id': str(video_id),
+                                        'filename': filename,
+                                        'path': gcs_path
+                                    }, timeout=5)
+                                    logger.info(f"Successfully notified frontend of completion: {callback_url}")
+                                except Exception as cb_error:
+                                    logger.error(f"Failed to notify frontend of completion in app context: {cb_error}")
+
+                            # Run in a separate thread to avoid blocking
+                            notification_thread = threading.Thread(target=send_notification)
+                            notification_thread.daemon = True
+                            notification_thread.start()
+
                         except Exception as callback_error:
-                            logger.error(f"Failed to notify frontend of completion: {callback_error}")
+                            logger.error(f"Failed to setup frontend notification: {callback_error}")
                     except Exception as gen_error:
                         logger.error(f"Error in video generation for video {video_id}: {gen_error}")
                         # Update database with error status
+                        safe_update_progress(video_id, 0, 'error')
                         videos_collection.update_one(
                             {'_id': ObjectId(video_id)},
                             {'$set': {
@@ -308,6 +400,7 @@ def generate_short(current_user):
 
             except Exception as e:
                 logger.error(f"Error in background processing for video {video_id}: {e}")
+                safe_update_progress(video_id, 0, 'error')
                 videos_collection.update_one(
                     {'_id': ObjectId(video_id)},
                     {'$set': {
@@ -319,6 +412,13 @@ def generate_short(current_user):
         # Start the background thread and return immediately
         thread = threading.Thread(target=process_video)
         thread.daemon = True
+
+        # Register thread for tracking
+        active_threads.append(thread)
+
+        # Remove completed threads from tracking list
+        active_threads[:] = [t for t in active_threads if t.is_alive()]
+
         thread.start()
 
         return jsonify(response), 202
@@ -377,6 +477,65 @@ def get_gallery(current_user):
         for video in videos:
             video['id'] = str(video['_id'])
             video.pop('_id', None)
+
+            # Ensure path includes user ID for proper access
+            if 'path' in video and isinstance(video['path'], str) and 'filename' in video:
+                user_id = str(current_user['_id'])
+
+                # Construct the expected path with user ID
+                expected_user_path = f"gs://{cloud_storage.media_bucket}/users/{user_id}/{video['filename']}"
+
+                # Check if the file exists in the expected user path
+                if cloud_storage.file_exists(f"users/{user_id}/{video['filename']}", cloud_storage.media_bucket):
+                    # Update to use user-specific path
+                    if video['path'] != expected_user_path:
+                        video['path'] = expected_user_path
+
+                        # Also update the database
+                        videos_collection.update_one(
+                            {'_id': ObjectId(video['id'])},
+                            {'$set': {'path': expected_user_path}}
+                        )
+                        logger.info(f"Updated video path for {video['id']} to user-specific path: {expected_user_path}")
+                # Check if file exists in demo user directory (for demo account)
+                elif user_id == "000000000000000000000000" or cloud_storage.file_exists(f"users/000000000000000000000000/{video['filename']}", cloud_storage.media_bucket):
+                    demo_path = f"gs://{cloud_storage.media_bucket}/users/000000000000000000000000/{video['filename']}"
+                    if video['path'] != demo_path:
+                        video['path'] = demo_path
+
+                        # Update the database
+                        videos_collection.update_one(
+                            {'_id': ObjectId(video['id'])},
+                            {'$set': {'path': demo_path}}
+                        )
+                        logger.info(f"Updated video path for {video['id']} to demo path: {demo_path}")
+                # Check videos/user_id directory (old format)
+                elif cloud_storage.file_exists(f"videos/{user_id}/{video['filename']}", cloud_storage.media_bucket):
+                    old_user_path = f"gs://{cloud_storage.media_bucket}/videos/{user_id}/{video['filename']}"
+                    if video['path'] != old_user_path:
+                        video['path'] = old_user_path
+
+                        # Update the database
+                        videos_collection.update_one(
+                            {'_id': ObjectId(video['id'])},
+                            {'$set': {'path': old_user_path}}
+                        )
+                        logger.info(f"Updated video path for {video['id']} to old user path: {old_user_path}")
+                # Check legacy videos directory
+                elif cloud_storage.file_exists(f"videos/{video['filename']}", cloud_storage.media_bucket):
+                    legacy_path = f"gs://{cloud_storage.media_bucket}/videos/{video['filename']}"
+                    if video['path'] != legacy_path:
+                        video['path'] = legacy_path
+
+                        # Update the database
+                        videos_collection.update_one(
+                            {'_id': ObjectId(video['id'])},
+                            {'$set': {'path': legacy_path}}
+                        )
+                        logger.info(f"Updated video path for {video['id']} to legacy path: {legacy_path}")
+                else:
+                    # If we can't find the file in any location
+                    logger.warning(f"Video file not found for {video['id']} in any expected location")
 
         return jsonify({
             'status': 'success',
@@ -618,20 +777,182 @@ def delete_video(current_user, video_id):
 def delete_video_compatibility(current_user, video_id):
     return delete_video(current_user, video_id)
 
-# Serve gallery videos
-@app.route('/gallery/<filename>', methods=['GET'])
-def serve_gallery_file(filename):
-    try:
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
-            # Download from Cloud Storage
-            blob_name = f"videos/{filename}"
-            cloud_storage.download_file(blob_name, temp_file.name)
-            return send_file(temp_file.name)
+# Helper function to try moving file to new path if found in old path
+def try_move_file_to_new_path(user_id, filename):
+    """
+    Check if a file exists in an old path format and move it to the new path.
 
+    Args:
+        user_id: User ID
+        filename: Filename to check and move
+
+    Returns:
+        Tuple: (bool, str) - Whether the move succeeded and the new path
+    """
+    try:
+        # Check all possible old paths
+        old_paths = [
+            f"videos/{user_id}/{filename}",
+            f"videos/{filename}"
+        ]
+
+        new_path = f"users/{user_id}/{filename}"
+
+        # Check if file already exists in new path
+        if cloud_storage.file_exists(new_path, cloud_storage.media_bucket):
+            logger.info(f"File already exists in new path: {new_path}")
+            return True, new_path
+
+        # Check old paths and move if found
+        for old_path in old_paths:
+            if cloud_storage.file_exists(old_path, cloud_storage.media_bucket):
+                logger.info(f"Found file in old path: {old_path}, moving to: {new_path}")
+
+                # Download to temporary file
+                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                    temp_path = temp_file.name
+
+                # Download from old location
+                cloud_storage.download_file(old_path, temp_path, cloud_storage.media_bucket)
+
+                # Upload to new location
+                cloud_storage.upload_file(
+                    temp_path,
+                    new_path,
+                    bucket_name=cloud_storage.media_bucket,
+                    user_id=user_id,
+                    metadata={"moved_from": old_path}
+                )
+
+                # Delete temporary file
+                os.unlink(temp_path)
+
+                # Update database references
+                try:
+                    videos_collection.update_many(
+                        {"filename": filename, "user_id": user_id},
+                        {"$set": {"path": f"gs://{cloud_storage.media_bucket}/{new_path}"}}
+                    )
+                    logger.info(f"Updated database references for {filename}")
+                except Exception as db_err:
+                    logger.error(f"Failed to update database for moved file: {db_err}")
+
+                return True, new_path
+
+        # File not found in any old path
+        return False, None
+    except Exception as e:
+        logger.error(f"Error in try_move_file_to_new_path: {e}")
+        return False, None
+
+# Public endpoint that accepts token via query param
+@app.route('/api/gallery/<filename>', methods=['GET'])
+def serve_gallery_file_with_token(filename):
+    try:
+        # Get authentication token from query params or headers
+        token = request.args.get('token') or request.headers.get('x-access-token')
+
+        if not token:
+            logger.warning(f"No token provided for file: {filename}")
+            return jsonify({'message': 'A valid token is required!'}), 401
+
+        # Handle demo token specially
+        if token == 'demo-token-for-testing':
+            user_id = '000000000000000000000000'
+            logger.info(f"Using demo user ID for token")
+        else:
+            # Validate token
+            try:
+                # Decode the token
+                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+                current_user = users_collection.find_one({'email': data['email']})
+
+                if not current_user:
+                    logger.warning(f"Invalid user for token when accessing file: {filename}")
+                    return jsonify({'message': 'User not found!'}), 401
+
+                user_id = str(current_user['_id'])
+            except Exception as token_error:
+                logger.error(f"Token validation error for file {filename}: {token_error}")
+                return jsonify({'message': 'Invalid token!'}), 401
+
+        logger.info(f"Serving gallery file {filename} for user {user_id} (via token param)")
+
+        # Try to move file from old path to new path
+        moved, new_path = try_move_file_to_new_path(user_id, filename)
+        if moved:
+            logger.info(f"File successfully moved or confirmed in new path: {new_path}")
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as temp_file:
+            temp_path = temp_file.name
+
+        # List of paths to check, in order of preference
+        possible_paths = [
+            f"users/{user_id}/{filename}",                      # Main user path (new structure)
+            f"users/000000000000000000000000/{filename}",       # Demo user path
+            f"videos/{user_id}/{filename}",                     # Old user path
+            f"videos/{filename}"                                # Legacy video path
+        ]
+
+        # If the filename contains path separators, also check the exact path
+        if '/' in filename:
+            possible_paths.append(filename)  # Try exact path as specified
+
+        # Try each path in order
+        file_found = False
+        download_error = None
+        for path in possible_paths:
+            try:
+                logger.info(f"Attempting to download from: {path}")
+                # Add more verbose logging
+                if cloud_storage.file_exists(path, cloud_storage.media_bucket):
+                    logger.info(f"Confirmed file exists at: {path}")
+                    try:
+                        cloud_storage.download_file(path, temp_path, cloud_storage.media_bucket)
+                        file_found = True
+                        logger.info(f"Successfully downloaded file from: {path}")
+                        break
+                    except Exception as download_err:
+                        logger.error(f"Download error for existing file at {path}: {download_err}")
+                        download_error = download_err
+                else:
+                    logger.info(f"File does not exist at: {path}")
+            except Exception as e:
+                logger.info(f"Error checking path {path}: {str(e)}")
+                continue
+
+        if not file_found:
+            logger.error(f"File {filename} not found in any of the expected locations")
+            error_message = f"File not found in any of the expected locations: {possible_paths}"
+            if download_error:
+                error_message += f". Download error: {download_error}"
+            return jsonify({
+                'status': 'error',
+                'message': error_message
+            }), 404
+
+        # Set correct content type based on file extension
+        content_type = 'video/mp4'
+        if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
+            content_type = 'image/jpeg'
+        elif filename.lower().endswith('.png'):
+            content_type = 'image/png'
+        elif filename.lower().endswith('.gif'):
+            content_type = 'image/gif'
+
+        return send_file(
+            temp_path,
+            as_attachment=False,  # Stream instead of downloading
+            download_name=os.path.basename(filename),
+            mimetype=content_type
+        )
     except Exception as e:
         logger.error(f"Error serving gallery file: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 404
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 # Add a new endpoint to notify frontend when video generation is complete
 @app.route('/api/notify-generation-complete/<video_id>', methods=['POST'])
@@ -849,5 +1170,74 @@ def serve_demo(filename):
         logger.error(f"Error serving demo video: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# Protected endpoint that requires token in header
+@app.route('/api/gallery/secure/<filename>', methods=['GET'])
+@token_required
+def serve_gallery_file_secure(current_user, filename):
+    try:
+        user_id = str(current_user['_id'])
+        logger.info(f"Serving gallery file {filename} for user {user_id} (via secure endpoint)")
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as temp_file:
+            temp_path = temp_file.name
+
+        # List of paths to check, in order of preference
+        possible_paths = [
+            f"users/{user_id}/{filename}",                      # Main user path (new structure)
+            f"users/000000000000000000000000/{filename}",       # Demo user path
+            f"videos/{user_id}/{filename}",                     # Old user path
+            f"videos/{filename}"                                # Legacy video path
+        ]
+
+        # If the filename contains path separators, also check the exact path
+        if '/' in filename:
+            possible_paths.append(filename)  # Try exact path as specified
+
+        # Try each path in order
+        file_found = False
+        for path in possible_paths:
+            try:
+                logger.info(f"Attempting to download from: {path}")
+                cloud_storage.download_file(path, temp_path, cloud_storage.media_bucket)
+                file_found = True
+                logger.info(f"Found and downloaded file from: {path}")
+                break
+            except Exception as e:
+                logger.info(f"File not found at {path}: {str(e)}")
+                continue
+
+        if not file_found:
+            logger.error(f"File {filename} not found in any of the expected locations")
+            return jsonify({
+                'status': 'error',
+                'message': 'File not found'
+            }), 404
+
+        return send_file(
+            temp_path,
+            as_attachment=False,  # Stream instead of downloading
+            download_name=os.path.basename(filename),
+            mimetype='video/mp4'
+        )
+    except Exception as e:
+        logger.error(f"Error serving gallery file: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=4000, debug=True)
+    try:
+        app.run(host='0.0.0.0', port=4000, debug=True)
+    except KeyboardInterrupt:
+        print("Server shutting down...")
+    finally:
+        # Set shutdown flag to signal threads to clean up
+        shutdown_flag.set()
+        print("Waiting for threads to complete...")
+        # Wait for active threads to finish (with timeout)
+        for thread in active_threads:
+            if thread.is_alive():
+                thread.join(timeout=5.0)
+        print("Cleanup complete")

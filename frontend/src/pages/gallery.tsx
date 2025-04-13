@@ -39,6 +39,7 @@ function GalleryPage() {
   const [trendingLoading, setTrendingLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+  const [creatingVideo, setCreatingVideo] = useState(false);
 
   // Define checkYouTubeAuth function early so it can be referenced elsewhere
   const checkYouTubeAuth = async () => {
@@ -90,34 +91,66 @@ function GalleryPage() {
     }
   };
 
+  // Check if there's an active video creation on page load
+  useEffect(() => {
+    const creationInProgress = localStorage.getItem("videoCreationInProgress");
+    if (creationInProgress === "true") {
+      setCreatingVideo(true);
+
+      // Poll for video status periodically
+      const checkInterval = setInterval(async () => {
+        try {
+          const updatedData = await fetchVideos();
+          if (updatedData?.videos?.length > videos.length) {
+            // New video found, creation must be complete
+            setCreatingVideo(false);
+            localStorage.removeItem("videoCreationInProgress");
+            clearInterval(checkInterval);
+          }
+        } catch (error) {
+          console.error("Error checking for new videos:", error);
+        }
+      }, 5000); // Check every 5 seconds
+
+      return () => clearInterval(checkInterval);
+    }
+  }, []);
+
+  // Enhanced fetchData function that returns the data for use with creation check
+  const fetchVideos = async () => {
+    try {
+      // Get authentication token
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("Authentication token missing");
+        setLoading(false);
+        return null;
+      }
+
+      const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
+        headers: {
+          "x-access-token": token,
+        },
+      });
+
+      if (response.data && response.data.videos) {
+        setVideos(response.data.videos);
+        return response.data;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error fetching videos:", error);
+      toast.error("Error loading your gallery");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        setLoading(true);
-
-        // Get authentication token
-        const token = localStorage.getItem("token");
-        if (!token) {
-          console.error("Authentication token missing");
-          setLoading(false);
-          return;
-        }
-
-        const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
-          headers: {
-            "x-access-token": token,
-          },
-        });
-
-        if (response.data && response.data.videos) {
-          setVideos(response.data.videos);
-        }
-      } catch (error) {
-        console.error("Error fetching videos:", error);
-        toast.error("Error loading your gallery");
-      } finally {
-        setLoading(false);
-      }
+      setLoading(true);
+      await fetchVideos();
     };
 
     // Set demo videos with dynamic URLs
@@ -714,19 +747,14 @@ function GalleryPage() {
               videos={videos}
               searchQuery={searchQuery}
               isYouTubeConnected={isYouTubeConnected}
+              loading={loading || creatingVideo}
               onCreateNew={() => navigate("/create")}
               onVideoClick={setActiveVideo}
               onDownload={handleDownload}
-              onShowUploadForm={() => {
-                // Using a mock function that takes no parameters
-                // The actual implementation in VideoCard component will pass the videoId
-                if (activeVideo) {
-                  handleShowUploadForm(activeVideo.id);
-                }
-              }}
+              onDelete={handleDelete}
+              onShowUploadForm={handleShowUploadForm}
               onConnectYouTube={connectYouTube}
               onOpenYouTube={handleOpenYouTube}
-              onDelete={handleDelete}
               onClearSearch={() => setSearchQuery("")}
             />
           )}

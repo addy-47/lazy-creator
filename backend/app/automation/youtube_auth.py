@@ -1,24 +1,24 @@
 import os  # for interacting with the file system and operating system
-import pickle  # for  saving objects to a file and loading them
+import pickle  # for saving objects to a file and loading them
 import json
 import logging
 from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials # for storing and using an access token to authenticate with Google APIs
-# even though the class is imported, it is not used directly in the code as it is used internally by google_auth_oauthlib.flow
 from google_auth_oauthlib.flow import InstalledAppFlow, Flow # for handling the OAuth 2.0 flow with Google APIs
 from google.auth.transport.requests import Request # for making HTTP requests
 import uuid
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 CLIENT_SECRETS_FILE = os.getenv("YOUTUBE_CLIENT_SECRETS", "client_secret.json")
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"] # YouTube Data API v3 scope
+SCOPES = ("https://www.googleapis.com/auth/youtube.upload",
+          "https://www.googleapis.com/auth/youtube",
+          "https://www.googleapis.com/auth/youtube.force-ssl",
+          "https://www.googleapis.com/auth/youtube.readonly")
 TOKEN_DIR = "tokens"
-
 # Ensure token directory exists
 os.makedirs(TOKEN_DIR, exist_ok=True)
 
@@ -132,51 +132,19 @@ def get_credentials(user_id):
         logger.error(f"Unexpected error in get_credentials for user ID {user_id}: {e}")
         return None
 
-# Legacy function for backward compatibility
 def authenticate_youtube():
-    """Legacy authentication method using local server."""
-    credentials = None
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as token: # Open the file in binary mode -rb (read binary)
-            credentials = pickle.load(token)
-    if not credentials or not credentials.valid:
-        if credentials and credentials.expired and credentials.refresh_token:
-            try:
-                credentials.refresh(Request())
-            except Exception as e:
-                logger.error(f"Error refreshing legacy token: {e}")
-                # If refresh fails, proceed to getting a new token
-                credentials = None
-
-        if not credentials:
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-            credentials = flow.run_local_server(port=0)
-
-        with open("token.pickle", "wb") as token:
-            pickle.dump(credentials, token)
-
-    logger.info("Authentication successful!")
-    return credentials
-
-import os  # for interacting with the file system and operating system
-import pickle  # for saving objects to a file and loading them
-from dotenv import load_dotenv
-from google.oauth2.credentials import Credentials  # for storing and using an access token to authenticate with Google APIs
-from google_auth_oauthlib.flow import InstalledAppFlow  # for handling the OAuth 2.0 flow with Google APIs
-from google.auth.transport.requests import Request  # for making HTTP requests
-
-# Load environment variables
-load_dotenv()
-CLIENT_SECRETS_FILE = os.getenv("YOUTUBE_CLIENT_SECRETS", "client_secret.json")
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube"]  # Added full YouTube scope for thumbnail uploads
-
-def authenticate_youtube():
+    """
+    Authenticate with YouTube and return credentials.
+    This is a local server based flow for scripts running on a local machine.
+    """
     credentials = None
     token_file = "token.pickle"
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    token_path = os.path.join(app_dir, token_file)
 
     # Load existing credentials if available
-    if os.path.exists(token_file):
-        with open(token_file, "rb") as token:
+    if os.path.exists(token_path):
+        with open(token_path, "rb") as token:
             credentials = pickle.load(token)
 
     # Check if credentials are invalid or expired
@@ -185,22 +153,38 @@ def authenticate_youtube():
             if credentials and credentials.expired and credentials.refresh_token:
                 # Refresh the token if possible
                 credentials.refresh(Request())
-                print("🔄 Token refreshed successfully!")
+                logger.info("Token refreshed successfully!")
             else:
                 # Prompt user for re-authentication if no valid refresh token
-                print("🔑 Token expired or invalid. Re-authenticating...")
+                logger.info("Token expired or invalid. Re-authenticating...")
                 flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
                 credentials = flow.run_local_server(port=0)
         except Exception as e:
-            print(f"❌ Error during token refresh or authentication: {e}")
-            print("⚠️ Re-authenticating...")
+            logger.error(f"Error during token refresh or authentication: {e}")
+            logger.info("Re-authenticating...")
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
             credentials = flow.run_local_server(port=0)
 
         # Save the new or refreshed credentials
-        with open(token_file, "wb") as token:
+        with open(token_path, "wb") as token:
             pickle.dump(credentials, token)
-            print("💾 Token saved successfully!")
 
-    print("✅ Authentication successful!")
+    logger.info("Authentication successful!")
     return credentials
+
+def check_auth_status(user_id):
+    """
+    Check if a user is authenticated with YouTube.
+
+    Args:
+        user_id (str): The user ID to check
+
+    Returns:
+        bool: True if the user is authenticated, False otherwise
+    """
+    if not user_id:
+        logger.warning("No user ID provided to check_auth_status")
+        return False
+
+    credentials = get_credentials(user_id)
+    return credentials is not None and credentials.valid

@@ -4,7 +4,6 @@ import { Button } from "./Button";
 import PromptSelector from "./PromptSelector";
 import DurationSlider from "./DurationSlider";
 import BackgroundSelector from "./BackgroundSelector";
-import GeneratingAnimation from "./GeneratingAnimation";
 import { toast } from "sonner";
 import { getAPIBaseURL } from "@/lib/socket";
 import {
@@ -145,58 +144,17 @@ const CreateForm = () => {
       const data = await response.json();
       console.log("Generation started:", data);
 
-      if (data.status === "success") {
-        // Set video data with ID for websocket subscription
-        setVideoData({
-          filename: data.video.filename,
-          path: data.video.path,
-          id: data.video.id,
-        });
+      if (data.status === "processing") {
+        // Set flag that video creation is in progress
+        localStorage.setItem("videoCreationInProgress", "true");
 
-        // We'll still keep the polling as a fallback
-        const checkInterval = setInterval(async () => {
-          try {
-            const statusResponse = await fetch(
-              `${getAPIBaseURL()}/api/video-status/${data.video.id}`,
-              {
-                method: "GET",
-                headers: {
-                  "x-access-token": token,
-                },
-              }
-            );
+        // Show toast notification that the process has started
+        toast.success(
+          "Video creation started! You'll be redirected to the processing page."
+        );
 
-            if (!statusResponse.ok) {
-              throw new Error("Failed to check video status");
-            }
-
-            const statusData = await statusResponse.json();
-
-            // Update progress
-            if (statusData.progress) {
-              setGenerationProgress(statusData.progress);
-            }
-
-            // If video is complete
-            if (statusData.status === "completed") {
-              clearInterval(checkInterval);
-              setPollInterval(null);
-              setVideoData({
-                filename: statusData.video.filename,
-                path: statusData.video.path,
-                id: statusData.video.id,
-              });
-              setIsGenerating(false);
-              setIsGenerated(true);
-              toast.success("Video generated successfully!");
-            }
-          } catch (error) {
-            console.error("Error checking video status:", error);
-            // Don't stop polling on error, just log it
-          }
-        }, 2000); // Check every 2 seconds
-
-        setPollInterval(checkInterval);
+        // Navigate to processing page with video ID
+        navigate(`/processing?id=${data.video_id}&duration=${duration * 6}`);
       } else {
         throw new Error(data.message || "Failed to start video generation");
       }
@@ -241,13 +199,7 @@ const CreateForm = () => {
 
   return (
     <div className="max-w-3xl mx-auto">
-      {isGenerating && (
-        <GeneratingAnimation
-          duration={Math.max(duration * 1.5, 30)} // Adjust expected time based on video duration
-          onComplete={handleGenerationComplete}
-          videoId={videoData?.id}
-        />
-      )}
+      {/* Remove the GeneratingAnimation since we're redirecting to Processing page */}
 
       {/* Confirmation Dialog */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
@@ -293,7 +245,11 @@ const CreateForm = () => {
             <div className="aspect-[9/16] max-w-[280px] mx-auto rounded-lg overflow-hidden bg-black flex items-center justify-center">
               {videoData ? (
                 <video
-                  src={`${getAPIBaseURL()}/gallery/${videoData.filename}`}
+                  src={`${getAPIBaseURL()}/api/gallery/${
+                    videoData.filename
+                  }?token=${encodeURIComponent(
+                    localStorage.getItem("token") || ""
+                  )}`}
                   controls
                   autoPlay
                   className="w-full h-full object-contain"

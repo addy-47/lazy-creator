@@ -412,6 +412,55 @@ def generate_comprehensive_content(topic, model="gpt-4o-mini-2024-07-18", max_to
     # If we get here, all retries failed
     raise Exception(f"Failed to generate comprehensive content package after {retries} attempts")
 
+def parse_script_to_cards(script, max_duration=25):
+    """
+    Parse a script into a list of cards, each with text and duration.
+
+    Args:
+        script (str): The script text to parse
+        max_duration (int): Maximum total duration in seconds
+
+    Returns:
+        list: List of dictionaries with 'text' and 'duration' keys
+    """
+    # Split the script into sentences
+    sentences = re.split(r'(?<=[.!?])\s+', script)
+
+    # Filter out empty sentences
+    sentences = [s.strip() for s in sentences if s.strip()]
+
+    # If no sentences, return a default card
+    if not sentences:
+        return [{'text': 'No script content available.', 'duration': 5}]
+
+    # Calculate approximate duration for each sentence
+    # Average speaking rate is about 150 words per minute or 2.5 words per second
+    cards = []
+    total_duration = 0
+
+    for sentence in sentences:
+        # Count words in the sentence
+        words = sentence.split()
+        # Estimate duration (minimum 3 seconds per card)
+        duration = max(3, len(words) / 2.5)
+
+        # Add to cards
+        cards.append({
+            'text': sentence,
+            'duration': duration
+        })
+
+        total_duration += duration
+
+    # If total duration exceeds max_duration, scale down durations
+    if total_duration > max_duration:
+        scale_factor = max_duration / total_duration
+        for card in cards:
+            card['duration'] = card['duration'] * scale_factor
+
+    logger.info(f"Parsed script into {len(cards)} cards with total duration of {sum(c['duration'] for c in cards):.2f} seconds")
+    return cards
+
 if __name__ == "__main__": # This is used to run the script directly for testing
     # Example usage for batch query generation
     import logging

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Film, Youtube } from "lucide-react";
 import VideoActionMenu from "@/components/VideoActionMenu";
 import { getAPIBaseURL } from "@/lib/socket";
@@ -18,7 +18,7 @@ interface VideoCardProps {
   isYouTubeConnected: boolean;
   onVideoClick: (video: Video) => void;
   onDownload: (videoId: string) => void;
-  onShowUploadForm: () => void;
+  onShowUploadForm: (videoId: string) => void;
   onConnectYouTube: () => void;
   onOpenYouTube: (youtubeId: string) => void;
   onDelete: (videoId: string) => void;
@@ -36,6 +36,21 @@ const VideoCard: React.FC<VideoCardProps> = ({
 }) => {
   const cardWidthClass = "w-full";
   const cardClass = "aspect-[9/16] rounded-xl overflow-hidden";
+  const [videoUrl, setVideoUrl] = useState<string>("");
+
+  // Generate secure URL with auth token
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      setVideoUrl(
+        `${getAPIBaseURL()}/api/gallery/${
+          video.filename
+        }?token=${encodeURIComponent(token)}`
+      );
+    } else {
+      setVideoUrl(`${getAPIBaseURL()}/api/gallery/${video.filename}`);
+    }
+  }, [video.filename]);
 
   return (
     <div className={cardWidthClass}>
@@ -50,7 +65,7 @@ const VideoCard: React.FC<VideoCardProps> = ({
           isUploaded={video.uploaded_to_yt}
           youtubeId={video.youtube_id}
           onDownload={onDownload}
-          onShowUploadForm={onShowUploadForm}
+          onShowUploadForm={() => onShowUploadForm(video.id)}
           onConnectYouTube={onConnectYouTube}
           onOpenYouTube={onOpenYouTube}
           onDelete={onDelete}
@@ -58,7 +73,7 @@ const VideoCard: React.FC<VideoCardProps> = ({
 
         {/* Video Thumbnail */}
         <video
-          src={`${getAPIBaseURL()}/gallery/${video.filename}`}
+          src={videoUrl}
           className="w-full h-full object-cover"
           preload="metadata"
         />

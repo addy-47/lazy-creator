@@ -3,10 +3,16 @@ import logging.handlers # Import handlers
 import os # for environment variables and file paths
 from pathlib import Path # for file paths and directory creation
 from dotenv import load_dotenv # for loading environment variables
-from .script_generator import generate_script, generate_batch_video_queries, parse_script_to_cards
-from .video_maker import YTShortsCreator
-from .image_maker import ImageShortsCreator
-# from youtube_upload import upload_video, get_authenticated_service
+from .script_generator import (
+    generate_script,
+    generate_batch_video_queries,
+    parse_script_to_cards,
+    generate_comprehensive_content
+)
+from .video_maker import YTShortsCreator_V
+from .image_maker import YTShortsCreator_I
+from .custom_maker import CustomShortsCreator
+from .youtube_upload import upload_video, get_authenticated_service
 from nltk.corpus import stopwords
 import datetime # for timestamp
 import re # for regular expressions
@@ -17,6 +23,9 @@ import random # for generating random numbers
 from typing import List, Dict, Optional
 import tempfile
 import sys
+import shutil # for copying files
+import threading
+from .parallel_renderer import is_shutdown_requested
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from app.storage import cloud_storage
 
@@ -42,19 +51,35 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(messag
 # Add the log message handler to the logger
 # Rotate logs daily at midnight, keep 7 backups
 handler = logging.handlers.TimedRotatingFileHandler(
-    LOG_FILENAME, when='midnight', interval=1, backupCount=7
+    LOG_FILENAME, when='midnight', interval=1, backupCount=7,
+    delay=True  # Only open the file when we actually log something
 )
 handler.setFormatter(formatter)
+# Set a less strict rollover policy
+handler.namer = lambda name: name + ".backup"  # Use a different naming scheme to avoid conflicts
+handler.rotator = lambda source, dest: shutil.copy2(source, dest)  # Copy instead of rename
 logger.addHandler(handler)
 
-# Add a handler to also output to console (like the original setup)
+# Add a handler to also output to console
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
-# Configure root logger similarly if other modules use logging.getLogger() without a name
+# Configure root logger with a separate file handler to avoid conflicts
+root_handler = logging.handlers.RotatingFileHandler(
+    os.path.join(LOG_DIR, 'app.log'),
+    maxBytes=10*1024*1024,
+    backupCount=5
+)
+root_handler.setFormatter(formatter)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+
 # This ensures consistency if other modules just call logging.info etc.
-logging.basicConfig(level=LOG_LEVEL, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s', handlers=[handler, stream_handler])
+# Use a different implementation to avoid conflicts with the main logger
+logging.basicConfig(level=LOG_LEVEL,
+                   format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+                   handlers=[root_handler, console_handler])
 
 def ensure_output_directory(directory="ai_shorts_output"):
     """Ensure the output directory exists."""
@@ -107,6 +132,10 @@ def get_latest_ai_news():
 
     return "Latest Technology Innovation News"
 
+# Add a helper function to check for shutdown
+def should_abort_processing():
+    """Check if processing should be aborted due to shutdown request"""
+    return is_shutdown_requested()
 
 def create_youtube_short(
     topic: str,
@@ -157,13 +186,23 @@ def create_youtube_short(
             logger.info(f"Generating script for topic: {topic}")
 
         max_tokens = 200
+
+        # Determine optimal section count based on duration
+        num_sections = 3  # default for 15 seconds
+        if max_duration >= 25:
+            num_sections = 5  # 5 sections for longer videos
+        elif max_duration >= 20:
+            num_sections = 4  # 4 sections for medium videos
+
+        logger.info(f"Using {num_sections} script sections for {max_duration}s duration")
+
         prompt = f"""
         Generate a YouTube Shorts script focused entirely on the topic: '{topic}'
         for the date {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.
-        The script should not exceed {max_duration} seconds and should follow this structure:
-        1. Start with an attention-grabbing opening .
-        2. Highlight key points about this topic .
-        3. End with a clear call to action
+        The script should not exceed {max_duration} seconds and should be organized into exactly {num_sections} sections:
+        1. Start with an attention-grabbing opening (intro section).
+        2. Then have {num_sections - 2} middle sections with key points about this topic.
+        3. End with a clear call to action (outro section).
         Use short, concise sentences and suggest 3-4 trending hashtags (e.g., #AI, #TechNews).
         Keep it under {max_tokens} tokens.
         """
@@ -172,7 +211,23 @@ def create_youtube_short(
         logger.info("Raw script generated successfully")
 
         script_cards = parse_script_to_cards(script)
-        logger.info(f"Script parsed into {len(script_cards)} sections")
+
+        # Ensure we have the optimal number of script sections
+        if len(script_cards) > num_sections:
+            logger.info(f"Reducing script sections from {len(script_cards)} to {num_sections}")
+            # Combine extra sections into the last section
+            extra_sections = script_cards[num_sections-1:]
+            combined_text = " ".join([card["text"] for card in extra_sections])
+            script_cards = script_cards[:num_sections-1]
+            script_cards.append({
+                "text": combined_text,
+                "duration": sum([card["duration"] for card in extra_sections])
+            })
+        elif len(script_cards) < num_sections:
+            logger.info(f"Script has fewer sections ({len(script_cards)}) than optimal ({num_sections})")
+            # We'll work with what we have - no need to artificially split
+
+        logger.info(f"Final script has {len(script_cards)} sections")
         for i, card in enumerate(script_cards):
             logger.info(f"Section {i+1}: {card['text'][:30]}... (duration: {card['duration']}s)")
 
@@ -201,24 +256,23 @@ def create_youtube_short(
 
         # Create the appropriate creator based on background style
         if background_style == "image":
-            creator = ImageShortsCreator(output_dir=output_dir)
-            config = {
-                "title": topic,
-                "script_sections": script_cards,
-                "background_query": fallback_query,
-                "output_filename": output_filename,
-                "add_captions": True,
-                "style": "image",
-                "voice_style": None,
-                "max_duration": max_duration,
-                "background_queries": section_queries,
-                "blur_background": False,
-                "edge_blur": False,
-                "custom_background_path": background_path if background_source == "custom" else None
-            }
-            video_path = creator.create_youtube_short(config)
+            creator = YTShortsCreator_I(output_dir=output_dir)
+            video_path = creator.create_youtube_short(
+                title=topic,
+                script_sections=script_cards,
+                background_query=fallback_query,
+                output_filename=output_filename,
+                add_captions=True,
+                style="photorealistic",
+                voice_style=None,
+                max_duration=max_duration,
+                background_queries=section_queries,
+                blur_background=False,
+                edge_blur=False,
+                custom_background_path=background_path if background_source == "custom" else None
+            )
         else:
-            creator = YTShortsCreator(output_dir=output_dir)
+            creator = YTShortsCreator_V(output_dir=output_dir)
             video_path = creator.create_youtube_short(
                 title=topic,
                 script_sections=script_cards,
@@ -240,70 +294,210 @@ def create_youtube_short(
         logger.error(f"Error generating YouTube Short: {e}")
         raise
 
-def generate_youtube_short(topic, max_duration=25, background_type='video', background_source='provided', background_path=None):
+def generate_youtube_short(topic, max_duration=25, background_type='video', background_source='provided', background_path=None, style="photorealistic", progress_callback=None):
     """Generate a YouTube short video."""
     try:
         # Log the input parameters for debugging
         logger.info(f"generate_youtube_short called with: topic={topic}, max_duration={max_duration}, "
-                   f"background_type={background_type}, background_source={background_source}, background_path={background_path}")
+                   f"background_type={background_type}, background_source={background_source}, background_path={background_path}, style={style}")
+
+        # Helper function to update progress
+        def update_progress(progress, message=""):
+            if progress_callback:
+                try:
+                    progress_callback(progress)
+                    logger.info(f"Progress update: {progress}% - {message}")
+                except Exception as e:
+                    logger.error(f"Error updating progress: {e}")
+
+        # Initialize progress
+        update_progress(5, "Starting video generation")
 
         # Create a temporary directory for processing
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # If background is provided and it's a GCS path, get a signed URL
-            if background_path and isinstance(background_path, str) and background_path.startswith('gs://'):
-                try:
-                    _, bucket_name, blob_name = background_path.split('/', 2)
-                    # Get a signed URL for streaming
-                    background_path = cloud_storage.get_signed_url(blob_name, bucket_name, expiration=3600)
-                    logger.info(f"Using streaming URL for background video")
-                except Exception as e:
-                    logger.error(f"Error getting signed URL for background: {e}")
-                    background_path = None  # Reset to use default background
+        temp_dir = ensure_output_directory()
 
-            # Make sure output directory exists inside the temp directory
-            output_dir = os.path.join(temp_dir, "output")
-            os.makedirs(output_dir, exist_ok=True)
+        # Check if processing should be aborted
+        if should_abort_processing():
+            logger.info("Shutdown requested, aborting video generation")
+            return None
 
-            # Generate a unique filename
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe_topic = re.sub(r'[^\w\s-]', '', topic.lower()).strip().replace(' ', '_')[:50]
-            output_filename = f"yt_shorts_{safe_topic}_{timestamp}.mp4"
+        # Generate unique filename with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_topic = re.sub(r'[^a-zA-Z0-9]', '_', topic)[:30]
+        output_filename = f"shorts_{safe_topic}_{timestamp}.mp4"
 
-            # Full path to the output file
-            output_path = os.path.join(output_dir, output_filename)
+        # Create CustomShortsCreator instance
+        creator = CustomShortsCreator(output_dir=temp_dir)
 
-            # Create the YouTube short
-            logger.info(f"Starting YouTube short creation process for topic: {topic}")
+        # Handle latest AI news topic
+        if topic == "latest_ai_news":
+            topic = get_latest_ai_news()
+            logger.info(f"Using latest AI news topic: {topic}")
 
-            # Ensure background_path is defined before passing it to create_youtube_short
-            if background_source == "custom" and not background_path:
-                logger.warning("Custom background source specified but no background path provided")
-                background_source = "provided"  # Fallback to provided background instead of video
+        update_progress(10, "Generating content")
 
-            # Log the values being passed to create_youtube_short for debugging
-            logger.info(f"Calling create_youtube_short with: topic={topic}, max_duration={max_duration}, "
-                       f"background_source={background_source}, background_path={background_path}, background_style={background_type}")
+        # Check if processing should be aborted
+        if should_abort_processing():
+            logger.info("Shutdown requested, aborting video generation before content creation")
+            return None
 
-            video_path = create_youtube_short(
-                topic=topic,
-                output_dir=output_dir,
-                output_filename=output_filename,
-                max_duration=max_duration,
-                background_source=background_source,
-                background_path=background_path,
-                background_style=background_type
-            )
+        # Use the comprehensive content generator to get a complete package
+        logger.info(f"Generating comprehensive content for topic: {topic}")
+        content_package = generate_comprehensive_content(topic)
 
-            if not video_path or not os.path.exists(video_path):
-                raise FileNotFoundError(f"Video creation failed: output file not found at {video_path}")
+        update_progress(20, "Content created, processing script")
 
-            logger.info(f"YouTube short created successfully at: {video_path}")
+        # Get the script from the content package
+        script = content_package['script']
+        logger.info(f"Generated script with {len(script.split())} words")
 
-            # Return the path to the generated video
+        # Parse script into cards
+        script_cards = parse_script_to_cards(script)
+
+        logger.info(f"Script parsed into {len(script_cards)} sections")
+
+        # Calculate optimal number of backgrounds/sections based on duration
+        # We want roughly 1 background per 5 seconds, always include intro and outro
+        optimal_bg_count = max(3, int(max_duration / 5))  # Minimum of 3 (intro, middle, outro)
+
+        update_progress(30, f"Planning video with {optimal_bg_count} sections")
+
+        # Ensure we have exact number of sections to match backgrounds
+        # Always have intro (first) and outro (last) sections, adjust middle sections to match bg count
+        if len(script_cards) != optimal_bg_count:
+            logger.info(f"Adjusting script sections from {len(script_cards)} to {optimal_bg_count} to match backgrounds")
+
+            # Always keep the first section as intro
+            intro_section = script_cards[0]
+
+            # Always keep the last section as outro
+            outro_section = script_cards[-1] if len(script_cards) > 1 else {
+                "text": "Thanks for watching! Don't forget to like and subscribe.",
+                "duration": 3.0
+            }
+
+            # Handle middle sections - either combine or expand
+            middle_sections = script_cards[1:-1] if len(script_cards) > 2 else []
+
+            if len(middle_sections) > (optimal_bg_count - 2):
+                # Too many sections, combine them
+                logger.info(f"Combining {len(middle_sections)} middle sections into {optimal_bg_count - 2} sections")
+
+                # Calculate how many sections to put in each new middle section
+                sections_per_group = len(middle_sections) / (optimal_bg_count - 2)
+                new_middle_sections = []
+
+                for i in range(optimal_bg_count - 2):
+                    start_idx = int(i * sections_per_group)
+                    end_idx = int((i + 1) * sections_per_group) if i < (optimal_bg_count - 3) else len(middle_sections)
+                    section_group = middle_sections[start_idx:end_idx]
+
+                    combined_text = " ".join(card["text"] for card in section_group)
+                    combined_duration = sum(card["duration"] for card in section_group)
+
+                    new_middle_sections.append({
+                        "text": combined_text,
+                        "duration": combined_duration
+                    })
+
+                middle_sections = new_middle_sections
+
+            elif len(middle_sections) < (optimal_bg_count - 2):
+                # Not enough sections, split them up
+                if len(middle_sections) == 0:
+                    # Generate generic middle sections if none exist
+                    if optimal_bg_count > 2:
+                        # Create a generic middle section
+                        middle_text = f"Let's explore {topic} in more detail and learn about its key aspects."
+                        new_middle_sections = []
+
+                        for i in range(optimal_bg_count - 2):
+                            new_middle_sections.append({
+                                "text": middle_text,
+                                "duration": 5.0
+                            })
+
+                        middle_sections = new_middle_sections
+                else:
+                    # Split existing sections to match optimal count
+                    logger.info(f"Splitting {len(middle_sections)} middle sections into {optimal_bg_count - 2} sections")
+
+                    # Split text of each middle section in roughly equal parts
+                    all_sentences = []
+                    for section in middle_sections:
+                        # Split text into sentences
+                        sentences = re.split(r'(?<=[.!?])\s+', section["text"])
+                        all_sentences.extend(sentences)
+
+                    # Distribute sentences across new sections
+                    sentences_per_section = max(1, len(all_sentences) // (optimal_bg_count - 2))
+                    new_middle_sections = []
+
+                    for i in range(optimal_bg_count - 2):
+                        start_idx = i * sentences_per_section
+                        end_idx = (i + 1) * sentences_per_section if i < (optimal_bg_count - 3) else len(all_sentences)
+
+                        if start_idx < len(all_sentences):
+                            section_sentences = all_sentences[start_idx:end_idx]
+                            section_text = " ".join(section_sentences)
+
+                            # Estimate duration - 1 second per sentence with minimum 3 seconds
+                            estimated_duration = max(3.0, len(section_sentences) * 1.0)
+
+                            new_middle_sections.append({
+                                "text": section_text,
+                                "duration": estimated_duration
+                            })
+
+                    middle_sections = new_middle_sections
+
+            # Combine intro, middle sections, and outro to create final script_cards
+            final_script_cards = [intro_section] + middle_sections + [outro_section]
+            script_cards = final_script_cards
+
+        logger.info(f"Final script has {len(script_cards)} sections to match {optimal_bg_count} backgrounds")
+        for i, card in enumerate(script_cards):
+            logger.info(f"Section {i+1}: {card['text'][:30]}... (duration: {card['duration']}s)")
+
+        update_progress(40, "Preparing to render video")
+
+        # Use the title from the content package as the video title
+        video_title = content_package['title']
+        logger.info(f"Using title: {video_title}")
+
+        # Check if processing should be aborted
+        if should_abort_processing():
+            logger.info("Shutdown requested, aborting video generation before rendering")
+            return None
+
+        # Create the short
+        update_progress(50, "Starting video rendering")
+        video_path = creator.create_youtube_short(
+            title=video_title,
+            script_sections=script_cards,
+            output_filename=output_filename,
+            max_duration=max_duration,
+            background_type=background_type,
+            background_source=background_source,
+            custom_background_path=background_path,
+            style=style
+        )
+
+        update_progress(90, "Video rendering complete, finalizing")
+
+        # Return the local video path (don't upload to cloud here - let main.py handle it)
+        if video_path and os.path.exists(video_path):
+            logger.info(f"Video generated successfully at: {video_path}")
+            update_progress(100, "Video generation completed successfully")
             return video_path
+        else:
+            logger.error("Video generation failed or video file not found")
+            raise FileNotFoundError("Video generation failed or video file not found")
 
     except Exception as e:
         logger.error(f"Error in generate_youtube_short: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise
 
 

@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from dotenv import load_dotenv
 from datetime import datetime
 import numpy as np
+import shutil
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -46,7 +47,41 @@ class ThumbnailGenerator:
 
         # Font settings
         self.fonts_dir = os.path.join(os.path.dirname(__file__), 'fonts')
-        self.title_font_path = r"D:\youtube-shorts-automation\fonts\default_font.ttf"
+        os.makedirs(self.fonts_dir, exist_ok=True)
+        # Use relative path for font instead of hardcoded path
+        self.title_font_path = os.path.join(self.fonts_dir, 'default_font.ttf')
+
+        # Check if font files exist
+        if not os.path.exists(self.title_font_path):
+            logger.warning("Default font files not found, using system default fonts")
+            try:
+                # Try to copy a system font to the fonts directory
+                if os.name == 'nt':  # Windows
+                    possible_fonts = [
+                        r"C:\Windows\Fonts\arial.ttf",
+                        r"C:\Windows\Fonts\calibri.ttf",
+                        r"C:\Windows\Fonts\segoeui.ttf"
+                    ]
+                    for font_path in possible_fonts:
+                        if os.path.exists(font_path):
+                            shutil.copy(font_path, self.title_font_path)
+                            logger.info(f"Copied system font {font_path} to fonts directory")
+                            break
+                else:  # Linux/Mac
+                    possible_fonts = [
+                        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                        "/System/Library/Fonts/Helvetica.ttc",
+                        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+                    ]
+                    for font_path in possible_fonts:
+                        if os.path.exists(font_path):
+                            shutil.copy(font_path, self.title_font_path)
+                            logger.info(f"Copied system font {font_path} to fonts directory")
+                            break
+            except Exception as e:
+                logger.error(f"Error copying system font: {e}")
+                # If all else fails, set to None and let PIL use its default
+                self.title_font_path = None
 
         # Setup API credentials
         self.huggingface_api_key = os.getenv("HUGGINGFACE_API_KEY")

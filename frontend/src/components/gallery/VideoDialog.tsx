@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Download, Youtube } from "lucide-react";
 import { Button } from "@/components/Button";
 import { getAPIBaseURL } from "@/lib/socket";
@@ -31,6 +31,21 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
   onOpenYouTube,
 }) => {
   const cardClass = "aspect-[9/16] rounded-xl overflow-hidden";
+  const [videoUrl, setVideoUrl] = useState<string>("");
+
+  // Generate secure URL with auth token
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      setVideoUrl(
+        `${getAPIBaseURL()}/api/gallery/${
+          video.filename
+        }?token=${encodeURIComponent(token)}`
+      );
+    } else {
+      setVideoUrl(`${getAPIBaseURL()}/api/gallery/${video.filename}`);
+    }
+  }, [video.filename]);
 
   return (
     <div
@@ -43,7 +58,7 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
       >
         <div className={`${cardClass} bg-black mb-4`}>
           <video
-            src={`${getAPIBaseURL()}/gallery/${video.filename}`}
+            src={videoUrl}
             className="w-full h-full object-contain"
             controls
             autoPlay

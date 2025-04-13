@@ -26,6 +26,23 @@ class CloudStorage:
         self.uploads_bucket = os.getenv('UPLOADS_BUCKET', 'lazycreator-uploads')
         self.local_storage_dir = os.getenv('LOCAL_STORAGE_DIR', os.path.join(os.path.dirname(__file__), 'local_storage'))
 
+        # Service account information
+        self.service_account_email = os.getenv('GCS_SERVICE_ACCOUNT', 'lazycreator-1@yt-shorts-automation-452420.iam.gserviceaccount.com')
+        self.service_account_key_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+
+        # Fix Windows path if needed (convert E:\path\to\file.json to proper format)
+        if self.service_account_key_path:
+            # Normalize path for the current OS
+            self.service_account_key_path = os.path.normpath(self.service_account_key_path)
+            # Check for Windows drive letter format
+            if ':' in self.service_account_key_path and os.name == 'nt':
+                logger.info(f"Windows path detected, normalizing: {self.service_account_key_path}")
+
+            logger.info(f"Found service account key path: {self.service_account_key_path}")
+            if not os.path.exists(self.service_account_key_path):
+                logger.warning(f"Service account key file does not exist at {self.service_account_key_path}")
+                logger.warning("Will attempt to use application default credentials instead")
+
         if self.use_local_storage:
             # Set up local storage directories
             os.makedirs(os.path.join(self.local_storage_dir, self.media_bucket), exist_ok=True)
@@ -34,11 +51,64 @@ class CloudStorage:
         else:
             # Use Google Cloud Storage
             try:
-                self.client = storage.Client()
+                # Try to use explicit service account credentials if available
+                if self.service_account_key_path and os.path.exists(self.service_account_key_path):
+                    try:
+                        # Check file permissions on non-Windows systems
+                        if os.name != 'nt':  # Unix-like system
+                            try:
+                                # Check if file has read permissions
+                                if not os.access(self.service_account_key_path, os.R_OK):
+                                    logger.warning(f"Service account key file has insufficient permissions: {self.service_account_key_path}")
+                                    # Try to fix permissions
+                                    os.chmod(self.service_account_key_path, 0o600)  # Read/write for owner only
+                                    logger.info(f"Updated permissions for service account key file")
+                            except Exception as perm_error:
+                                logger.warning(f"Failed to check/set permissions: {perm_error}")
 
-                # Check if buckets exist, create them if not
-                self._ensure_bucket_exists(self.media_bucket)
-                self._ensure_bucket_exists(self.uploads_bucket)
+                        # Explicitly use the service account key file and specify the correct service account email
+                        logger.info(f"Authenticating with service account key file for {self.service_account_email}...")
+                        try:
+                            # First try to create client with explicit credentials file
+                            from google.oauth2 import service_account
+                            credentials = service_account.Credentials.from_service_account_file(
+                                self.service_account_key_path,
+                                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                            )
+                            self.client = storage.Client(credentials=credentials, project="yt-shorts-automation-452420")
+                            logger.info(f"Successfully authenticated with service account credentials")
+                        except Exception as cred_error:
+                            logger.warning(f"Error creating credentials from file: {cred_error}")
+                            # Fall back to from_service_account_json method
+                            self.client = storage.Client.from_service_account_json(self.service_account_key_path)
+                            logger.info(f"Successfully authenticated with service account key file")
+                    except Exception as auth_error:
+                        logger.error(f"Error authenticating with service account key file: {auth_error}")
+                        logger.info("Falling back to application default credentials")
+                        try:
+                            self.client = storage.Client()
+                            logger.info(f"Successfully authenticated with application default credentials")
+                        except Exception as default_auth_error:
+                            logger.error(f"Error with default authentication: {default_auth_error}")
+                            raise
+                else:
+                    # Try default credentials
+                    logger.info(f"No service account key file available, using default Google Cloud credentials")
+                    self.client = storage.Client()
+                    logger.info(f"Successfully authenticated with default Google Cloud credentials")
+
+                # Check if buckets exist, create them if not - wrap in try/except for each bucket
+                try:
+                    self._ensure_bucket_exists(self.media_bucket)
+                except Exception as media_bucket_error:
+                    logger.error(f"Error ensuring media bucket exists: {media_bucket_error}")
+                    # Continue and try uploads bucket
+
+                try:
+                    self._ensure_bucket_exists(self.uploads_bucket)
+                except Exception as uploads_bucket_error:
+                    logger.error(f"Error ensuring uploads bucket exists: {uploads_bucket_error}")
+                    # Continue as we might only need one bucket
 
                 logger.info("Using Google Cloud Storage")
             except Exception as e:
@@ -55,13 +125,22 @@ class CloudStorage:
         try:
             self.client.get_bucket(bucket_name)
             logger.info(f"Bucket {bucket_name} exists")
-        except NotFound:
-            logger.info(f"Bucket {bucket_name} not found, creating...")
-            self.client.create_bucket(bucket_name)
-            logger.info(f"Created bucket {bucket_name}")
         except Exception as e:
-            logger.error(f"Error checking bucket {bucket_name}: {e}")
-            raise
+            if "Permission 'storage.buckets.get' denied" in str(e) or "403" in str(e):
+                logger.warning(f"Permission denied checking bucket {bucket_name}. Assuming bucket exists and continuing.")
+                # Continue without failure - we'll handle errors when accessing specific blobs
+                return
+
+            logger.warning(f"Bucket {bucket_name} not found, attempting to create...")
+            try:
+                self.client.create_bucket(bucket_name)
+                logger.info(f"Created bucket {bucket_name}")
+            except Exception as create_error:
+                logger.error(f"Error creating bucket {bucket_name}: {create_error}")
+                if "Permission 'storage.buckets.create' denied" in str(create_error):
+                    logger.warning("Insufficient permissions to create bucket. Continuing with assumption bucket exists.")
+                else:
+                    raise
 
     def _get_user_folder(self, user_id=None):
         """Get a user-specific folder path for better organization."""
@@ -131,6 +210,8 @@ class CloudStorage:
                 blob = bucket.blob(destination_blob_name)
 
                 # Set metadata
+                if blob.metadata is None:
+                    blob.metadata = {}
                 for key, value in metadata.items():
                     blob.metadata[key] = str(value)
 
@@ -249,6 +330,39 @@ class CloudStorage:
         except Exception as e:
             logger.error(f"Error deleting file: {e}")
             raise
+
+    def file_exists(self, blob_name, bucket_name=None):
+        """Check if a file exists in the specified bucket."""
+        try:
+            if self.use_local_storage:
+                # Local storage implementation
+                bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
+                file_path = os.path.join(bucket_dir, blob_name)
+                return os.path.exists(file_path)
+            else:
+                # Google Cloud Storage implementation
+                bucket = self.client.bucket(bucket_name or self.media_bucket)
+                blob = bucket.blob(blob_name)
+
+                # Handle potential permission errors gracefully
+                try:
+                    exists = blob.exists()
+                    return exists
+                except Exception as blob_error:
+                    # If permission denied, try to get metadata as a fallback
+                    if "Permission" in str(blob_error) or "403" in str(blob_error):
+                        logger.warning(f"Permission error checking if blob exists: {blob_error}")
+                        try:
+                            # Try getting metadata instead
+                            blob.reload()
+                            return True  # If no exception, file exists
+                        except Exception as metadata_error:
+                            logger.warning(f"Failed metadata check for blob {blob_name}: {metadata_error}")
+                            # Continue to return False as fallback
+                    return False
+        except Exception as e:
+            logger.error(f"Error checking if file exists: {e}")
+            return False
 
     def get_public_url(self, blob_name, bucket_name=None, expiration=3600):
         """Get a public URL for a file in the specified bucket."""
