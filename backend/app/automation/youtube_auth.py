@@ -105,25 +105,51 @@ def get_credentials(user_id):
     credentials = None
 
     try:
-        if os.path.exists(token_path):
+        # Check if token file exists
+        if not os.path.exists(token_path):
+            logger.warning(f"Token file not found for user ID: {user_id}")
+            return None
+
+        # Load the credentials
+        try:
             with open(token_path, "rb") as token:
                 credentials = pickle.load(token)
+        except (pickle.UnpicklingError, EOFError) as pe:
+            logger.error(f"Error unpickling credentials for user ID {user_id}: {pe}")
+            # Token file might be corrupted, rename it and return None
+            try:
+                os.rename(token_path, f"{token_path}.corrupted")
+                logger.info(f"Renamed corrupted token file to {token_path}.corrupted")
+            except Exception as rename_err:
+                logger.error(f"Failed to rename corrupted token file: {rename_err}")
+            return None
 
+        # Check if credentials are valid
         if credentials and credentials.valid:
-            logger.debug(f"Found valid credentials for user ID: {user_id}")
+            logger.info(f"Found valid credentials for user ID: {user_id}")
             return credentials
 
+        # Try to refresh expired credentials
         if credentials and credentials.expired and credentials.refresh_token:
             try:
                 logger.info(f"Refreshing expired token for user ID: {user_id}")
+                # Create a new Request instance for each refresh
                 credentials.refresh(Request())
-                # Save refreshed credentials
-                with open(token_path, "wb") as f:
-                    pickle.dump(credentials, f)
-                return credentials
+
+                # Verify the refreshed credentials
+                if credentials.valid:
+                    logger.info(f"Successfully refreshed token for user ID: {user_id}")
+                    # Save refreshed credentials
+                    with open(token_path, "wb") as f:
+                        pickle.dump(credentials, f)
+                    return credentials
+                else:
+                    logger.warning(f"Token refresh completed but credentials are still invalid for user ID: {user_id}")
+                    return None
             except Exception as e:
                 logger.error(f"Error refreshing token for user ID {user_id}: {e}")
-                # Don't delete the token file, as the refresh token might still be valid
+                # Token refresh failed, but don't delete the file as the refresh token might still be valid
+                # on a future attempt
                 return None
 
         logger.warning(f"No valid credentials found for user ID: {user_id}")

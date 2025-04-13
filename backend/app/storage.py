@@ -332,34 +332,18 @@ class CloudStorage:
             raise
 
     def file_exists(self, blob_name, bucket_name=None):
-        """Check if a file exists in the specified bucket."""
+        """Check if a file exists in storage."""
         try:
             if self.use_local_storage:
-                # Local storage implementation
+                # Check local file system
                 bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
                 file_path = os.path.join(bucket_dir, blob_name)
                 return os.path.exists(file_path)
             else:
-                # Google Cloud Storage implementation
+                # Use GCS
                 bucket = self.client.bucket(bucket_name or self.media_bucket)
                 blob = bucket.blob(blob_name)
-
-                # Handle potential permission errors gracefully
-                try:
-                    exists = blob.exists()
-                    return exists
-                except Exception as blob_error:
-                    # If permission denied, try to get metadata as a fallback
-                    if "Permission" in str(blob_error) or "403" in str(blob_error):
-                        logger.warning(f"Permission error checking if blob exists: {blob_error}")
-                        try:
-                            # Try getting metadata instead
-                            blob.reload()
-                            return True  # If no exception, file exists
-                        except Exception as metadata_error:
-                            logger.warning(f"Failed metadata check for blob {blob_name}: {metadata_error}")
-                            # Continue to return False as fallback
-                    return False
+                return blob.exists()
         except Exception as e:
             logger.error(f"Error checking if file exists: {e}")
             return False
@@ -505,6 +489,66 @@ class CloudStorage:
         except Exception as e:
             logger.error(f"Error listing files for user {user_id}: {e}")
             return []
+
+    def find_file_in_local_storage(self, filename, bucket_name=None):
+        """
+        Find a file in local storage with more robust path checking.
+
+        Args:
+            filename: The name of the file to find (can be full path or just filename)
+            bucket_name: Optional bucket name
+
+        Returns:
+            str: Full path to the file if found, None if not found
+        """
+        try:
+            # Extract just the filename if a path is provided
+            base_filename = os.path.basename(filename)
+
+            # First, try the exact path
+            if os.path.exists(filename) and os.path.isfile(filename):
+                logger.info(f"Found file at exact path: {filename}")
+                return filename
+
+            # Check in standard bucket location
+            bucket_dir = os.path.join(self.local_storage_dir, bucket_name or self.media_bucket)
+            file_path = os.path.join(bucket_dir, filename)
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                logger.info(f"Found file in bucket directory: {file_path}")
+                return file_path
+
+            # Check with just the filename in the bucket
+            file_path = os.path.join(bucket_dir, base_filename)
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                logger.info(f"Found file using basename in bucket: {file_path}")
+                return file_path
+
+            # Check in media bucket specifically
+            media_path = os.path.join(self.local_storage_dir, self.media_bucket, base_filename)
+            if os.path.exists(media_path) and os.path.isfile(media_path):
+                logger.info(f"Found file in media bucket: {media_path}")
+                return media_path
+
+            # Check in uploads bucket
+            uploads_path = os.path.join(self.local_storage_dir, self.uploads_bucket, base_filename)
+            if os.path.exists(uploads_path) and os.path.isfile(uploads_path):
+                logger.info(f"Found file in uploads bucket: {uploads_path}")
+                return uploads_path
+
+            # Search recursively as a last resort
+            for root, _, files in os.walk(self.local_storage_dir):
+                if base_filename in files:
+                    found_path = os.path.join(root, base_filename)
+                    logger.info(f"Found file in recursive search: {found_path}")
+                    return found_path
+
+            # Could not find the file
+            logger.warning(f"Could not find file {filename} in local storage")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error finding file in local storage: {e}")
+            return None
 
 # Create a singleton instance
 cloud_storage = CloudStorage()

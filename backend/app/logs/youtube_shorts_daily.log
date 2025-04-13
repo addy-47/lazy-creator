@@ -46,3 +46,24 @@
 2025-04-13 15:26:01,144 - INFO - automation.shorts_main - Progress update: 90% - Video rendering complete, finalizing
 2025-04-13 15:26:01,146 - INFO - automation.shorts_main - Video generated successfully at: shorts_religion_20250413_145707.mp4
 2025-04-13 15:26:01,151 - INFO - automation.shorts_main - Progress update: 100% - Video generation completed successfully
+2025-04-13 17:09:47,539 - INFO - automation.shorts_main - generate_youtube_short called with: topic=agnostic atheism , max_duration=15, background_type=video, background_source=provided, background_path=None, style=photorealistic
+2025-04-13 17:09:47,548 - INFO - automation.shorts_main - Progress update: 5% - Starting video generation
+2025-04-13 17:09:47,552 - INFO - automation.shorts_main - Using temp dir: C:\Users\adhbu\AppData\Local\Temp\tmpi17bn_np, output dir: D:\lazy-creator\backend\app\ai_shorts_output
+2025-04-13 17:09:50,747 - INFO - automation.shorts_main - Progress update: 10% - Generating content
+2025-04-13 17:09:50,755 - INFO - automation.shorts_main - Generating comprehensive content for topic: agnostic atheism 
+2025-04-13 17:09:58,118 - INFO - automation.shorts_main - Progress update: 20% - Content created, processing script
+2025-04-13 17:09:58,120 - INFO - automation.shorts_main - Generated script with 40 words
+2025-04-13 17:09:58,124 - INFO - automation.shorts_main - Script parsed into 6 sections
+2025-04-13 17:09:58,131 - INFO - automation.shorts_main - Progress update: 30% - Planning video with 3 sections
+2025-04-13 17:09:58,133 - INFO - automation.shorts_main - Adjusting script sections from 6 to 3 to match backgrounds
+2025-04-13 17:09:58,134 - INFO - automation.shorts_main - Combining 4 middle sections into 1 sections
+2025-04-13 17:09:58,136 - INFO - automation.shorts_main - Final script has 3 sections to match 3 backgrounds
+2025-04-13 17:09:58,137 - INFO - automation.shorts_main - Section 1: What is agnostic atheism?... (duration: 3s)
+2025-04-13 17:09:58,140 - INFO - automation.shorts_main - Section 2: It's the belief that we can't ... (duration: 14.2s)
+2025-04-13 17:09:58,144 - INFO - automation.shorts_main - Section 3: Hit that subscribe button!... (duration: 3s)
+2025-04-13 17:09:58,152 - INFO - automation.shorts_main - Progress update: 40% - Preparing to render video
+2025-04-13 17:09:58,153 - INFO - automation.shorts_main - Using title: Agnostic Atheism Explained: The Middle Ground of Belief
+2025-04-13 17:09:58,162 - INFO - automation.shorts_main - Progress update: 50% - Starting video rendering
+2025-04-13 17:25:19,897 - INFO - automation.shorts_main - Progress update: 90% - Video rendering complete, finalizing
+2025-04-13 17:25:19,899 - INFO - automation.shorts_main - Video generated successfully at: shorts_agnostic_atheism__20250413_170947.mp4
+2025-04-13 17:25:19,903 - INFO - automation.shorts_main - Progress update: 100% - Video generation completed successfully

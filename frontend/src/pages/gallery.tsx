@@ -361,22 +361,15 @@ function GalleryPage() {
   };
 
   const handleUpload = async (videoId: string) => {
-    // Do not proceed if YouTube is not connected
-    if (!isYouTubeConnected) {
-      toast.error("Please connect to YouTube first.");
-      return;
-    }
-
-    // Set the videoId that's being uploaded
     setUploading(videoId);
-    setShowUploadForm(null); // Reset upload form visibility
 
     try {
-      // Get upload data from state
+      // Get the form data from state
       const { title, description, tags, useThumbnail } = uploadData;
 
-      if (!title) {
-        toast.error("Title is required");
+      // Validate form data
+      if (!title || !description) {
+        toast.error("Title and description are required");
         setUploading(null);
         return;
       }
@@ -388,43 +381,103 @@ function GalleryPage() {
         return;
       }
 
-      // Send upload request to the server with video metadata
-      const response = await axios({
-        method: "POST",
-        url: `${getAPIBaseURL()}/api/upload-to-youtube/${videoId}`,
-        headers: {
-          "x-access-token": token,
-          "Content-Type": "application/json",
-        },
-        data: {
-          title,
-          description,
-          tags: tags.split(",").map((tag) => tag.trim()),
-          useThumbnail,
-        },
-      });
+      // Show upload starting toast
+      const toastId = toast.loading("Preparing to upload video to YouTube...");
 
-      if (response.data.status === "success") {
-        toast.success("Video uploaded to YouTube successfully!");
-
-        // Update the local video data with YouTube ID
-        const updatedVideos = videos.map((v) => {
-          if (v.id === videoId) {
-            return {
-              ...v,
-              uploaded_to_yt: true,
-              youtube_id: response.data.youtube_id,
-            };
-          }
-          return v;
+      try {
+        // Send upload request to the server with video metadata
+        const response = await axios({
+          method: "POST",
+          url: `${getAPIBaseURL()}/api/upload-to-youtube/${videoId}`,
+          headers: {
+            "x-access-token": token,
+            "Content-Type": "application/json",
+          },
+          data: {
+            title,
+            description,
+            tags: tags.split(",").map((tag) => tag.trim()),
+            useThumbnail,
+          },
+          // Add a longer timeout for uploads
+          timeout: 120000, // 2 minutes
         });
 
-        setVideos(updatedVideos);
-      } else {
-        throw new Error(response.data.message || "Upload failed");
+        // Dismiss the loading toast
+        toast.dismiss(toastId);
+
+        if (response.data.status === "success") {
+          toast.success("Video uploaded to YouTube successfully!");
+
+          // Update the local video data with YouTube ID
+          const updatedVideos = videos.map((v) => {
+            if (v.id === videoId) {
+              return {
+                ...v,
+                uploaded_to_yt: true,
+                youtube_id: response.data.youtube_id,
+              };
+            }
+            return v;
+          });
+
+          setVideos(updatedVideos);
+          setShowUploadForm(null); // Close the form
+        } else {
+          toast.error(
+            response.data.message || "Upload failed for unknown reason"
+          );
+        }
+      } catch (axiosError: any) {
+        // Dismiss the loading toast
+        toast.dismiss(toastId);
+
+        // Handle specific error cases
+        if (axiosError.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          console.error(
+            "YouTube upload error response:",
+            axiosError.response.data
+          );
+
+          if (axiosError.response.status === 401) {
+            if (axiosError.response.data?.require_auth) {
+              toast.error(
+                "YouTube authentication expired. Please reconnect your account.",
+                { duration: 6000 }
+              );
+              // Start YouTube auth flow
+              setYouTubeConnected(false);
+              setTimeout(() => {
+                connectYouTube();
+              }, 2000);
+            } else {
+              toast.error("Authentication error. Please log in again.");
+            }
+          } else if (axiosError.response.status === 413) {
+            toast.error("Video file is too large for YouTube upload.");
+          } else {
+            // Use server's error message if available
+            const errorMessage =
+              axiosError.response.data?.message ||
+              "Failed to upload video to YouTube";
+            toast.error(errorMessage);
+          }
+        } else if (axiosError.request) {
+          // The request was made but no response was received
+          console.error("No response received:", axiosError.request);
+          toast.error(
+            "No response from server. The upload may have timed out."
+          );
+        } else {
+          // Something happened in setting up the request
+          console.error("Error setting up request:", axiosError.message);
+          toast.error("Error preparing upload request.");
+        }
       }
     } catch (error) {
-      console.error("Error uploading to YouTube:", error);
+      console.error("Error in handleUpload:", error);
       toast.error(
         error instanceof Error
           ? error.message
@@ -432,12 +485,6 @@ function GalleryPage() {
       );
     } finally {
       setUploading(null);
-      setUploadData({
-        title: "",
-        description: "",
-        tags: "",
-        useThumbnail: false,
-      });
     }
   };
 

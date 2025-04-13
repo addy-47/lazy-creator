@@ -284,7 +284,11 @@ def create_youtube_short(
         raise
 
 def generate_youtube_short(topic, max_duration=25, background_type='video', background_source='provided', background_path=None, style="photorealistic", progress_callback=None):
-    """Generate a YouTube short video."""
+    """Generate a YouTube short video.
+
+    Returns:
+        tuple: (video_path, content_package) - path to the created video and the content package used
+    """
     try:
         # Log the input parameters for debugging
         logger.info(f"generate_youtube_short called with: topic={topic}, max_duration={max_duration}, "
@@ -308,7 +312,7 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         # Check if processing should be aborted
         if should_abort_processing():
             logger.info("Shutdown requested, aborting video generation")
-            return None
+            return None, None
 
         # Generate unique filename with timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -328,7 +332,7 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         # Check if processing should be aborted
         if should_abort_processing():
             logger.info("Shutdown requested, aborting video generation before content creation")
-            return None
+            return None, None
 
         # Use the comprehensive content generator to get a complete package
         logger.info(f"Generating comprehensive content for topic: {topic}")
@@ -457,7 +461,7 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         # Check if processing should be aborted
         if should_abort_processing():
             logger.info("Shutdown requested, aborting video generation before rendering")
-            return None
+            return None, None
 
         # Create the short
         update_progress(50, "Starting video rendering")
@@ -477,16 +481,13 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         # Return the local video path (don't upload to cloud here - let main.py handle it)
         if video_path and os.path.exists(video_path):
             logger.info(f"Video generated successfully at: {video_path}")
-            update_progress(100, "Video generation completed successfully")
-            return video_path
+            return video_path, content_package
         else:
-            logger.error("Video generation failed or video file not found")
-            raise FileNotFoundError("Video generation failed or video file not found")
+            logger.error(f"Video generation failed or output file not found")
+            return None, content_package
 
     except Exception as e:
-        logger.error(f"Error in generate_youtube_short: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
+        logger.error(f"Error generating YouTube short: {e}")
+        return None, None
 
 

@@ -191,9 +191,13 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
             Cancel
           </Button>
           <button
-            onClick={() => onUpload(videoId)}
+            onClick={() => {
+              if (!isUploading) {
+                onUpload(videoId);
+              }
+            }}
             disabled={isUploading}
-            className="rounded-full min-w-[100px] h-10 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none shadow-sm"
+            className="rounded-full min-w-[100px] h-10 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none shadow-sm transition-all duration-300"
           >
             {isUploading ? (
               <div className="inline-flex items-center">
