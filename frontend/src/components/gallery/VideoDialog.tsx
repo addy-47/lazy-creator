@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Download, Youtube } from "lucide-react";
+import { Download, Youtube, X } from "lucide-react";
 import { Button } from "@/components/Button";
 import { getAPIBaseURL } from "@/lib/socket";
 
@@ -30,7 +30,6 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
   onShowUploadForm,
   onOpenYouTube,
 }) => {
-  const cardClass = "aspect-[9/16] rounded-xl overflow-hidden";
   const [videoUrl, setVideoUrl] = useState<string>("");
 
   // Generate secure URL with auth token
@@ -53,64 +52,78 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-card max-w-2xl w-full p-4 rounded-2xl shadow-xl animate-scale-in border border-border"
+        className="bg-card w-full max-w-2xl p-5 rounded-2xl shadow-xl animate-scale-in border border-border flex flex-col relative max-h-[85vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`${cardClass} bg-black mb-4`}>
-          <video
-            src={videoUrl}
-            className="w-full h-full object-contain"
-            controls
-            autoPlay
-          />
-        </div>
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 p-1 rounded-full hover:bg-foreground/10 transition-colors z-10"
+          aria-label="Close dialog"
+        >
+          <X size={20} />
+        </button>
 
-        <div className="px-2 pb-3">
-          <h3 className="text-xl font-medium line-clamp-2 mb-2 mt-1">
-            {video.original_prompt}
-          </h3>
-          <p className="text-sm text-foreground/70 mb-6">
-            Created: {new Date(video.created_at).toLocaleString()}
-          </p>
+        <div className="flex flex-col md:flex-row gap-4 overflow-y-auto p-1">
+          {/* Video container */}
+          <div className="w-full md:w-[45%] aspect-[9/16] bg-black rounded-xl overflow-hidden shrink-0">
+            <video
+              src={videoUrl}
+              className="w-full h-full object-contain"
+              controls
+              autoPlay
+              playsInline
+            />
+          </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="rounded-full"
-            >
-              Close
-            </Button>
-            <Button
-              onClick={() => onDownload(video.id)}
-              className="rounded-full"
-            >
-              <Download size={16} className="mr-2" />
-              Download
-            </Button>
-            {!video.uploaded_to_yt && isYouTubeConnected && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  onShowUploadForm(video.id);
-                  onClose();
-                }}
-                className="rounded-full"
-              >
-                <Youtube size={16} className="mr-2" />
-                Upload to YouTube
-              </Button>
-            )}
-            {video.uploaded_to_yt && video.youtube_id && (
-              <Button
-                variant="outline"
-                onClick={() => onOpenYouTube(video.youtube_id!)}
-                className="rounded-full"
-              >
-                <Youtube size={16} className="mr-2" />
-                View on YouTube
-              </Button>
-            )}
+          {/* Info and buttons */}
+          <div className="w-full flex flex-col">
+            <h3 className="text-lg font-medium line-clamp-2 mb-3">
+              {video.original_prompt}
+            </h3>
+
+            <p className="text-sm text-foreground/70 mb-4">
+              Created: {new Date(video.created_at).toLocaleString()}
+            </p>
+
+            <div className="mt-auto space-y-3">
+              <div className="w-full">
+                <button
+                  onClick={() => onDownload(video.id)}
+                  className="w-full py-1.5 px-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md inline-flex items-center justify-center text-sm font-medium"
+                >
+                  <Download size={16} className="mr-2" />
+                  Download
+                </button>
+              </div>
+
+              {!video.uploaded_to_yt && isYouTubeConnected && (
+                <div className="w-full">
+                  <button
+                    onClick={() => {
+                      onShowUploadForm(video.id);
+                      onClose();
+                    }}
+                    className="w-full py-1.5 px-3 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md inline-flex items-center justify-center text-sm font-medium"
+                  >
+                    <Youtube size={16} className="mr-2" />
+                    Upload to YouTube
+                  </button>
+                </div>
+              )}
+
+              {video.uploaded_to_yt && video.youtube_id && (
+                <div className="w-full">
+                  <button
+                    onClick={() => onOpenYouTube(video.youtube_id!)}
+                    className="w-full py-1.5 px-3 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md inline-flex items-center justify-center text-sm font-medium"
+                  >
+                    <Youtube size={16} className="mr-2" />
+                    View on YouTube
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

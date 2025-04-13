@@ -18,6 +18,7 @@ logs/
 
 # Output directories
 ai_shorts_output/
+local_storage/
 
 # Large binary files
 ffmpeg/
