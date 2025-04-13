@@ -25,3 +25,8 @@
 2025-04-13 14:43:53,592 - INFO - automation.shorts_main - Progress update: 90% - Video rendering complete, finalizing
 2025-04-13 14:43:53,595 - INFO - automation.shorts_main - Video generated successfully at: shorts_god_exsist__20250413_143105.mp4
 2025-04-13 14:43:53,606 - INFO - automation.shorts_main - Progress update: 100% - Video generation completed successfully
+2025-04-13 14:57:07,175 - INFO - automation.shorts_main - generate_youtube_short called with: topic=religion, max_duration=10, background_type=video, background_source=provided, background_path=None, style=photorealistic
+2025-04-13 14:57:07,180 - INFO - automation.shorts_main - Progress update: 5% - Starting video generation
+2025-04-13 14:57:07,182 - INFO - automation.shorts_main - Using temp dir: C:\Users\adhbu\AppData\Local\Temp\tmp_fq8oino, output dir: D:\lazy-creator\backend\app\ai_shorts_output
+2025-04-13 14:57:07,826 - INFO - automation.shorts_main - Progress update: 10% - Generating content
+2025-04-13 14:57:07,827 - INFO - automation.shorts_main - Generating comprehensive content for topic: religion

@@ -1161,9 +1161,19 @@ def serve_demo(filename):
     try:
         # Create a temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
-            # Download from Cloud Storage
+            # Download from Cloud Storage - Update path to match the specified bucket path
             blob_name = f"demo/{filename}"
+
+            # Try to fetch from the local demo directory first if it exists
+            local_demo_path = os.path.join(os.path.dirname(__file__), 'demo', filename)
+            if os.path.exists(local_demo_path):
+                logger.info(f"Serving demo video from local path: {local_demo_path}")
+                return send_file(local_demo_path)
+
+            # Otherwise try to download from GCS
+            logger.info(f"Downloading demo video from GCS path: {blob_name}")
             cloud_storage.download_file(blob_name, temp_file.name)
+            logger.info(f"Successfully downloaded demo video: {filename}")
             return send_file(temp_file.name)
 
     except Exception as e:
