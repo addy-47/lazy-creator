@@ -23,6 +23,7 @@ import { createContext, useEffect, useState, useCallback } from "react";
 import PageTransition from "./components/PageTransition";
 import { initSocket, disconnectSocket, setAuthToken } from "./lib/socket";
 import Processing from "./pages/Processing";
+import DebugLogin from "./pages/DebugLogin";
 
 // Create authentication context
 export interface AuthContextType {
@@ -239,6 +240,7 @@ const App = () => {
                   }
                   path="*"
                 />
+                <Route path="/debug-login" element={<DebugLogin />} />
               </Routes>
             </BrowserRouter>
           </TooltipProvider>

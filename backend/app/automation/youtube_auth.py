@@ -30,6 +30,9 @@ def get_auth_url(redirect_uri, user_id=None):
     # Create a unique state to identify this auth request
     state = user_id or str(uuid.uuid4())
 
+    # Add debug logging
+    logger.info(f"Starting YouTube OAuth flow with redirect_uri: {redirect_uri}")
+
     # Create flow instance
     try:
         flow = Flow.from_client_secrets_file(
@@ -51,6 +54,7 @@ def get_auth_url(redirect_uri, user_id=None):
             pickle.dump(flow, f)
 
         logger.info(f"Created auth flow for user ID: {state}")
+        logger.info(f"Authorization URL: {auth_url}")
         return auth_url, state
     except Exception as e:
         logger.error(f"Error creating auth flow: {e}")

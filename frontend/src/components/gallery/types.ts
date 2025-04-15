@@ -29,4 +29,13 @@ export interface UploadData {
   description: string;
   tags: string;
   useThumbnail?: boolean;
+  privacyStatus: "public" | "private" | "unlisted";
+  channelId?: string;
+}
+
+export interface YouTubeChannel {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+  customUrl?: string;
 }

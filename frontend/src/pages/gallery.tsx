@@ -14,7 +14,13 @@ import MyVideosSection from "@/components/gallery/MyVideosSection";
 import ExploreSection from "@/components/gallery/ExploreSection";
 import VideoDialog from "@/components/gallery/VideoDialog";
 import UploadFormDialog from "@/components/gallery/UploadFormDialog";
-import { Video, DemoVideo, UploadData } from "@/components/gallery/types";
+import ConnectToYouTube from "@/components/ConnectToYouTube";
+import {
+  Video,
+  DemoVideo,
+  UploadData,
+  YouTubeChannel,
+} from "@/components/gallery/types";
 
 function GalleryPage() {
   const navigate = useNavigate();
@@ -31,7 +37,11 @@ function GalleryPage() {
     description: "",
     tags: "",
     useThumbnail: false,
+    privacyStatus: "public",
   });
+  const [youtubeChannels, setYoutubeChannels] = useState<YouTubeChannel[]>([]);
+  const [showYouTubeConnectModal, setShowYouTubeConnectModal] = useState(false);
+  const [loadingChannels, setLoadingChannels] = useState(false);
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
   const [activeSection, setActiveSection] = useState<"my-videos" | "explore">(
     "my-videos"
@@ -267,6 +277,51 @@ function GalleryPage() {
     }
   };
 
+  // Function to fetch YouTube channels
+  const fetchYouTubeChannels = useCallback(async () => {
+    if (!isYouTubeConnected || loadingChannels) return;
+
+    setLoadingChannels(true);
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const response = await axios.get(
+        `${getAPIBaseURL()}/api/youtube/channels`,
+        {
+          headers: {
+            "x-access-token": token,
+          },
+        }
+      );
+
+      if (response.data.status === "success" && response.data.channels) {
+        setYoutubeChannels(response.data.channels);
+
+        // If we have a channel, update the upload data
+        if (response.data.channels.length > 0) {
+          setUploadData((prevData) => ({
+            ...prevData,
+            channelId: response.data.channels[0].id,
+          }));
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching YouTube channels:", error);
+    } finally {
+      setLoadingChannels(false);
+    }
+  }, [isYouTubeConnected, loadingChannels]);
+
+  // Fetch channels when YouTube connection status changes
+  useEffect(() => {
+    if (isYouTubeConnected) {
+      fetchYouTubeChannels();
+    }
+  }, [isYouTubeConnected, fetchYouTubeChannels]);
+
+  // Updated connectYouTube function with more detailed debugging
   const connectYouTube = async () => {
     if (isConnecting) {
       // Prevent multiple connection attempts
@@ -274,10 +329,17 @@ function GalleryPage() {
       return;
     }
 
+    // If already connected, just show the channel modal
+    if (isYouTubeConnected) {
+      setShowYouTubeConnectModal(true);
+      return;
+    }
+
     setIsConnecting(true);
     const toastId = toast.loading("Connecting to YouTube...");
 
     try {
+      // Check token
       const token = localStorage.getItem("token");
       if (!token) {
         toast.error("You need to be logged in to connect YouTube");
@@ -285,10 +347,35 @@ function GalleryPage() {
         return;
       }
 
+      // Debug token information
+      try {
+        console.log("Auth token:", token);
+        if (token === "demo-token-for-testing") {
+          console.log(
+            "⚠️ IMPORTANT: You are using a demo token. This will not work for YouTube authentication."
+          );
+          toast.error(
+            "Demo mode detected. Please log in with a real account to use YouTube features."
+          );
+        }
+      } catch (e) {
+        console.error("Error debugging token:", e);
+      }
+
       // Set a flag in localStorage that we're expecting a callback
       localStorage.setItem("checkYouTubeAuth", "true");
 
+      // Get the current origin for the redirect URI
+      const currentOrigin = window.location.origin;
+      console.log("Current origin:", currentOrigin);
+
+      // Expected redirect path - use the same one defined in client_secret.json
+      const redirectPath = "/youtube-auth-success";
+      const redirectUri = `${currentOrigin}${redirectPath}`;
+      console.log("Using redirect URI:", redirectUri);
+
       // Get the auth URL
+      console.log("Requesting YouTube auth URL...");
       const response = await axios({
         method: "GET",
         url: `${getAPIBaseURL()}/api/youtube-auth-start`,
@@ -296,11 +383,29 @@ function GalleryPage() {
           "x-access-token": token,
         },
         params: {
-          redirect_uri: `${window.location.origin}/gallery`,
+          redirect_uri: redirectUri,
         },
       });
 
+      console.log("YouTube auth response:", response.data);
+
       if (response.data.status === "success" && response.data.auth_url) {
+        // Check if we're in demo mode
+        if (response.data.is_demo) {
+          console.log(
+            "⚠️ IMPORTANT: Server is treating you as a demo user:",
+            response.data.demo_reason
+          );
+          toast.error(
+            "Demo mode detected on server. You need a real account to use YouTube features."
+          );
+        }
+
+        // Log the auth URL for debugging
+        console.log("YouTube Auth URL:", response.data.auth_url);
+        console.log("State:", response.data.state);
+        console.log("Redirect URI used:", response.data.redirect_uri);
+
         toast.dismiss(toastId);
         toast.info("Opening YouTube authentication...");
 
@@ -348,6 +453,7 @@ function GalleryPage() {
       } else {
         toast.dismiss(toastId);
         toast.error("Failed to start YouTube authentication");
+        console.error("Auth start response:", response.data);
       }
     } catch (error: any) {
       toast.dismiss(toastId);
@@ -360,12 +466,20 @@ function GalleryPage() {
     }
   };
 
+  // Updated handleUpload function
   const handleUpload = async (videoId: string) => {
     setUploading(videoId);
 
     try {
       // Get the form data from state
-      const { title, description, tags, useThumbnail } = uploadData;
+      const {
+        title,
+        description,
+        tags,
+        useThumbnail,
+        privacyStatus,
+        channelId,
+      } = uploadData;
 
       // Validate form data
       if (!title || !description) {
@@ -398,6 +512,8 @@ function GalleryPage() {
             description,
             tags: tags.split(",").map((tag) => tag.trim()),
             useThumbnail,
+            privacyStatus,
+            channelId,
           },
           // Add a longer timeout for uploads
           timeout: 120000, // 2 minutes
@@ -608,33 +724,27 @@ function GalleryPage() {
     }
   };
 
+  // Function to handle showing the upload form
   const handleShowUploadForm = (videoId: string) => {
     const video = videos.find((v) => v.id === videoId);
-    if (video) {
-      // Check if we have comprehensive_content available
-      if (video.comprehensive_content) {
-        // Use AI-generated title and description from comprehensive_content if available
-        setUploadData({
-          title:
-            video.comprehensive_content.title ||
-            `AI Short: ${video.original_prompt}`,
-          description:
-            video.comprehensive_content.description ||
-            `AI-generated Short about ${video.original_prompt}`,
-          tags: "shorts,AI,technology",
-          useThumbnail: false, // Default to not using AI-generated thumbnail
-        });
-      } else {
-        // Fallback to original prompt if no comprehensive_content
-        setUploadData({
-          title: `AI Short: ${video.original_prompt}`,
-          description: `AI-generated Short about ${video.original_prompt}`,
-          tags: "shorts,AI,technology",
-          useThumbnail: false,
-        });
-      }
-      setShowUploadForm(videoId);
-    }
+    if (!video) return;
+
+    // Set the initial upload data from video metadata
+    const newUploadData: UploadData = {
+      title:
+        video.comprehensive_content?.title ||
+        video.display_title ||
+        video.filename,
+      description:
+        video.comprehensive_content?.description || video.original_prompt,
+      tags: "shorts,ai,automated",
+      useThumbnail: true,
+      privacyStatus: "public",
+      channelId: youtubeChannels.length > 0 ? youtubeChannels[0].id : undefined,
+    };
+
+    setUploadData(newUploadData);
+    setShowUploadForm(videoId);
   };
 
   const handleOpenYouTube = (youtubeId: string) => {
@@ -861,7 +971,26 @@ function GalleryPage() {
           onUploadDataChange={setUploadData}
           onClose={() => setShowUploadForm(null)}
           onUpload={handleUpload}
+          youtubeChannels={youtubeChannels}
         />
+      )}
+
+      {/* YouTube Connect Modal */}
+      {showYouTubeConnectModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="relative p-5 flex flex-col max-w-md">
+            <button
+              onClick={() => setShowYouTubeConnectModal(false)}
+              className="absolute top-0 right-0 p-3 text-muted-foreground hover:text-foreground"
+            >
+              &times;
+            </button>
+            <ConnectToYouTube
+              isYouTubeConnected={isYouTubeConnected}
+              onConnectYouTube={connectYouTube}
+            />
+          </div>
+        </div>
       )}
 
       <Footer />

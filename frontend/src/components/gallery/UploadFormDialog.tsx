@@ -1,5 +1,12 @@
-import React, { useState } from "react";
-import { Youtube, Info, Image as ImageIcon } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import {
+  Youtube,
+  Info,
+  Image as ImageIcon,
+  Globe,
+  Lock,
+  EyeOff,
+} from "lucide-react";
 import { Button } from "@/components/Button";
 
 interface UploadFormDialogProps {
@@ -10,6 +17,8 @@ interface UploadFormDialogProps {
     description: string;
     tags: string;
     useThumbnail?: boolean;
+    privacyStatus: "public" | "private" | "unlisted";
+    channelId?: string;
   };
   generatedContent?: {
     title?: string;
@@ -21,9 +30,12 @@ interface UploadFormDialogProps {
     description: string;
     tags: string;
     useThumbnail?: boolean;
+    privacyStatus: "public" | "private" | "unlisted";
+    channelId?: string;
   }) => void;
   onClose: () => void;
   onUpload: (videoId: string) => void;
+  youtubeChannels?: Array<{ id: string; title: string; thumbnailUrl?: string }>;
 }
 
 const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
@@ -34,8 +46,24 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
   onUploadDataChange,
   onClose,
   onUpload,
+  youtubeChannels = [],
 }) => {
   const [showVerificationWarning, setShowVerificationWarning] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState<string | undefined>(
+    uploadData.channelId ||
+      (youtubeChannels.length > 0 ? youtubeChannels[0].id : undefined)
+  );
+
+  // Update channel ID in uploadData when channels are loaded or selected channel changes
+  useEffect(() => {
+    if (youtubeChannels.length > 0 && !selectedChannel) {
+      setSelectedChannel(youtubeChannels[0].id);
+      onUploadDataChange({
+        ...uploadData,
+        channelId: youtubeChannels[0].id,
+      });
+    }
+  }, [youtubeChannels, selectedChannel, uploadData, onUploadDataChange]);
 
   // Function to use AI-generated content
   const useGeneratedContent = () => {
@@ -48,12 +76,49 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
     }
   };
 
+  // Function to handle channel selection
+  const handleChannelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const channelId = e.target.value;
+    setSelectedChannel(channelId);
+    onUploadDataChange({
+      ...uploadData,
+      channelId,
+    });
+  };
+
+  // Function to handle privacy status change
+  const handlePrivacyChange = (status: "public" | "private" | "unlisted") => {
+    onUploadDataChange({
+      ...uploadData,
+      privacyStatus: status,
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-card max-w-md w-full p-6 rounded-2xl shadow-xl animate-scale-in border border-border">
         <h3 className="text-xl font-semibold mb-6">Upload to YouTube</h3>
 
         <div className="space-y-5">
+          {youtubeChannels.length > 1 && (
+            <div>
+              <label className="text-sm font-medium block mb-2">
+                YouTube Channel
+              </label>
+              <select
+                value={selectedChannel}
+                onChange={handleChannelChange}
+                className="w-full p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+              >
+                {youtubeChannels.map((channel) => (
+                  <option key={channel.id} value={channel.id}>
+                    {channel.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-sm font-medium">Title</label>
@@ -112,6 +177,50 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
               }
               className="w-full p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
             />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-2">
+              Privacy Settings
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => handlePrivacyChange("public")}
+                className={`p-3 rounded-lg flex flex-col items-center gap-1 border ${
+                  uploadData.privacyStatus === "public"
+                    ? "border-primary bg-primary/10"
+                    : "border-input bg-background"
+                }`}
+              >
+                <Globe size={18} />
+                <span className="text-xs">Public</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePrivacyChange("unlisted")}
+                className={`p-3 rounded-lg flex flex-col items-center gap-1 border ${
+                  uploadData.privacyStatus === "unlisted"
+                    ? "border-primary bg-primary/10"
+                    : "border-input bg-background"
+                }`}
+              >
+                <EyeOff size={18} />
+                <span className="text-xs">Unlisted</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePrivacyChange("private")}
+                className={`p-3 rounded-lg flex flex-col items-center gap-1 border ${
+                  uploadData.privacyStatus === "private"
+                    ? "border-primary bg-primary/10"
+                    : "border-input bg-background"
+                }`}
+              >
+                <Lock size={18} />
+                <span className="text-xs">Private</span>
+              </button>
+            </div>
           </div>
 
           <div>
