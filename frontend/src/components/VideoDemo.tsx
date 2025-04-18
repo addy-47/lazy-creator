@@ -207,7 +207,8 @@ const VideoDemo = () => {
       ctx.translate(-x, -y);
     }
 
-    const primaryColor = themeRef.current === "dark" ? "#3B82F6" : "#2563EB";
+    // Updated color to match site theme (from blue to red)
+    const primaryColor = themeRef.current === "dark" ? "#E0115F" : "#800000";
 
     // Draw stick figure head
     ctx.fillStyle = primaryColor;
@@ -251,40 +252,16 @@ const VideoDemo = () => {
     }
 
     // Draw legs
-    if (phase === 2) {
-      const legAngle = Math.sin((step % 150) / 25) * 0.3;
-      ctx.beginPath();
-      ctx.moveTo(x, y + 7);
-      ctx.lineTo(x + Math.sin(legAngle) * 10, y + 15 + Math.cos(legAngle) * 3);
-      ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y + 7);
+    ctx.lineTo(x + 8, y + 15);
+    ctx.stroke();
 
-      ctx.beginPath();
-      ctx.moveTo(x, y + 7);
-      ctx.lineTo(x - Math.sin(legAngle) * 10, y + 15 + Math.cos(legAngle) * 3);
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(x, y + 7);
-      ctx.lineTo(x + 6, y + 15);
-      ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y + 7);
+    ctx.lineTo(x - 8, y + 15);
+    ctx.stroke();
 
-      ctx.beginPath();
-      ctx.moveTo(x, y + 7);
-      ctx.lineTo(x - 6, y + 15);
-      ctx.stroke();
-    }
-
-    // Additional details for phase 0 and 3
-    if (phase === 0 && step % 150 > 50) {
-      ctx.strokeStyle = primaryColor;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x + 10, y - 20);
-      ctx.lineTo(x + 15, y - 25);
-      ctx.lineTo(x + 8, y - 25);
-      ctx.lineTo(x + 13, y - 30);
-      ctx.stroke();
-    }
     if (phase === 3) {
       ctx.restore();
     }
@@ -693,16 +670,10 @@ const VideoDemo = () => {
   };
 
   return (
-    <section className="section py-16 md:py-24 bg-white dark:bg-black overflow-hidden relative">
-      {/* Background decorative elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-purple-200/30 dark:bg-purple-900/20 blur-3xl"></div>
-        <div className="absolute top-1/2 -left-24 w-48 h-48 rounded-full bg-purple-200/30 dark:bg-purple-900/20 blur-3xl"></div>
-      </div>
-
+    <section className="py-20 relative">
       <div className="container-tight relative z-10">
         <div className="text-center max-w-3xl mx-auto mb-12 md:mb-16">
-          <h2 className="font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-400 dark:to-purple-600">
+          <h2 className="font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F] dark:from-[#E0115F] dark:to-[#722F37]">
             See It In Action
           </h2>
           <p className="text-lg text-gray-600 dark:text-gray-300">
@@ -713,7 +684,7 @@ const VideoDemo = () => {
 
         <div className="relative max-w-4xl mx-auto">
           {/* Video demo canvas */}
-          <div className="relative mx-auto w-full max-w-[320px] md:max-w-[540px] aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-4 border-purple-100 dark:border-purple-900/30">
+          <div className="relative mx-auto w-full max-w-[320px] md:max-w-[540px] aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-4 border-[#E0115F]/10 dark:border-[#E0115F]/20">
             <canvas
               ref={canvasRef}
               width={1080}
@@ -726,7 +697,7 @@ const VideoDemo = () => {
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                <div className="w-3 h-3 rounded-full bg-[#E0115F]"></div>
                 <span className="text-white text-sm font-medium">
                   Recording
                 </span>

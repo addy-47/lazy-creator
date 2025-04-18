@@ -151,9 +151,11 @@ const Navbar = ({ username }: NavbarProps) => {
       ) {
         setIsDarkMode(true);
         document.documentElement.classList.add("dark");
+        setTheme("dark");
       } else {
         setIsDarkMode(false);
         document.documentElement.classList.remove("dark");
+        setTheme("light");
       }
 
       // Also update username when theme changes
@@ -180,22 +182,26 @@ const Navbar = ({ username }: NavbarProps) => {
       window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("storage", checkTheme);
     };
-  }, []);
+  }, [setTheme]);
 
   const toggleDarkMode = () => {
-    if (isDarkMode) {
-      document.documentElement.classList.remove("dark");
-      localStorage.theme = "light";
-      setIsDarkMode(false);
-    } else {
-      document.documentElement.classList.add("dark");
-      localStorage.theme = "dark";
-      setIsDarkMode(true);
-    }
+    const newTheme = isDarkMode ? "light" : "dark";
+    setTheme(newTheme);
+    setIsDarkMode(!isDarkMode);
+    localStorage.theme = newTheme;
 
     // Check username again after toggling theme
     updateUsernameFromStorage();
     forceUpdate();
+
+    // Force the body to apply either dark or light class immediately
+    if (newTheme === "dark") {
+      document.documentElement.classList.add("dark");
+      document.documentElement.classList.remove("light");
+    } else {
+      document.documentElement.classList.add("light");
+      document.documentElement.classList.remove("dark");
+    }
 
     // Trigger event to inform other components about theme change
     window.dispatchEvent(new Event("storage"));
@@ -233,21 +239,19 @@ const Navbar = ({ username }: NavbarProps) => {
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         isScrolled
-          ? "bg-white/80 dark:bg-black/80 backdrop-blur-lg shadow-sm"
-          : "bg-transparent"
+          ? "bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-sm border-b border-border/50"
+          : "bg-white/60 dark:bg-black/60 backdrop-blur-md"
       }`}
     >
-      <div className="container-wide flex h-16 items-center justify-between">
+      <div className="container-wide flex h-16 md:h-20 items-center justify-between">
         <div className="flex items-center gap-2">
           <Logo />
           <NavLink
             to="/"
             className="text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
           >
-            <span>Lazy</span>
-            <span className="text-purple-600 dark:text-purple-400">
-              Creator
-            </span>
+            <span className="text-foreground">Lazy</span>
+            <span className="text-[#E0115F]">Creator</span>
           </NavLink>
         </div>
 
@@ -260,7 +264,7 @@ const Navbar = ({ username }: NavbarProps) => {
                 to={item.path}
                 className={({ isActive }) =>
                   isActive
-                    ? "font-medium text-purple-600 dark:text-purple-400"
+                    ? "font-medium text-[#E0115F] dark:text-[#E0115F]"
                     : "text-foreground/80 hover:text-foreground transition-colors"
                 }
               >
@@ -272,7 +276,7 @@ const Navbar = ({ username }: NavbarProps) => {
           <div className="flex items-center space-x-4">
             <button
               onClick={toggleDarkMode}
-              className="p-2 rounded-full hover:bg-accent transition-colors"
+              className="p-2 rounded-full hover:bg-accent/10 transition-colors text-foreground"
               aria-label={
                 isDarkMode ? "Switch to light mode" : "Switch to dark mode"
               }
@@ -286,9 +290,15 @@ const Navbar = ({ username }: NavbarProps) => {
 
             {displayUsername ? (
               <div className="flex items-center space-x-4">
+                {isYouTubeConnected && (
+                  <div className="flex items-center gap-1 text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded-full">
+                    <Youtube size={12} />
+                    <span>Connected</span>
+                  </div>
+                )}
                 <div className="relative group">
-                  <button className="flex items-center gap-2 py-1 px-3 rounded-full bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-800/60 transition-colors">
-                    <User className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  <button className="flex items-center gap-2 py-1 px-3 rounded-full bg-[#E0115F]/10 hover:bg-[#E0115F]/20 dark:hover:bg-[#E0115F]/20 transition-colors">
+                    <User className="h-4 w-4 text-[#E0115F] dark:text-[#E0115F]" />
                     <span className="text-sm font-medium">
                       {displayUsername}
                     </span>
@@ -306,9 +316,8 @@ const Navbar = ({ username }: NavbarProps) => {
             ) : (
               <NavLink to="/auth">
                 <Button
-                  variant="purple"
                   size="sm"
-                  className="rounded-full px-4 py-2 h-9"
+                  className="bg-[#E0115F] hover:bg-[#E0115F]/90 rounded-full px-4 py-2 h-9"
                 >
                   <div className="flex items-center space-x-2">
                     <LogIn size={16} />
@@ -323,7 +332,7 @@ const Navbar = ({ username }: NavbarProps) => {
         {/* Mobile Navigation Toggle */}
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-foreground"
           aria-label={isMenuOpen ? "Close menu" : "Open menu"}
         >
           {isMenuOpen ? (
@@ -347,7 +356,7 @@ const Navbar = ({ username }: NavbarProps) => {
                   className={({ isActive }) =>
                     `px-4 py-2 rounded-lg ${
                       isActive
-                        ? "font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20"
+                        ? "font-medium text-[#E0115F] dark:text-[#E0115F] bg-[#E0115F]/5 dark:bg-[#E0115F]/10"
                         : "hover:bg-gray-100 dark:hover:bg-gray-800"
                     }`
                   }
@@ -379,9 +388,15 @@ const Navbar = ({ username }: NavbarProps) => {
 
               {displayUsername ? (
                 <>
+                  {isYouTubeConnected && (
+                    <div className="flex items-center gap-2 py-2 text-sm text-green-600 dark:text-green-400">
+                      <Youtube size={16} />
+                      <span>YouTube Connected</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-3 py-2">
                     <div className="flex items-center space-x-2">
-                      <User className="h-5 w-5" />
+                      <User className="h-5 w-5 text-[#E0115F]" />
                       <span>{displayUsername}</span>
                     </div>
                   </div>

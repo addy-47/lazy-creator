@@ -8,9 +8,11 @@ import Testimonials from "@/components/Testimonials";
 import Statistics from "@/components/Statistics";
 import { useAuth } from "@/contexts/AuthContext";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
+import { useTheme } from "next-themes";
 
 const Index = () => {
   const { isAuthenticated } = useAuth();
+  const { theme, setTheme } = useTheme();
   const parallaxRef = useRef<HTMLDivElement>(null);
 
   // Parallax scrolling effect
@@ -26,12 +28,41 @@ const Index = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // First, check and set theme based on browser or saved preference
+  useEffect(() => {
+    // If theme is not set, detect browser preference
+    if (!theme) {
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+      setTheme(prefersDark ? "dark" : "light");
+    }
+
+    // Ensure the theme is applied to the document
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+      document.documentElement.classList.remove("light");
+    } else {
+      document.documentElement.classList.add("light");
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme, setTheme]);
+
+  // Force-apply theme immediately
+  if (theme === "dark") {
+    document.documentElement.classList.add("dark");
+    document.documentElement.classList.remove("light");
+  } else if (theme === "light") {
+    document.documentElement.classList.add("light");
+    document.documentElement.classList.remove("dark");
+  }
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#0A0A0A] text-white overflow-hidden">
+    <div className="min-h-screen flex flex-col overflow-hidden">
       {/* Morphing background gradient overlay */}
       <div className="fixed inset-0 -z-10">
         {/* Base gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#800000]/20 via-[#722F37]/10 to-[#0A0A0A]"></div>
+        <div className="absolute inset-0 bg-gradient-to-br dark:from-[#800000]/20 dark:via-[#722F37]/10 dark:to-[#0A0A0A] from-[#FFF5F5] via-[#FFF0F0] to-[#FFFFFF]"></div>
 
         {/* Animated gradient */}
         <div className="absolute inset-0">
@@ -67,17 +98,11 @@ const Index = () => {
         </div>
       </div>
 
-      {/* Stick figure animations scattered throughout */}
-      <div className="fixed top-[20%] left-[5%] z-20">
+      {/* Stick figure animations - removed center ones, kept only corners */}
+      <div className="fixed top-[20%] left-[5%] z-20 hidden md:block">
         <StickFigureAnimation type="wave" delay={300} height={90} />
       </div>
-      <div className="fixed top-[40%] right-[35%] z-20">
-        <StickFigureAnimation type="dance" delay={600} height={90} />
-      </div>
-      <div className="fixed bottom-[20%] left-[15%] z-20">
-        <StickFigureAnimation type="sleep" delay={900} height={90} />
-      </div>
-      <div className="fixed top-[70%] right-[10%] z-20">
+      <div className="fixed bottom-[20%] right-[5%] z-20 hidden md:block">
         <StickFigureAnimation type="jump" delay={1200} height={90} />
       </div>
 
@@ -85,7 +110,7 @@ const Index = () => {
       <div className="fixed bottom-10 right-10 z-50 transition-all duration-500 hover:scale-105">
         <button
           onClick={() => (window.location.href = "/create")}
-          className="w-16 h-16 rounded-full bg-gradient-to-r from-[#800000] to-[#E0115F] flex items-center justify-center shadow-[0_0_20px_rgba(224,17,95,0.5)] group"
+          className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-r from-[#800000] to-[#E0115F] flex items-center justify-center shadow-[0_0_20px_rgba(224,17,95,0.5)] group"
         >
           <span className="text-white text-2xl font-bold group-hover:scale-110 transition-transform duration-300">
             +

@@ -101,14 +101,14 @@ const Logo = ({
           strokeLinecap="round"
         />
 
-        {/* Zzz sleeping - in purple instead of blue */}
+        {/* Zzz sleeping - changed from purple to ruby red */}
         <path
           d="M32 16L34 14L30 14L32 12"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-purple-500"
+          className="text-[#E0115F]"
         />
         <path
           d="M36 20L38 18L34 18L36 16"
@@ -116,7 +116,7 @@ const Logo = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-purple-500"
+          className="text-[#E0115F]"
         />
         <path
           d="M30 24L32 22L28 22L30 20"
@@ -124,7 +124,7 @@ const Logo = ({
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-purple-500"
+          className="text-[#E0115F]"
         />
       </svg>
 

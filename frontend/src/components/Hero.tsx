@@ -50,7 +50,7 @@ const Hero = ({ username }: HeroProps) => {
       <div className="container-tight relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
           {/* Content column - left aligned */}
-          <div className="lg:col-span-7 text-left space-y-8">
+          <div className="lg:col-span-7 text-left space-y-8 pl-0 md:pl-0 lg:pl-0">
             {/* Enhanced welcome banner with glow effect */}
             {username ? (
               <div className="inline-block relative">
@@ -61,7 +61,7 @@ const Hero = ({ username }: HeroProps) => {
               </div>
             ) : (
               <div className="inline-block relative">
-                <span className="inline-flex items-center px-5 py-2 font-medium text-[#E0115F] bg-[#E0115F]/10 border border-[#E0115F]/20 rounded-full text-xl shadow-sm shadow-[#E0115F]/10">
+                <span className="inline-flex items-center px-5 py-2 font-medium text-[#E0115F] bg-[#E0115F]/10 border border-[#E0115F]/20 rounded-full text-lg shadow-sm shadow-[#E0115F]/10">
                   Advanced Automation for YouTube Creators
                 </span>
               </div>
@@ -69,7 +69,7 @@ const Hero = ({ username }: HeroProps) => {
 
             {/* Main heading with highlighted text and glow effect */}
             <h1
-              className={`font-bold relative transition-all duration-1000 delay-300 max-w-3xl ${
+              className={`font-bold relative transition-all duration-1000 delay-300 max-w-3xl text-left scale-90 transform-gpu origin-left ${
                 isVisible
                   ? "opacity-100 translate-y-0"
                   : "opacity-0 translate-y-8"
@@ -87,7 +87,7 @@ const Hero = ({ username }: HeroProps) => {
             </h1>
 
             <p
-              className={`max-w-2xl text-lg text-gray-300 md:text-xl transition-all duration-1000 delay-500 ${
+              className={`max-w-xl text-base text-gray-300 md:text-lg transition-all duration-1000 delay-500 ${
                 isVisible
                   ? "opacity-100 translate-y-0"
                   : "opacity-0 translate-y-8"
@@ -100,26 +100,26 @@ const Hero = ({ username }: HeroProps) => {
 
             {/* Statistics row */}
             <div
-              className={`grid grid-cols-3 gap-4 max-w-xl transition-all duration-1000 delay-700 ${
+              className={`grid grid-cols-3 gap-4 max-w-md transition-all duration-1000 delay-700 ${
                 isVisible
                   ? "opacity-100 translate-y-0"
                   : "opacity-0 translate-y-8"
               }`}
             >
               <div className="text-left">
-                <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
+                <div className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
                   10x
                 </div>
                 <div className="text-sm text-gray-400">Faster Creation</div>
               </div>
               <div className="text-left">
-                <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
+                <div className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
                   100%
                 </div>
                 <div className="text-sm text-gray-400">Automated</div>
               </div>
               <div className="text-left">
-                <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
+                <div className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
                   24/7
                 </div>
                 <div className="text-sm text-gray-400">Content Pipeline</div>
@@ -128,7 +128,7 @@ const Hero = ({ username }: HeroProps) => {
 
             {/* CTA buttons with enhanced hover effects */}
             <div
-              className={`flex flex-col sm:flex-row items-start gap-4 pt-6 transition-all duration-1000 delay-800 ${
+              className={`flex flex-col sm:flex-row items-start gap-4 pt-4 transition-all duration-1000 delay-800 ${
                 isVisible
                   ? "opacity-100 translate-y-0"
                   : "opacity-0 translate-y-8"

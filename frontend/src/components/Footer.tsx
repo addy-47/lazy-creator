@@ -1,124 +1,163 @@
 import { NavLink } from "react-router-dom";
+import { Youtube, Github, Heart, ChevronRight } from "lucide-react";
+import StickFigureAnimation from "./StickFigureAnimation";
+import Logo from "./Logo";
 
 const Footer = () => {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="border-t border-border">
-      <div className="container-wide py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div className="md:col-span-2">
-            <NavLink to="/" className="text-xl font-semibold mb-4 block">
-              LazyCreator
+    <footer className="relative overflow-hidden border-t border-border pt-12 pb-8">
+      {/* Subtle background gradient */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-t dark:from-black/40 dark:to-transparent from-gray-50/80 to-transparent"></div>
+
+      {/* Subtle pattern */}
+      <div className="absolute inset-0 -z-10 opacity-[0.03]">
+        <div className="h-full w-full bg-[radial-gradient(#E0115F_1px,transparent_1px)] [background-size:20px_20px]"></div>
+      </div>
+
+      {/* Animated stick figure in corner */}
+      <div className="absolute right-8 bottom-16 opacity-60 hidden lg:block">
+        <StickFigureAnimation type="wave" delay={200} height={60} />
+      </div>
+
+      <div className="container-wide">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+          <div className="md:col-span-5 space-y-4">
+            <NavLink to="/" className="flex items-center space-x-2">
+              <Logo />
+              <span className="text-xl font-semibold">
+                <span className="text-foreground">Lazy</span>
+                <span className="text-[#E0115F]">Creator</span>
+              </span>
             </NavLink>
-            <p className="text-foreground/70 max-w-md">
-              The simplest way to create engaging YouTube Shorts. Turn your
-              ideas into viral content in minutes.
+            <p className="text-muted-foreground text-sm leading-relaxed max-w-md">
+              The smartest way to create engaging YouTube Shorts. Turn your
+              ideas into viral content in minutes with our AI-powered platform.
             </p>
+            <div className="pt-2">
+              <div className="inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full text-[#E0115F] bg-[#E0115F]/10 border border-[#E0115F]/20">
+                <Heart size={12} className="fill-[#E0115F] text-[#E0115F]" />
+                <span>Made with passion</span>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <h4 className="font-medium mb-4">Quick Links</h4>
-            <ul className="space-y-2">
-              <li>
-                <NavLink
-                  to="/"
-                  className="text-foreground/70 hover:text-foreground transition-colors"
-                >
-                  Home
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/create"
-                  className="text-foreground/70 hover:text-foreground transition-colors"
-                >
-                  Create
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/learn"
-                  className="text-foreground/70 hover:text-foreground transition-colors"
-                >
-                  Learn More
-                </NavLink>
-              </li>
-            </ul>
-          </div>
+          <div className="md:col-span-7">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-8">
+              <div className="space-y-4">
+                <h4 className="font-medium text-foreground text-sm mb-2">
+                  Product
+                </h4>
+                <ul className="space-y-2">
+                  <li>
+                    <NavLink
+                      to="/"
+                      className="text-muted-foreground text-sm hover:text-[#E0115F] transition-colors flex items-center gap-1"
+                    >
+                      <ChevronRight size={14} />
+                      <span>Home</span>
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to="/create"
+                      className="text-muted-foreground text-sm hover:text-[#E0115F] transition-colors flex items-center gap-1"
+                    >
+                      <ChevronRight size={14} />
+                      <span>Create</span>
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to="/gallery"
+                      className="text-muted-foreground text-sm hover:text-[#E0115F] transition-colors flex items-center gap-1"
+                    >
+                      <ChevronRight size={14} />
+                      <span>Gallery</span>
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to="/learn"
+                      className="text-muted-foreground text-sm hover:text-[#E0115F] transition-colors flex items-center gap-1"
+                    >
+                      <ChevronRight size={14} />
+                      <span>Learn More</span>
+                    </NavLink>
+                  </li>
+                </ul>
+              </div>
 
-          <div>
-            <h4 className="font-medium mb-4">Legal</h4>
-            <ul className="space-y-2">
-              <li>
-                <NavLink
-                  to="/privacy-policy"
-                  className="text-foreground/70 hover:text-foreground transition-colors"
-                >
-                  Privacy Policy
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/terms-of-service"
-                  className="text-foreground/70 hover:text-foreground transition-colors"
-                >
-                  Terms of Service
-                </NavLink>
-              </li>
-            </ul>
+              <div className="space-y-4">
+                <h4 className="font-medium text-foreground text-sm mb-2">
+                  Legal
+                </h4>
+                <ul className="space-y-2">
+                  <li>
+                    <NavLink
+                      to="/privacy-policy"
+                      className="text-muted-foreground text-sm hover:text-[#E0115F] transition-colors flex items-center gap-1"
+                    >
+                      <ChevronRight size={14} />
+                      <span>Privacy Policy</span>
+                    </NavLink>
+                  </li>
+                  <li>
+                    <NavLink
+                      to="/terms-of-service"
+                      className="text-muted-foreground text-sm hover:text-[#E0115F] transition-colors flex items-center gap-1"
+                    >
+                      <ChevronRight size={14} />
+                      <span>Terms of Service</span>
+                    </NavLink>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="space-y-4 col-span-2 sm:col-span-1">
+                <h4 className="font-medium text-foreground text-sm mb-2">
+                  Connect
+                </h4>
+                <div className="flex flex-col space-y-4">
+                  <a
+                    href="mailto:support@lazycreator.com"
+                    className="text-muted-foreground text-sm hover:text-[#E0115F] transition-colors"
+                  >
+                    support@lazycreator.com
+                  </a>
+                  <div className="flex gap-4">
+                    <a
+                      href="https://www.youtube.com/channel/UC6OLDh-EUFrhmf8-RmvaYnA"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-9 h-9 rounded-full bg-[#E0115F]/10 hover:bg-[#E0115F]/20 flex items-center justify-center text-[#E0115F] transition-colors"
+                      aria-label="YouTube"
+                    >
+                      <Youtube size={16} />
+                    </a>
+                    <a
+                      href="https://github.com/addy-47"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-9 h-9 rounded-full bg-[#E0115F]/10 hover:bg-[#E0115F]/20 flex items-center justify-center text-[#E0115F] transition-colors"
+                      aria-label="GitHub"
+                    >
+                      <Github size={16} />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="border-t border-border mt-8 pt-8 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-sm text-foreground/60">
+        <div className="border-t border-border/50 mt-10 pt-6 flex flex-col md:flex-row justify-between items-center">
+          <p className="text-xs text-muted-foreground">
             © {year} LazyCreator. All rights reserved.
           </p>
-          <div className="flex space-x-4 mt-4 md:mt-0">
-            <a
-              href="https://www.youtube.com/channel/UC6OLDh-EUFrhmf8-RmvaYnA"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-foreground/60 hover:text-foreground transition-colors"
-              aria-label="YouTube"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path>
-                <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
-              </svg>
-            </a>
-            <a
-              href="https://github.com/addy-47"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-foreground/60 hover:text-foreground transition-colors"
-              aria-label="GitHub"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path>
-                <path d="M9 18c-4.51 2-5-2-7-2"></path>
-              </svg>
-            </a>
+          <div className="mt-4 md:mt-0 text-xs text-muted-foreground">
+            <span>Designed with 🧠 by AI, built for creators</span>
           </div>
         </div>
       </div>
