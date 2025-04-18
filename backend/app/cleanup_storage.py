@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 cloud_storage = CloudStorage()
 
 # Connect to MongoDB
-mongo_uri = os.getenv('MONGO_URI', 'mongodb://localhost:27017/yt_shorts_app')
+mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/yt_shorts_app')
 client = MongoClient(mongo_uri)
 db = client['yt_shorts_app']
 videos_collection = db['videos']

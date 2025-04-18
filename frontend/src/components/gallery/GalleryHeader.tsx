@@ -6,7 +6,6 @@ interface GalleryHeaderProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   isAuthenticated: boolean;
-  youtubeAuthChecked: boolean;
   isYouTubeConnected: boolean;
   onConnectYouTube: () => void;
 }
@@ -15,7 +14,6 @@ const GalleryHeader: React.FC<GalleryHeaderProps> = ({
   searchQuery,
   onSearchChange,
   isAuthenticated,
-  youtubeAuthChecked,
   isYouTubeConnected,
   onConnectYouTube,
 }) => {
@@ -44,24 +42,22 @@ const GalleryHeader: React.FC<GalleryHeaderProps> = ({
         </div>
 
         {/* YouTube connect button - Always visible */}
-        {isAuthenticated && youtubeAuthChecked && (
-          <Button
-            onClick={onConnectYouTube}
-            className={`flex items-center gap-2 rounded-full ${
-              isYouTubeConnected
-                ? "bg-primary/10 hover:bg-primary/20 text-primary"
-                : "bg-primary hover:bg-primary/90 text-white"
-            }`}
-            variant={isYouTubeConnected ? "outline" : "default"}
-          >
-            <div className="flex items-center gap-2">
-              <Youtube size={16} className="flex-shrink-0" />
-              <span>
-                {isYouTubeConnected ? "YouTube Connected" : "Connect YouTube"}
-              </span>
-            </div>
-          </Button>
-        )}
+        <Button
+          onClick={onConnectYouTube}
+          className={`flex items-center gap-2 rounded-full ${
+            isYouTubeConnected
+              ? "bg-primary/10 hover:bg-primary/20 text-primary"
+              : ""
+          }`}
+          variant={isYouTubeConnected ? "outline" : "purple"}
+        >
+          <div className="flex items-center gap-2">
+            <Youtube size={16} className="flex-shrink-0" />
+            <span>
+              {isYouTubeConnected ? "YouTube Connected" : "Connect YouTube"}
+            </span>
+          </div>
+        </Button>
       </div>
     </div>
   );

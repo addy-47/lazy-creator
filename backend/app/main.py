@@ -1,45 +1,76 @@
 import os
 import logging
 from datetime import datetime
-from flask import Flask, request, jsonify, send_file, send_from_directory, redirect, url_for
+import re
+import tempfile
+import threading
+import atexit
+import signal
+import sys
+import base64
+import json
+import googleapiclient.http
+
+from flask import Flask, request, jsonify, send_file, redirect, make_response
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
-import shutil
 from functools import wraps
 import requests
-import re
-import tempfile
-import threading
-import uuid
-import atexit
-import signal
-import sys
-import base64
+from flask_socketio import SocketIO, emit
 
 from automation.shorts_main import generate_youtube_short
-from automation.youtube_upload import upload_video, get_authenticated_service, check_auth_status
-from automation.youtube_auth import get_auth_url, get_credentials_from_code
+from automation.youtube_upload import upload_video
+import youtube_auth
+from youtube_auth import get_authenticated_service, check_auth_status, get_auth_url, get_credentials_from_code
 from storage import cloud_storage
+from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)
-logger = logging.getLogger(__name__)
 
-# Configuration
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
-app.config['TOKEN_EXPIRATION'] = 86400  # 24 hours in seconds
+# Configure CORS with explicit settings
+CORS(app,
+     resources={r"/api/*": {"origins": "*"}},
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "x-access-token", "X-Requested-With"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
+
+# Update to include specific origins
+CORS(app,
+     resources={r"/api/*": {"origins": ["http://localhost:3500", "https://lazy-creator.web.app"]}},
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "x-access-token", "X-Requested-With"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+     expose_headers=["Content-Type", "Authorization"],
+     max_age=600)
+
+# Initialize Flask-SocketIO with gevent
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
+
+# Secret key configuration
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
+app.config['TOKEN_EXPIRATION'] = 60 * 60 * 24 * 7  # 7 days
 
 # MongoDB Configuration
-mongo_uri = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
+mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/youtube_shorts_db')
 client = MongoClient(mongo_uri)
-db = client['youtube_shorts_db']
-users_collection = db['users']
-videos_collection = db['videos']
+db = client.get_database()
+users_collection = db.users
+videos_collection = db.videos
 
 # Track all video generation threads to allow graceful shutdown
 active_threads = []
@@ -66,11 +97,69 @@ def cleanup_on_exit():
 
 atexit.register(cleanup_on_exit)
 
+# Health check endpoint for socket.io availability check
+@app.route('/api/health', methods=['GET', 'HEAD', 'OPTIONS'])
+def health_check():
+    # Log that the health check was accessed for debugging
+    logger.info("Health check endpoint accessed")
+
+    # Handle OPTIONS request for CORS preflight
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-access-token')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS')
+        return response
+
+    # For GET/HEAD requests
+    response = jsonify({"status": "ok"})
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response, 200
+
 # Helper to encode state parameter for OAuth (simple base64 encoding for user_id)
 def encode_state_param(user_id):
     if not isinstance(user_id, str):
         user_id = str(user_id)
     return base64.urlsafe_b64encode(user_id.encode()).decode()
+
+# Helper to decode state parameter from OAuth
+def decode_state_param(state):
+    try:
+        # First check if it has our prefix
+        if state.startswith("user-"):
+            return state[5:]
+
+        # Otherwise try base64 decoding
+        decoded = base64.urlsafe_b64decode(state).decode()
+        return decoded
+    except Exception as e:
+        logger.error(f"Error decoding state parameter: {e}")
+        raise
+
+# Socket.IO events
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
+@socketio.on('subscribe_progress')
+def handle_subscribe_progress(data):
+    video_id = data.get('videoId')
+    if video_id:
+        print(f'Client subscribed to progress updates for video {video_id}')
+
+@socketio.on('unsubscribe_progress')
+def handle_unsubscribe_progress(data):
+    video_id = data.get('videoId')
+    if video_id:
+        print(f'Client unsubscribed from progress updates for video {video_id}')
+
+# Function to emit progress update to clients
+def emit_progress_update(video_id, progress):
+    socketio.emit(f'progress_{video_id}', {'progress': progress})
 
 # Authentication Decorator
 def token_required(f):
@@ -79,38 +168,18 @@ def token_required(f):
         token = None
         if 'x-access-token' in request.headers:
             token = request.headers['x-access-token']
+        elif 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                token = auth_header[7:]
 
         if not token:
             logger.warning("Token is missing in request")
             return jsonify({'message': 'Token is missing!'}), 401
 
-        # Special case for demo token
-        if token == 'demo-token-for-testing':
-            logger.warning("⚠️ Using demo token for authentication! This will restrict certain features.")
-            # Create a mock user for demo purposes
-            demo_user = {
-                '_id': ObjectId('000000000000000000000000'),
-                'email': 'demo@example.com',
-                'name': 'Demo User'
-            }
-            return f(demo_user, *args, **kwargs)
-
         try:
-            # Attempt to decode the token
-            logger.info(f"Decoding token: {token[:10]}...")
+            # Decode the token
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            logger.info(f"Token decoded successfully. Email: {data.get('email')}")
-
-            # Check for force_real flag
-            if data.get('force_real'):
-                logger.info("Force real token detected - bypassing demo checks")
-                current_user = users_collection.find_one({'email': data['email']})
-                if not current_user:
-                    logger.warning(f"User not found for email: {data['email']}")
-                    return jsonify({'message': 'User not found!'}), 401
-                # Add a marker to indicate this is a forced real user
-                current_user['_force_real'] = True
-                return f(current_user, *args, **kwargs)
 
             # Find the user in the database
             current_user = users_collection.find_one({'email': data['email']})
@@ -163,7 +232,61 @@ def login():
     if not data or not data.get('email') or not data.get('password'):
         return jsonify({'message': 'Email and password are required!'}), 400
 
+    # Check if this is a social login
+    is_social_login = data.get('password').startswith('FIREBASE_AUTH_') if data.get('password') else False
+
     user = users_collection.find_one({'email': data['email']})
+
+    # Handle social login (Firebase)
+    if is_social_login:
+        if not user:
+            # Create new user for social login
+            try:
+                user = {
+                    'email': data['email'],
+                    'password': generate_password_hash(data['password'], method='sha256'),
+                    'name': data.get('name', 'User'),
+                    'provider': data.get('provider', 'google'),
+                    'provider_id': data.get('providerId', ''),
+                    'created_at': datetime.utcnow()
+                }
+                result = users_collection.insert_one(user)
+                user['_id'] = result.inserted_id
+                logger.info(f"Created new user with social login: {data['email']}")
+            except Exception as e:
+                logger.error(f"Error creating user for social login: {e}")
+                return jsonify({'message': 'Failed to create user account!'}), 500
+        else:
+            # Update existing user for social login
+            try:
+                users_collection.update_one(
+                    {'_id': user['_id']},
+                    {'$set': {
+                        'provider': data.get('provider', 'google'),
+                        'provider_id': data.get('providerId', ''),
+                        'last_login': datetime.utcnow()
+                    }}
+                )
+                logger.info(f"Updated existing user with social login: {data['email']}")
+            except Exception as e:
+                logger.error(f"Error updating user for social login: {e}")
+                # Continue anyway since we have the user
+
+        # Generate token for social login
+        token = jwt.encode({
+            'email': user['email'],
+            'exp': datetime.utcnow().timestamp() + app.config['TOKEN_EXPIRATION']
+        }, app.config['SECRET_KEY'])
+
+        return jsonify({
+            'token': token,
+            'email': user['email'],
+            'user': {
+                'name': user.get('name', 'User')
+            }
+        }), 200
+
+    # Regular password login
     if not user:
         return jsonify({'message': 'User not found!'}), 404
 
@@ -175,7 +298,10 @@ def login():
 
         return jsonify({
             'token': token,
-            'email': user['email']
+            'email': user['email'],
+            'user': {
+                'name': user.get('name', 'User')
+            }
         }), 200
 
     return jsonify({'message': 'Invalid credentials!'}), 401
@@ -215,6 +341,9 @@ def safe_update_progress(video_id, new_progress, status=None):
             {'_id': ObjectId(video_id)},
             {'$set': update_fields}
         )
+
+        # Emit progress update via Socket.IO
+        emit_progress_update(video_id, new_progress)
 
         return True
     except Exception as e:
@@ -544,6 +673,43 @@ def check_video_status(current_user, video_id):
         logger.error(f"Error checking video status: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# Helper function to get normalized file path for a user's file
+def get_normalized_file_path(user_id, filename):
+    """
+    Get the proper path for a user's file in GCS.
+    Checks multiple possible locations and returns the correct path.
+
+    Args:
+        user_id: User ID
+        filename: Filename to locate
+
+    Returns:
+        Tuple: (exists, path) - Whether the file exists and the full GCS path
+    """
+    try:
+        # Construct the standard user path (new structure)
+        standard_path = f"users/{user_id}/{filename}"
+
+        # List of paths to check, in order of preference
+        possible_paths = [
+            standard_path,                   # Main user path (new structure)
+            f"videos/{user_id}/{filename}",  # Old user path
+            f"videos/{filename}"             # Legacy video path
+        ]
+
+        # Check if file exists in any of the paths
+        for path in possible_paths:
+            if cloud_storage.file_exists(path, cloud_storage.media_bucket):
+                gcs_path = f"gs://{cloud_storage.media_bucket}/{path}"
+                logger.info(f"Found file at path: {path}")
+                return True, gcs_path
+
+        # File not found in any location
+        return False, None
+    except Exception as e:
+        logger.error(f"Error in get_normalized_file_path: {e}")
+        return False, None
+
 # Get Gallery (ensure to filter by user ID)
 @app.route('/api/gallery', methods=['GET'])
 @token_required
@@ -554,6 +720,8 @@ def get_gallery(current_user):
             'status': 'completed',
             'user_id': str(current_user['_id'])  # Filter by user ID
         }).sort('created_at', -1))
+
+        user_id = str(current_user['_id'])
 
         # Convert ObjectId to string for JSON serialization
         for video in videos:
@@ -566,61 +734,21 @@ def get_gallery(current_user):
             else:
                 video['display_title'] = video.get('original_prompt', 'Untitled Video')
 
-            # Ensure path includes user ID for proper access
-            if 'path' in video and isinstance(video['path'], str) and 'filename' in video:
-                user_id = str(current_user['_id'])
+            # Ensure path is correct
+            if 'filename' in video:
+                exists, normalized_path = get_normalized_file_path(user_id, video['filename'])
 
-                # Construct the expected path with user ID
-                expected_user_path = f"gs://{cloud_storage.media_bucket}/users/{user_id}/{video['filename']}"
-
-                # Check if the file exists in the expected user path
-                if cloud_storage.file_exists(f"users/{user_id}/{video['filename']}", cloud_storage.media_bucket):
-                    # Update to use user-specific path
-                    if video['path'] != expected_user_path:
-                        video['path'] = expected_user_path
+                if exists and normalized_path:
+                    # Update path if different from what's stored
+                    if video.get('path') != normalized_path:
+                        video['path'] = normalized_path
 
                         # Also update the database
                         videos_collection.update_one(
                             {'_id': ObjectId(video['id'])},
-                            {'$set': {'path': expected_user_path}}
+                            {'$set': {'path': normalized_path}}
                         )
-                        logger.info(f"Updated video path for {video['id']} to user-specific path: {expected_user_path}")
-                # Check if file exists in demo user directory (for demo account)
-                elif user_id == "000000000000000000000000" or cloud_storage.file_exists(f"users/000000000000000000000000/{video['filename']}", cloud_storage.media_bucket):
-                    demo_path = f"gs://{cloud_storage.media_bucket}/users/000000000000000000000000/{video['filename']}"
-                    if video['path'] != demo_path:
-                        video['path'] = demo_path
-
-                        # Update the database
-                        videos_collection.update_one(
-                            {'_id': ObjectId(video['id'])},
-                            {'$set': {'path': demo_path}}
-                        )
-                        logger.info(f"Updated video path for {video['id']} to demo path: {demo_path}")
-                # Check videos/user_id directory (old format)
-                elif cloud_storage.file_exists(f"videos/{user_id}/{video['filename']}", cloud_storage.media_bucket):
-                    old_user_path = f"gs://{cloud_storage.media_bucket}/videos/{user_id}/{video['filename']}"
-                    if video['path'] != old_user_path:
-                        video['path'] = old_user_path
-
-                        # Update the database
-                        videos_collection.update_one(
-                            {'_id': ObjectId(video['id'])},
-                            {'$set': {'path': old_user_path}}
-                        )
-                        logger.info(f"Updated video path for {video['id']} to old user path: {old_user_path}")
-                # Check legacy videos directory
-                elif cloud_storage.file_exists(f"videos/{video['filename']}", cloud_storage.media_bucket):
-                    legacy_path = f"gs://{cloud_storage.media_bucket}/videos/{video['filename']}"
-                    if video['path'] != legacy_path:
-                        video['path'] = legacy_path
-
-                        # Update the database
-                        videos_collection.update_one(
-                            {'_id': ObjectId(video['id'])},
-                            {'$set': {'path': legacy_path}}
-                        )
-                        logger.info(f"Updated video path for {video['id']} to legacy path: {legacy_path}")
+                        logger.info(f"Updated video path for {video['id']} to: {normalized_path}")
                 else:
                     # If we can't find the file in any location
                     logger.warning(f"Video file not found for {video['id']} in any expected location")
@@ -666,72 +794,90 @@ def download_video(current_user, video_id):
         logger.error(f"Error downloading video: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Check YouTube Auth Status
-@app.route('/api/youtube-auth-status', methods=['GET'])
+# Check YouTube authorization status
+@app.route('/api/youtube/auth-status', methods=['GET'])
 @token_required
 def check_youtube_auth_status(current_user):
     try:
-        # Special case for demo token - return authenticated=True for demo users
-        if current_user.get('email') == 'demo@example.com':
-            return jsonify({
-                "status": "success",
-                "authenticated": True,
-                "is_connected": True
-            })
-
         user_id = str(current_user['_id'])
+        logger.info(f"Checking YouTube auth status for user {user_id}")
+
+        # Check if credentials exist
         is_authenticated = check_auth_status(user_id)
 
-        return jsonify({
+        # Get user channels if authenticated
+        channels = []
+        if is_authenticated:
+            youtube = get_authenticated_service(user_id)
+
+            if youtube:
+                try:
+                    # Fetch the user's channels
+                    channels_response = youtube.channels().list(
+                        part="snippet,contentDetails,statistics",
+                        mine=True,
+                        maxResults=50
+                    ).execute()
+
+                    for channel in channels_response.get('items', []):
+                        channel_info = {
+                            "id": channel['id'],
+                            "title": channel['snippet']['title'],
+                            "description": channel['snippet'].get('description', ''),
+                            "customUrl": channel['snippet'].get('customUrl', '')
+                        }
+
+                        # Get thumbnail if available
+                        thumbnails = channel['snippet'].get('thumbnails', {})
+                        if thumbnails and 'default' in thumbnails:
+                            channel_info['thumbnailUrl'] = thumbnails['default']['url']
+
+                        channels.append(channel_info)
+                except Exception as e:
+                    logger.error(f"Error fetching channels: {e}")
+                    # Return authenticated but with empty channels
+
+        response = {
             "status": "success",
             "authenticated": is_authenticated,
-            "is_connected": is_authenticated
-        })
-    except Exception as e:
-        logger.error(f"Error checking YouTube auth status: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+            "channels": channels
+        }
 
-# Start YouTube Auth Flow
-@app.route('/api/youtube-auth-start', methods=['GET'])
-@token_required
-def start_youtube_auth(current_user):
-    try:
-        # Add detailed logging for debugging
-        user_email = current_user.get('email', 'Unknown')
-        user_id = str(current_user.get('_id', 'Unknown'))
-        logger.info(f"YouTube Auth Start - User info - Email: {user_email}, ID: {user_id}")
+        # If not authenticated, include auth URL
+        if not is_authenticated:
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
+            redirect_uri = f"{frontend_url}/youtube-auth-success"
 
-        # Check if user has force_real flag
-        if current_user.get('_force_real'):
-            logger.info(f"Force real token detected - bypassing demo checks for user: {user_email}")
+            # Generate auth URL
+            auth_url = get_auth_url(user_id, redirect_uri)
+            state = encode_state_param(user_id)
 
-        # MODIFIED: Only use mock URL for the literal demo@example.com email
-        # or if the token is exactly demo-token-for-testing
-        token = request.headers.get('x-access-token')
-        is_demo_token = token == "demo-token-for-testing"
-        is_demo_email = user_email == 'demo@example.com'
-
-        if not current_user.get('_force_real') and (is_demo_email or is_demo_token):
-            logger.info(f"Using demo mode for YouTube auth. Reason: {'Demo token' if is_demo_token else 'Demo email'}")
-
-            # Return a mock auth URL for demo users
-            mock_auth_url = "https://example.com/mock-youtube-auth"
-
-            # Add debug info to the response
-            return jsonify({
-                "status": "success",
-                "auth_url": mock_auth_url,
-                "is_demo": True,
-                "demo_reason": "Demo token" if is_demo_token else "Demo email",
-                "message": "DEMO MODE: This is a mock authorization URL for demo purposes."
+            response.update({
+                "auth_url": auth_url,
+                "state": state,
+                "redirect_uri": redirect_uri
             })
 
-        # For real users, generate a proper OAuth URL
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"Error checking YouTube auth status: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+# Start YouTube Auth Flow (new route with consistent path)
+@app.route('/api/youtube/auth/start', methods=['GET'])
+@token_required
+def start_youtube_auth_new(current_user):
+    try:
         user_id = str(current_user['_id'])
+        user_email = current_user.get('email', 'Unknown')
+        logger.info(f"YouTube Auth Start - User info - Email: {user_email}, ID: {user_id}")
 
         # Get frontend URL for redirect
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
-        logger.info(f"Using frontend URL for redirect: {frontend_url}")
 
         # Check if redirect_uri is provided in request
         redirect_uri = request.args.get('redirect_uri')
@@ -742,83 +888,116 @@ def start_youtube_auth(current_user):
 
         # Generate the authorization URL
         auth_url = get_auth_url(user_id, redirect_uri)
+        logger.info(f"Generated YouTube auth URL for user {user_id}")
 
-        logger.info(f"Generated real YouTube auth URL for user {user_id}")
-
-        # Return the auth URL with state and redirect URI for debugging
+        # Return the auth URL with state
         state = encode_state_param(user_id)
         return jsonify({
             "status": "success",
             "auth_url": auth_url,
             "state": state,
-            "redirect_uri": redirect_uri,
-            "is_demo": False
+            "redirect_uri": redirect_uri
         })
 
     except Exception as e:
         logger.error(f"Error starting YouTube auth: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# YouTube Auth Callback
-@app.route('/api/youtube-auth-callback', methods=['GET'])
-def youtube_auth_callback():
+# YouTube Auth Callback with consistent path
+@app.route('/api/youtube/auth/callback', methods=['GET'])
+def youtube_auth_callback_new():
     try:
         code = request.args.get('code')
         state = request.args.get('state')
+        redirect_uri = request.args.get('redirect_uri')
+
+        logger.info(f"YouTube Auth Callback received - code present: {bool(code)}, state: {state}, redirect_uri: {redirect_uri}")
 
         if not code or not state:
             error_msg = "Missing code or state parameter"
             logger.error(f"Auth callback error: {error_msg}")
-            return jsonify({"status": "error", "message": error_msg}), 400
+
+            # Get the frontend URL from environment
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
+
+            # If no redirect_uri is provided, use default
+            if not redirect_uri:
+                redirect_uri = f"{frontend_url}/youtube-auth-success"
+
+            return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
 
         # Get the frontend URL from environment
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
 
-        # Use the same redirect_uri that was used to generate the auth URL
-        redirect_uri = f"{request.host_url}api/youtube-auth-callback"
+        # Use the provided redirect_uri or default to the environment one
+        if not redirect_uri:
+            redirect_uri = f"{frontend_url}/youtube-auth-success"
 
         logger.info(f"YouTube Auth Callback - state: {state}, redirect URI: {redirect_uri}")
 
+        # Extract user ID from state
+        user_id = None
+        try:
+            # Try decoding with our function first
+            user_id = decode_state_param(state)
+            logger.info(f"Decoded user_id from state: {user_id}")
+        except Exception as decode_error:
+            logger.error(f"Error decoding state parameter: {decode_error}")
+
+            # Fallback: check if state has our prefix format
+            if state.startswith("user-"):
+                user_id = state[5:]
+                logger.info(f"Extracted user_id from state prefix: {user_id}")
+            else:
+                logger.error(f"Invalid state format: {state}")
+                return redirect(f"{redirect_uri}?error=auth_failed&message=Invalid state parameter")
+
+        if not user_id:
+            logger.error("Could not extract user ID from state parameter")
+            return redirect(f"{redirect_uri}?error=auth_failed&message=Invalid state parameter")
+
         # Exchange code for credentials
         try:
-            get_credentials_from_code(code, state, redirect_uri)
-            logger.info(f"Successfully exchanged code for credentials for state: {state}")
+            logger.info(f"Exchanging code for credentials - user: {user_id}, redirect: {redirect_uri}")
+            credentials = get_credentials_from_code(code, state, redirect_uri)
+            logger.info(f"Successfully exchanged code for credentials for user: {user_id}")
+
+            # Find the user and get their JWT token
+            user = users_collection.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                logger.error(f"User not found for ID: {user_id}")
+                return redirect(f"{redirect_uri}?error=auth_failed&message=User not found")
+
+            # Generate a JWT token for the user
+            token = jwt.encode({
+                'email': user['email'],
+                'exp': datetime.utcnow().timestamp() + app.config['TOKEN_EXPIRATION']
+            }, app.config['SECRET_KEY'])
+
+            logger.info(f"Generated token for user {user_id} after successful YouTube auth")
+
+            # Redirect to frontend with token
+            return jsonify({
+                "status": "success",
+                "message": "Successfully authenticated with YouTube",
+                "token": token
+            })
+
         except Exception as credential_error:
             logger.error(f"Error exchanging code for credentials: {credential_error}")
-            return redirect(f"{frontend_url}/gallery?error=auth_failed&message={str(credential_error)}")
+            return redirect(f"{redirect_uri}?error=auth_failed&message={str(credential_error)}")
 
-        # Redirect to frontend
-        return redirect(f"{frontend_url}/youtube-auth-success?state={state}")
     except Exception as e:
         logger.error(f"Error in YouTube auth callback: {e}")
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
-        return redirect(f"{frontend_url}/gallery?error=auth_failed&message={str(e)}")
+        redirect_uri = request.args.get('redirect_uri') or f"{frontend_url}/youtube-auth-success"
+        return redirect(f"{redirect_uri}?error=auth_failed&message={str(e)}")
 
 # Get user's YouTube channels
 @app.route('/api/youtube/channels', methods=['GET'])
 @token_required
 def get_youtube_channels(current_user):
     try:
-        # Special case for demo token - return mock channels for demo users
-        if current_user.get('email') == 'demo@example.com':
-            return jsonify({
-                "status": "success",
-                "channels": [
-                    {
-                        "id": "demo-channel-1",
-                        "title": "Demo Creator Channel",
-                        "thumbnailUrl": f"{request.host_url}demo/channel_avatar1.jpg",
-                        "customUrl": "demo-creator"
-                    },
-                    {
-                        "id": "demo-channel-2",
-                        "title": "Demo Business Channel",
-                        "thumbnailUrl": f"{request.host_url}demo/channel_avatar2.jpg",
-                        "customUrl": "demo-business"
-                    }
-                ]
-            })
-
         user_id = str(current_user['_id'])
         youtube = get_authenticated_service(user_id)
 
@@ -864,53 +1043,39 @@ def get_youtube_channels(current_user):
         logger.error(f"Error fetching YouTube channels: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Upload to YouTube - Updated to use channelId and privacyStatus
-@app.route('/api/upload-to-youtube/<video_id>', methods=['POST'])
+# Upload a specific video to YouTube
+@app.route('/api/youtube/upload/<video_id>', methods=['POST'])
 @token_required
-def upload_to_youtube(current_user, video_id):
+def upload_video_to_youtube(current_user, video_id):
     try:
         data = request.get_json()
         if not data:
-            return jsonify({"status": "error", "message": "No data provided"}), 400
+            return jsonify({"status": "error", "message": "No metadata provided"}), 400
+
+        # Validate required fields
+        required_fields = ['title', 'description', 'privacyStatus']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({
+                "status": "error",
+                "message": f"Missing required fields: {', '.join(missing_fields)}"
+            }), 400
 
         # Find the video
-        video = videos_collection.find_one({
-            '_id': ObjectId(video_id)
-        })
-
+        video = videos_collection.find_one({'_id': ObjectId(video_id)})
         if not video:
             return jsonify({"status": "error", "message": "Video not found"}), 404
 
-        # Get the video path from GCS
-        gcs_path = video.get('path')
-        if not gcs_path or not isinstance(gcs_path, str):
-            return jsonify({"status": "error", "message": "Invalid video path"}), 400
+        # Check if the video belongs to the current user
+        if video.get('user_id') != str(current_user['_id']):
+            return jsonify({"status": "error", "message": "You do not have permission to upload this video"}), 403
 
-        # Special case for demo token - return mock success response
-        if current_user.get('email') == 'demo@example.com':
-            # Update video metadata with mock data
-            videos_collection.update_one(
-                {'_id': ObjectId(video_id)},
-                {'$set': {
-                    'uploaded_to_yt': True,
-                    'youtube_id': 'demo-youtube-id',
-                    'youtube_title': data.get('title', 'Demo Title'),
-                    'youtube_description': data.get('description', 'Demo Description'),
-                    'youtube_tags': data.get('tags', ["demo", "test"]),
-                    'youtube_privacy': data.get('privacyStatus', 'public'),
-                    'youtube_channel_id': data.get('channelId', 'demo-channel-1'),
-                    'uploaded_at': datetime.utcnow(),
-                    'uploaded_by': current_user['email']
-                }}
-            )
+        # Get the video path
+        video_path = video.get('path')
+        if not video_path:
+            return jsonify({"status": "error", "message": "Video has no file path"}), 400
 
-            return jsonify({
-                "status": "success",
-                "message": "Video uploaded to YouTube successfully (Demo Mode)",
-                "youtube_id": "demo-youtube-id"
-            })
-
-        # Use user's YouTube credentials
+        # Get authenticated YouTube service
         user_id = str(current_user['_id'])
         youtube = get_authenticated_service(user_id)
 
@@ -921,121 +1086,70 @@ def upload_to_youtube(current_user, video_id):
                 "require_auth": True
             }), 401
 
-        # Get metadata from request
-        title = data.get('title', f"Short Video - {video.get('filename', 'Video')}")
-        description = data.get('description', f"Created with LazyCreator\nOriginal prompt: {video.get('original_prompt', '')}")
-        tags = data.get('tags', ["shorts", "ai", "automation"])
-        use_thumbnail = data.get('useThumbnail', False)
-        privacy_status = data.get('privacyStatus', 'public')
-        channel_id = data.get('channelId')
-
-        # If channel_id is provided, verify it's valid for this user
-        if channel_id and channel_id != 'demo-channel-1' and channel_id != 'demo-channel-2':
-            try:
-                # Fetch the user's channels to validate
-                channels_response = youtube.channels().list(
-                    part="id",
-                    mine=True
-                ).execute()
-
-                valid_channel_ids = [channel['id'] for channel in channels_response.get('items', [])]
-
-                if channel_id not in valid_channel_ids:
-                    logger.warning(f"Invalid channel ID provided: {channel_id}")
-                    return jsonify({
-                        "status": "error",
-                        "message": "Invalid YouTube channel ID provided"
-                    }), 400
-
-            except Exception as channel_error:
-                logger.error(f"Error validating YouTube channel: {channel_error}")
-                # Continue with upload without channel specification
-                channel_id = None
-
-        # Create a temporary file to download the video if needed
-        local_video_path = None
-        thumbnail_path = None
-
+        # Download the video to a temporary file
         try:
-            # Download the video from cloud storage
-            if gcs_path.startswith('gs://'):
-                # For GCS paths, download to a temporary file
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_video:
-                    local_video_path = temp_video.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+                local_path = temp_file.name
 
-                logger.info(f"Downloading video from GCS: {gcs_path} to {local_video_path}")
-                cloud_storage.download_file(gcs_path, local_video_path)
+            # If the path is a GCS path
+            if video_path.startswith('gs://'):
+                _, bucket, blob_name = video_path.split('/', 2)
+                logger.info(f"Downloading video from GCS: gs://{bucket}/{blob_name}")
 
-                # Verify the file was actually downloaded
-                if not os.path.exists(local_video_path) or os.path.getsize(local_video_path) == 0:
-                    logger.error(f"Failed to download video from GCS: {gcs_path}")
-                    return jsonify({"status": "error", "message": "Failed to download video from cloud storage"}), 500
+                # Download from GCS
+                cloud_storage.download_file(blob_name, local_path, bucket)
 
-                logger.info(f"Successfully downloaded video from GCS: {os.path.getsize(local_video_path)} bytes")
+                if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                    return jsonify({"status": "error", "message": "Failed to download video from Cloud Storage"}), 500
+
+                logger.info(f"Successfully downloaded video: {os.path.getsize(local_path)} bytes")
             else:
-                # For local paths, use the path directly
-                local_video_path = gcs_path
-                if not os.path.exists(local_video_path):
-                    logger.error(f"Local video file not found: {local_video_path}")
+                # Local file
+                local_path = video_path
+                if not os.path.exists(local_path):
                     return jsonify({"status": "error", "message": "Video file not found"}), 404
 
-            # Download thumbnail if needed
-            if use_thumbnail and video.get('thumbnail_path'):
-                thumbnail_gcs_path = video.get('thumbnail_path')
+            # Get video metadata
+            title = data.get('title', f"Video - {video.get('filename', '')}")
+            description = data.get('description', "Uploaded via Lazy Creator")
+            tags = data.get('tags', [])
+            privacy_status = data.get('privacyStatus', 'private')
+            channel_id = data.get('channelId')
+            category_id = data.get('categoryId', '22')  # Default to "People & Blogs"
 
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_thumb:
-                        thumbnail_path = temp_thumb.name
-
-                    logger.info(f"Downloading thumbnail from GCS: {thumbnail_gcs_path} to {thumbnail_path}")
-                    cloud_storage.download_file(thumbnail_gcs_path, thumbnail_path)
-
-                    # Verify the thumbnail was actually downloaded
-                    if not os.path.exists(thumbnail_path) or os.path.getsize(thumbnail_path) == 0:
-                        logger.warning(f"Failed to download thumbnail from GCS: {thumbnail_gcs_path}")
-                        thumbnail_path = None
-                    else:
-                        logger.info(f"Successfully downloaded thumbnail: {os.path.getsize(thumbnail_path)} bytes")
-                except Exception as thumbnail_error:
-                    logger.error(f"Error generating thumbnail: {thumbnail_error}")
-                    thumbnail_path = None
-
-            # Upload the video to YouTube
-            try:
-                logger.info(f"Starting YouTube upload from {local_video_path} ({os.path.getsize(local_video_path)} bytes)")
-
-                # Prepare the upload parameters
-                upload_params = {
-                    'file_path': local_video_path,
+            # Prepare the upload
+            body = {
+                'snippet': {
                     'title': title,
                     'description': description,
-                    'tags': tags if isinstance(tags, list) else tags.split(',') if isinstance(tags, str) else ["shorts", "ai"],
-                    'thumbnail_path': thumbnail_path,
-                    'privacy': privacy_status
+                    'tags': tags,
+                    'categoryId': category_id
+                },
+                'status': {
+                    'privacyStatus': privacy_status,
+                    'selfDeclaredMadeForKids': False
                 }
+            }
 
-                # Add channel id if specified
-                if channel_id:
-                    # For the YouTube API v3, we need to use an onBehalfOfContentOwner parameter
-                    # or set a default channel in the credentials, but that requires additional setup
-                    # This comment is here to acknowledge this limitation
-                    pass
+            # Upload the video
+            logger.info(f"Starting YouTube upload for video {video_id}")
 
-                youtube_id = upload_video(
-                    youtube,
-                    **upload_params
+            # Insert the video
+            request_upload = youtube.videos().insert(
+                part=','.join(body.keys()),
+                body=body,
+                media_body=googleapiclient.http.MediaFileUpload(
+                    local_path,
+                    mimetype='video/mp4',
+                    resumable=True
                 )
-                logger.info(f"Video successfully uploaded to YouTube with ID: {youtube_id}")
-            except Exception as upload_error:
-                logger.error(f"Error during YouTube upload: {upload_error}")
-                # Check if it's an authentication issue
-                if "unauthorized" in str(upload_error).lower() or "authentication" in str(upload_error).lower():
-                    return jsonify({
-                        "status": "error",
-                        "message": "YouTube authentication expired. Please reconnect your YouTube account.",
-                        "require_auth": True
-                    }), 401
-                raise  # Re-raise the exception to be caught by the outer try/except
+            )
+
+            # Execute the upload
+            response = request_upload.execute()
+
+            # Get the YouTube video ID
+            youtube_id = response['id']
 
             # Update the video record in the database
             videos_collection.update_one(
@@ -1048,35 +1162,36 @@ def upload_to_youtube(current_user, video_id):
                     'youtube_tags': tags,
                     'youtube_privacy': privacy_status,
                     'youtube_channel_id': channel_id,
-                    'uploaded_at': datetime.utcnow(),
-                    'uploaded_by': current_user['email']
+                    'uploaded_at': datetime.utcnow()
                 }}
             )
 
+            # Return success
             return jsonify({
                 "status": "success",
-                "message": "Video uploaded to YouTube successfully!",
-                "youtube_id": youtube_id
+                "message": "Video uploaded successfully",
+                "youtube_id": youtube_id,
+                "watch_url": f"https://www.youtube.com/watch?v={youtube_id}"
             })
 
         finally:
-            # Clean up temporary files
-            if local_video_path and os.path.exists(local_video_path) and local_video_path.startswith(tempfile.gettempdir()):
+            # Clean up the temporary file if it exists
+            if 'local_path' in locals() and os.path.exists(local_path) and local_path.startswith(tempfile.gettempdir()):
                 try:
-                    os.unlink(local_video_path)
-                    logger.info(f"Cleaned up temporary video file: {local_video_path}")
+                    os.unlink(local_path)
+                    logger.info(f"Cleaned up temporary file: {local_path}")
                 except Exception as e:
-                    logger.warning(f"Error cleaning up temporary video file: {e}")
-
-            if thumbnail_path and os.path.exists(thumbnail_path):
-                try:
-                    os.unlink(thumbnail_path)
-                    logger.info(f"Cleaned up temporary thumbnail file: {thumbnail_path}")
-                except Exception as e:
-                    logger.warning(f"Error cleaning up temporary thumbnail file: {e}")
+                    logger.warning(f"Failed to clean up temporary file: {e}")
 
     except Exception as e:
         logger.error(f"Error uploading to YouTube: {e}")
+        # Check if it's an authentication error
+        if "unauthorized" in str(e).lower() or "authentication" in str(e).lower():
+            return jsonify({
+                "status": "error",
+                "message": "YouTube authentication expired. Please reconnect your YouTube account.",
+                "require_auth": True
+            }), 401
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # Delete Video
@@ -1109,80 +1224,6 @@ def delete_video(current_user, video_id):
         logger.error(f"Error deleting video: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Compatibility route for older frontend versions
-@app.route('/api/delete/<video_id>', methods=['DELETE'])
-@token_required
-def delete_video_compatibility(current_user, video_id):
-    return delete_video(current_user, video_id)
-
-# Helper function to try moving file to new path if found in old path
-def try_move_file_to_new_path(user_id, filename):
-    """
-    Check if a file exists in an old path format and move it to the new path.
-
-    Args:
-        user_id: User ID
-        filename: Filename to check and move
-
-    Returns:
-        Tuple: (bool, str) - Whether the move succeeded and the new path
-    """
-    try:
-        # Check all possible old paths
-        old_paths = [
-            f"videos/{user_id}/{filename}",
-            f"videos/{filename}"
-        ]
-
-        new_path = f"users/{user_id}/{filename}"
-
-        # Check if file already exists in new path
-        if cloud_storage.file_exists(new_path, cloud_storage.media_bucket):
-            logger.info(f"File already exists in new path: {new_path}")
-            return True, new_path
-
-        # Check old paths and move if found
-        for old_path in old_paths:
-            if cloud_storage.file_exists(old_path, cloud_storage.media_bucket):
-                logger.info(f"Found file in old path: {old_path}, moving to: {new_path}")
-
-                # Download to temporary file
-                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                    temp_path = temp_file.name
-
-                # Download from old location
-                cloud_storage.download_file(old_path, temp_path, cloud_storage.media_bucket)
-
-                # Upload to new location
-                cloud_storage.upload_file(
-                    temp_path,
-                    new_path,
-                    bucket_name=cloud_storage.media_bucket,
-                    user_id=user_id,
-                    metadata={"moved_from": old_path}
-                )
-
-                # Delete temporary file
-                os.unlink(temp_path)
-
-                # Update database references
-                try:
-                    videos_collection.update_many(
-                        {"filename": filename, "user_id": user_id},
-                        {"$set": {"path": f"gs://{cloud_storage.media_bucket}/{new_path}"}}
-                    )
-                    logger.info(f"Updated database references for {filename}")
-                except Exception as db_err:
-                    logger.error(f"Failed to update database for moved file: {db_err}")
-
-                return True, new_path
-
-        # File not found in any old path
-        return False, None
-    except Exception as e:
-        logger.error(f"Error in try_move_file_to_new_path: {e}")
-        return False, None
-
 # Public endpoint that accepts token via query param
 @app.route('/api/gallery/<filename>', methods=['GET'])
 def serve_gallery_file_with_token(filename):
@@ -1194,81 +1235,58 @@ def serve_gallery_file_with_token(filename):
             logger.warning(f"No token provided for file: {filename}")
             return jsonify({'message': 'A valid token is required!'}), 401
 
-        # Handle demo token specially
-        if token == 'demo-token-for-testing':
-            user_id = '000000000000000000000000'
-            logger.info(f"Using demo user ID for token")
-        else:
-            # Validate token
-            try:
-                # Decode the token
-                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-                current_user = users_collection.find_one({'email': data['email']})
+        # Validate token
+        try:
+            # Decode the token
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user = users_collection.find_one({'email': data['email']})
 
-                if not current_user:
-                    logger.warning(f"Invalid user for token when accessing file: {filename}")
-                    return jsonify({'message': 'User not found!'}), 401
+            if not current_user:
+                logger.warning(f"Invalid user for token when accessing file: {filename}")
+                return jsonify({'message': 'User not found!'}), 401
 
-                user_id = str(current_user['_id'])
-            except Exception as token_error:
-                logger.error(f"Token validation error for file {filename}: {token_error}")
-                return jsonify({'message': 'Invalid token!'}), 401
+            user_id = str(current_user['_id'])
+        except Exception as token_error:
+            logger.error(f"Token validation error for file {filename}: {token_error}")
+            return jsonify({'message': 'Invalid token!'}), 401
 
         logger.info(f"Serving gallery file {filename} for user {user_id} (via token param)")
-
-        # Try to move file from old path to new path
-        moved, new_path = try_move_file_to_new_path(user_id, filename)
-        if moved:
-            logger.info(f"File successfully moved or confirmed in new path: {new_path}")
 
         # Create temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as temp_file:
             temp_path = temp_file.name
 
-        # List of paths to check, in order of preference
-        possible_paths = [
-            f"users/{user_id}/{filename}",                      # Main user path (new structure)
-            f"users/000000000000000000000000/{filename}",       # Demo user path
-            f"videos/{user_id}/{filename}",                     # Old user path
-            f"videos/{filename}"                                # Legacy video path
-        ]
+        # Use our utility function to find the file
+        file_exists, gcs_path = get_normalized_file_path(user_id, filename)
 
-        # If the filename contains path separators, also check the exact path
-        if '/' in filename:
-            possible_paths.append(filename)  # Try exact path as specified
+        if not file_exists:
+            # If the file contains path separators, try it as a direct path
+            if '/' in filename:
+                direct_path = filename
+                if cloud_storage.file_exists(direct_path, cloud_storage.media_bucket):
+                    gcs_path = f"gs://{cloud_storage.media_bucket}/{direct_path}"
+                    file_exists = True
+                    logger.info(f"Found file at direct path: {direct_path}")
 
-        # Try each path in order
-        file_found = False
-        download_error = None
-        for path in possible_paths:
-            try:
-                logger.info(f"Attempting to download from: {path}")
-                # Add more verbose logging
-                if cloud_storage.file_exists(path, cloud_storage.media_bucket):
-                    logger.info(f"Confirmed file exists at: {path}")
-                    try:
-                        cloud_storage.download_file(path, temp_path, cloud_storage.media_bucket)
-                        file_found = True
-                        logger.info(f"Successfully downloaded file from: {path}")
-                        break
-                    except Exception as download_err:
-                        logger.error(f"Download error for existing file at {path}: {download_err}")
-                        download_error = download_err
-                else:
-                    logger.info(f"File does not exist at: {path}")
-            except Exception as e:
-                logger.info(f"Error checking path {path}: {str(e)}")
-                continue
-
-        if not file_found:
-            logger.error(f"File {filename} not found in any of the expected locations")
-            error_message = f"File not found in any of the expected locations: {possible_paths}"
-            if download_error:
-                error_message += f". Download error: {download_error}"
+        if not file_exists or not gcs_path:
+            logger.error(f"File {filename} not found for user {user_id}")
             return jsonify({
                 'status': 'error',
-                'message': error_message
+                'message': "File not found"
             }), 404
+
+        # Extract bucket and blob name from gs:// path
+        _, bucket_name, blob_name = gcs_path.split('/', 2)
+
+        try:
+            cloud_storage.download_file(blob_name, temp_path, bucket_name)
+            logger.info(f"Successfully downloaded file from: {gcs_path}")
+        except Exception as download_err:
+            logger.error(f"Download error for file at {gcs_path}: {download_err}")
+            return jsonify({
+                'status': 'error',
+                'message': f"Error downloading file: {download_err}"
+            }), 500
 
         # Set correct content type based on file extension
         content_type = 'video/mp4'
@@ -1333,65 +1351,15 @@ def notify_generation_complete(video_id):
 def get_youtube_trending_shorts(current_user):
     try:
         # Get authenticated YouTube client
-        youtube = get_authenticated_service(current_user['email'])
+        user_id = str(current_user['_id'])
+        youtube = get_authenticated_service(user_id)
 
         if not youtube:
-            # If not authenticated, return demo data instead of error
-            logger.info("User not authenticated for YouTube API, returning demo trending shorts")
             return jsonify({
-                "status": "success",
-                "shorts": [
-                    {
-                        'id': 'demo1',
-                        'title': 'Trending Short #1',
-                        'thumbnail': f"{request.host_url}demo/demo1.mp4",
-                        'channel': 'Demo Channel',
-                        'views': '250000',
-                        'likes': '15000',
-                    },
-                    {
-                        'id': 'demo2',
-                        'title': 'Trending Short #2',
-                        'thumbnail': f"{request.host_url}demo/demo2.mp4",
-                        'channel': 'Demo Channel 2',
-                        'views': '550000',
-                        'likes': '45000',
-                    },
-                    {
-                        'id': 'demo3',
-                        'title': 'Trending Short #3',
-                        'thumbnail': f"{request.host_url}demo/demo3.mp4",
-                        'channel': 'Demo Channel 3',
-                        'views': '1250000',
-                        'likes': '85000',
-                    },
-                    {
-                        'id': 'demo4',
-                        'title': 'Trending Short #4',
-                        'thumbnail': f"{request.host_url}demo/demo4.mp4",
-                        'channel': 'Demo Channel 4',
-                        'views': '750000',
-                        'likes': '65000',
-                    },
-                    {
-                        'id': 'demo5',
-                        'title': 'Trending Short #5',
-                        'thumbnail': f"{request.host_url}demo/demo5.mp4",
-                        'channel': 'Demo Channel 5',
-                        'views': '1450000',
-                        'likes': '95000',
-                    },
-                    {
-                        'id': 'demo6',
-                        'title': 'Trending Short #6',
-                        'thumbnail': f"{request.host_url}demo/demo6.mp4",
-                        'channel': 'Demo Channel 6',
-                        'views': '350000',
-                        'likes': '25000',
-                    }
-                ],
-                "requires_auth": True
-            })
+                "status": "error",
+                "message": "YouTube authentication required",
+                "require_auth": True
+            }), 401
 
         # Fetch trending shorts from YouTube
         # Use videoCategoryId=26 for "Howto & Style" which often contains shorts
@@ -1493,282 +1461,128 @@ def parse_duration(duration_str):
 
     return hours * 3600 + minutes * 60 + seconds
 
-# Add this route to serve demo videos
-@app.route('/demo/<filename>')
-def serve_demo(filename):
-    try:
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
-            # Download from Cloud Storage - Update path to match the specified bucket path
-            blob_name = f"demo/{filename}"
+# Set up our YouTube auth routes - add this just before the if __name__ == "__main__" line
+skip_routes = ['youtube_auth_callback', 'youtube_auth_start', 'youtube_auth_status']
+youtube_auth.setup_routes(app, db, users_collection, token_required, skip_routes=skip_routes)
 
-            # Try to fetch from the local demo directory first if it exists
-            local_demo_path = os.path.join(os.path.dirname(__file__), 'demo', filename)
-            if os.path.exists(local_demo_path):
-                logger.info(f"Serving demo video from local path: {local_demo_path}")
-                return send_file(local_demo_path)
+# Add a global OPTIONS route handler
+@app.route('/api/<path:path>', methods=['OPTIONS'])
+def options_handler(path):
+    response = make_response()
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-access-token, X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
-            # Otherwise try to download from GCS
-            logger.info(f"Downloading demo video from GCS path: {blob_name}")
-            cloud_storage.download_file(blob_name, temp_file.name)
-            logger.info(f"Successfully downloaded demo video: {filename}")
-            return send_file(temp_file.name)
-
-    except Exception as e:
-        logger.error(f"Error serving demo video: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# Protected endpoint that requires token in header
-@app.route('/api/gallery/secure/<filename>', methods=['GET'])
+# Old YouTube auth status route - now fixed to avoid double decoration
+@app.route('/api/youtube-auth-status', methods=['GET'])
 @token_required
-def serve_gallery_file_secure(current_user, filename):
+def youtube_auth_status_compat(current_user):
+    # Direct implementation rather than calling the other function to avoid decorator issues
     try:
         user_id = str(current_user['_id'])
-        logger.info(f"Serving gallery file {filename} for user {user_id} (via secure endpoint)")
+        logger.info(f"Compatibility route: Checking YouTube auth status for user {user_id}")
 
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as temp_file:
-            temp_path = temp_file.name
+        # Check if credentials exist
+        is_authenticated = check_auth_status(user_id)
 
-        # List of paths to check, in order of preference
-        possible_paths = [
-            f"users/{user_id}/{filename}",                      # Main user path (new structure)
-            f"users/000000000000000000000000/{filename}",       # Demo user path
-            f"videos/{user_id}/{filename}",                     # Old user path
-            f"videos/{filename}"                                # Legacy video path
-        ]
+        # Get user channels if authenticated
+        channels = []
+        if is_authenticated:
+            youtube = get_authenticated_service(user_id)
 
-        # If the filename contains path separators, also check the exact path
-        if '/' in filename:
-            possible_paths.append(filename)  # Try exact path as specified
+            if youtube:
+                try:
+                    # Fetch the user's channels
+                    channels_response = youtube.channels().list(
+                        part="snippet,contentDetails,statistics",
+                        mine=True,
+                        maxResults=50
+                    ).execute()
 
-        # Try each path in order
-        file_found = False
-        for path in possible_paths:
-            try:
-                logger.info(f"Attempting to download from: {path}")
-                cloud_storage.download_file(path, temp_path, cloud_storage.media_bucket)
-                file_found = True
-                logger.info(f"Found and downloaded file from: {path}")
-                break
-            except Exception as e:
-                logger.info(f"File not found at {path}: {str(e)}")
-                continue
+                    for channel in channels_response.get('items', []):
+                        channel_info = {
+                            "id": channel['id'],
+                            "title": channel['snippet']['title'],
+                            "description": channel['snippet'].get('description', ''),
+                            "customUrl": channel['snippet'].get('customUrl', '')
+                        }
 
-        if not file_found:
-            logger.error(f"File {filename} not found in any of the expected locations")
-            return jsonify({
-                'status': 'error',
-                'message': 'File not found'
-            }), 404
+                        # Get thumbnail if available
+                        thumbnails = channel['snippet'].get('thumbnails', {})
+                        if thumbnails and 'default' in thumbnails:
+                            channel_info['thumbnailUrl'] = thumbnails['default']['url']
 
-        return send_file(
-            temp_path,
-            as_attachment=False,  # Stream instead of downloading
-            download_name=os.path.basename(filename),
-            mimetype='video/mp4'
-        )
+                        channels.append(channel_info)
+                except Exception as e:
+                    logger.error(f"Error fetching channels: {e}")
+                    # Return authenticated but with empty channels
+
+        response = {
+            "status": "success",
+            "authenticated": is_authenticated,
+            "channels": channels
+        }
+
+        # If not authenticated, include auth URL
+        if not is_authenticated:
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
+            redirect_uri = f"{frontend_url}/youtube-auth-success"
+
+            # Generate auth URL
+            auth_url = get_auth_url(user_id, redirect_uri)
+            state = encode_state_param(user_id)
+
+            response.update({
+                "auth_url": auth_url,
+                "state": state,
+                "redirect_uri": redirect_uri
+            })
+
+        return jsonify(response)
+
     except Exception as e:
-        logger.error(f"Error serving gallery file: {e}")
+        logger.error(f"Error checking YouTube auth status: {e}")
         return jsonify({
-            'status': 'error',
-            'message': str(e)
+            "status": "error",
+            "message": str(e)
         }), 500
 
-# Add debug endpoint for token validation
-@app.route('/api/debug/token', methods=['GET'])
-def debug_token():
-    try:
-        token = request.headers.get('x-access-token')
-        if not token:
-            return jsonify({
-                "status": "error",
-                "message": "No token provided in request",
-                "details": "Add x-access-token header with your JWT"
-            }), 400
+# Old YouTube auth start route
+@app.route('/api/youtube-auth-start', methods=['GET'])
+@token_required
+def youtube_auth_start_compat(current_user):
+    return start_youtube_auth_new(current_user)
 
-        # Check if it's the demo token
-        if token == 'demo-token-for-testing':
-            return jsonify({
-                "status": "warning",
-                "is_demo": True,
-                "message": "You are using the demo token",
-                "details": "This token will restrict YouTube features. Log out and log in with a real account."
-            })
+# Old YouTube auth callback route
+@app.route('/api/youtube-auth-callback', methods=['GET'])
+def youtube_auth_callback_compat():
+    return youtube_auth_callback_new()
 
-        # Try to decode the token
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+# Add a global after_request handler to ensure CORS headers are set
+@app.after_request
+def add_cors_headers(response):
+    # Allow requests from any origin (you can restrict this to specific domains)
+    response.headers.add('Access-Control-Allow-Origin', '*')
 
-            # Find the user
-            user = users_collection.find_one({'email': data['email']})
+    # Allow the following headers
+    response.headers.add('Access-Control-Allow-Headers',
+                        'Content-Type,Authorization,x-access-token,X-Requested-With')
 
-            if not user:
-                return jsonify({
-                    "status": "error",
-                    "message": f"User not found for email: {data['email']}",
-                    "token_valid": True,
-                    "user_exists": False,
-                    "token_data": data
-                })
+    # Allow the following methods
+    response.headers.add('Access-Control-Allow-Methods',
+                        'GET,PUT,POST,DELETE,OPTIONS')
 
-            # Check if user is demo
-            is_demo = data.get('email') == 'demo@example.com' or (isinstance(data.get('email'), str) and 'demo' in data.get('email').lower())
+    # Allow credentials
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
 
-            return jsonify({
-                "status": "success",
-                "token_valid": True,
-                "user_exists": True,
-                "token_data": {
-                    "email": data.get('email'),
-                    "exp": data.get('exp')
-                },
-                "is_demo_user": is_demo,
-                "user_id": str(user['_id'])
-            })
-
-        except jwt.ExpiredSignatureError:
-            return jsonify({
-                "status": "error",
-                "message": "Token has expired",
-                "token_valid": False,
-                "error_type": "expired"
-            }), 401
-        except jwt.InvalidTokenError:
-            return jsonify({
-                "status": "error",
-                "message": "Invalid token format",
-                "token_valid": False,
-                "error_type": "invalid_format"
-            }), 401
-        except Exception as e:
-            return jsonify({
-                "status": "error",
-                "message": f"Error decoding token: {str(e)}",
-                "token_valid": False,
-                "error_type": "decoding_error"
-            }), 500
-
-    except Exception as e:
-        logger.error(f"Error in debug token endpoint: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# Add endpoint to reset demo status
-@app.route('/api/debug/reset-demo', methods=['POST'])
-def reset_demo_status():
-    try:
-        # This endpoint will clear any stored tokens for demo users
-        token = request.headers.get('x-access-token')
-        if not token:
-            return jsonify({
-                "status": "error",
-                "message": "No token provided"
-            }), 400
-
-        # If it's the literal demo token, there's nothing to reset in the DB
-        if token == 'demo-token-for-testing':
-            return jsonify({
-                "status": "success",
-                "message": "You should clear your localStorage token on the client",
-                "action_required": "client_clear"
-            })
-
-        # Try to decode the token
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-
-            # Check if user is demo
-            if data.get('email') == 'demo@example.com' or (isinstance(data.get('email'), str) and 'demo' in data.get('email').lower()):
-                # For real demo users, we could delete their tokens from the database here
-                # But for simplicity, we'll just advise clearing the client token
-                return jsonify({
-                    "status": "success",
-                    "message": "Demo status detected. Please clear your client token.",
-                    "action_required": "client_clear"
-                })
-            else:
-                return jsonify({
-                    "status": "success",
-                    "message": "Not a demo user. No action needed.",
-                    "action_required": "none"
-                })
-        except Exception as e:
-            return jsonify({
-                "status": "error",
-                "message": f"Error processing token: {str(e)}",
-                "action_required": "client_clear"
-            }), 400
-
-    except Exception as e:
-        logger.error(f"Error in reset demo status endpoint: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# Add a debug login endpoint to bypass demo mode
-@app.route('/api/debug/login', methods=['POST'])
-def debug_login():
-    try:
-        data = request.get_json()
-
-        if not data or not data.get('email'):
-            return jsonify({'message': 'Email is required!'}), 400
-
-        # Log database connection info
-        logger.info(f"MongoDB URI: {mongo_uri.split('@')[-1] if '@' in mongo_uri else 'localhost'}")
-        logger.info(f"Available databases: {client.list_database_names()}")
-        logger.info(f"Looking for user with email: {data['email']}")
-
-        # Try to find user in database
-        user = users_collection.find_one({'email': data['email']})
-
-        if user:
-            logger.info(f"User found: {user.get('_id')} - {user.get('email')}")
-
-            # Create a token explicitly without 'demo' checks
-            token = jwt.encode({
-                'email': user['email'],
-                'exp': datetime.utcnow().timestamp() + app.config['TOKEN_EXPIRATION'],
-                'force_real': True  # Add this flag to bypass demo checks
-            }, app.config['SECRET_KEY'])
-
-            return jsonify({
-                'token': token,
-                'email': user['email'],
-                'message': 'Debug login successful - real token created'
-            }), 200
-        else:
-            # Create a new user if not found
-            logger.info(f"User not found, creating new user with email: {data['email']}")
-
-            new_user = {
-                'email': data['email'],
-                'name': data.get('name', 'Debug User'),
-                'password': generate_password_hash('debugpass123'),
-                'created_at': datetime.utcnow()
-            }
-
-            result = users_collection.insert_one(new_user)
-
-            # Create token for new user
-            token = jwt.encode({
-                'email': new_user['email'],
-                'exp': datetime.utcnow().timestamp() + app.config['TOKEN_EXPIRATION'],
-                'force_real': True  # Add this flag to bypass demo checks
-            }, app.config['SECRET_KEY'])
-
-            return jsonify({
-                'token': token,
-                'email': new_user['email'],
-                'message': 'Debug user created & logged in - real token created',
-                'user_id': str(result.inserted_id)
-            }), 201
-
-    except Exception as e:
-        logger.error(f"Error in debug login: {e}")
-        return jsonify({'message': f'Login error: {str(e)}'}), 500
+    return response
 
 if __name__ == '__main__':
     try:
-        app.run(host='0.0.0.0', port=4000, debug=True)
+        # Standard run method without the problematic parameter
+        socketio.run(app, host='0.0.0.0', port=4000, debug=True)
     except KeyboardInterrupt:
         print("Server shutting down...")
     finally:

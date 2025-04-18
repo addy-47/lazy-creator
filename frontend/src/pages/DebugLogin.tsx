@@ -14,9 +14,17 @@ const DebugLogin = () => {
     setIsLoading(true);
 
     try {
+      const apiBase = getAPIBaseURL();
+      console.log("Using API base:", apiBase);
+
+      // Call the real login endpoint
       const response = await axios.post(
-        `${getAPIBaseURL()}/api/debug/login`,
-        { email, name },
+        `${apiBase}/api/login`,
+        {
+          email,
+          password: "debug_password", // Debug password for testing
+          name,
+        },
         { headers: { "Content-Type": "application/json" } }
       );
 
@@ -24,6 +32,13 @@ const DebugLogin = () => {
 
       if (response.data.token) {
         localStorage.setItem("token", response.data.token);
+
+        const userData = {
+          email: email,
+          name: name || "Debug User",
+        };
+        localStorage.setItem("user", JSON.stringify(userData));
+
         toast.success("Debug login successful! Token stored in localStorage.");
       }
     } catch (error) {

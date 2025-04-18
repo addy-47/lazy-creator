@@ -1,6 +1,6 @@
-import React, { useEffect, useContext, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { AuthContext } from "../App";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import axios from "axios";
 import { getAPIBaseURL } from "@/lib/socket";
@@ -8,10 +8,11 @@ import { getAPIBaseURL } from "@/lib/socket";
 export default function YouTubeAuthSuccess() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setYouTubeConnected } = useContext(AuthContext);
+  const { setYouTubeConnected } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(true);
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [countdownSeconds, setCountdownSeconds] = useState(5);
 
   useEffect(() => {
     // Add debug info
@@ -21,17 +22,87 @@ export default function YouTubeAuthSuccess() {
       search: location.search,
       origin: window.location.origin,
       apiBaseUrl: getAPIBaseURL(),
+      hasOpener: !!window.opener,
     });
 
     const checkYouTubeConnection = async () => {
       try {
         // Get state parameter from URL
         const urlParams = new URLSearchParams(location.search);
+        const code = urlParams.get("code");
         const state = urlParams.get("state");
         const errorParam = urlParams.get("error");
 
         console.log("YouTube Auth Success - state:", state);
-        console.log("YouTube Auth Success - location:", location);
+        console.log("YouTube Auth Success - code present:", !!code);
+
+        // Function to send message to opener window and close this tab
+        const sendMessageAndFinish = (
+          success: boolean,
+          message?: string,
+          token?: string
+        ) => {
+          try {
+            if (window.opener && !window.opener.closed) {
+              // Send a message to the opener window
+              window.opener.postMessage(
+                {
+                  type: "youtube_auth_success",
+                  success,
+                  error: message,
+                  token,
+                },
+                window.location.origin
+              );
+
+              console.log("Sent message to opener:", {
+                type: "youtube_auth_success",
+                success,
+                error: message,
+              });
+
+              // Start countdown to auto-close
+              let seconds = 5;
+              const countdownInterval = setInterval(() => {
+                seconds -= 1;
+                setCountdownSeconds(seconds);
+
+                if (seconds <= 0) {
+                  clearInterval(countdownInterval);
+                  // Auto close after countdown
+                  window.close();
+                }
+              }, 1000);
+            } else {
+              console.warn("No opener window found or it was closed");
+              // If we can't message back, navigate to gallery with status
+              const statusParam = success
+                ? "youtube_auth=success"
+                : `error=auth_failed&message=${encodeURIComponent(
+                    message || "Unknown error"
+                  )}`;
+              if (token) {
+                navigate(
+                  `/gallery?${statusParam}&token=${encodeURIComponent(token)}`
+                );
+              } else {
+                navigate(`/gallery?${statusParam}`);
+              }
+            }
+          } catch (err) {
+            console.error("Error sending message to opener:", err);
+            // Fallback to navigation
+            navigate(
+              `/gallery${
+                success
+                  ? "?youtube_auth=success"
+                  : `?error=auth_failed&message=${encodeURIComponent(
+                      message || "Communication error"
+                    )}`
+              }`
+            );
+          }
+        };
 
         if (errorParam) {
           const errorMessage =
@@ -39,6 +110,15 @@ export default function YouTubeAuthSuccess() {
           setError(errorMessage);
           setProcessing(false);
           toast.error(`YouTube connection error: ${errorMessage}`);
+          sendMessageAndFinish(false, errorMessage);
+          return;
+        }
+
+        if (!code) {
+          setError("Missing authorization code");
+          setProcessing(false);
+          toast.error("Authentication failed: Missing authorization code");
+          sendMessageAndFinish(false, "Missing authorization code");
           return;
         }
 
@@ -46,6 +126,7 @@ export default function YouTubeAuthSuccess() {
           setError("Missing state parameter");
           setProcessing(false);
           toast.error("Authentication failed: Missing state parameter");
+          sendMessageAndFinish(false, "Missing state parameter");
           return;
         }
 
@@ -55,63 +136,170 @@ export default function YouTubeAuthSuccess() {
           setError("Authentication required");
           setProcessing(false);
           toast.error("Authentication required");
-          navigate("/auth");
+          sendMessageAndFinish(false, "Authentication required");
           return;
         }
 
-        // Wait a moment to ensure the backend has processed the auth
-        setTimeout(async () => {
-          try {
-            // Check if we're connected to YouTube
-            console.log("Checking YouTube connection status...");
-            const response = await axios.get(
-              `${getAPIBaseURL()}/api/youtube-auth-status`,
-              {
-                headers: {
-                  "x-access-token": token,
-                },
-              }
-            );
+        // Validate state parameter against our stored state
+        const storedState = localStorage.getItem("youtube_auth_state");
 
-            console.log("YouTube auth status response:", response.data);
+        if (storedState && storedState !== state) {
+          setError("Invalid state parameter - potential security issue");
+          setProcessing(false);
+          toast.error("Authentication failed: State validation failed");
+          sendMessageAndFinish(false, "State validation failed");
+          localStorage.removeItem("youtube_auth_state");
+          return;
+        }
 
-            if (response.data.status === "success") {
-              if (response.data.is_connected || response.data.authenticated) {
-                // Update global state
-                setYouTubeConnected(true);
-                setProcessing(false);
-                toast.success("Successfully connected to YouTube!");
+        // Clear stored state
+        localStorage.removeItem("youtube_auth_state");
 
-                // Redirect to gallery page
-                navigate("/gallery");
-              } else {
-                setError("YouTube connection verification failed");
-                setProcessing(false);
-                toast.error("YouTube connection failed");
-                navigate("/gallery");
-              }
-            } else {
-              setError("Invalid response from server");
-              setProcessing(false);
-              toast.error("Error verifying YouTube connection");
-              navigate("/gallery");
-            }
-          } catch (error: any) {
-            console.error("Error checking YouTube connection:", error);
-            setError(
-              error?.response?.data?.message || "Connection verification failed"
-            );
+        // Redirect the authorization code to our backend
+        try {
+          // Manually construct callback URL with required params
+          const callbackUrl = `${getAPIBaseURL()}/api/youtube/auth/callback?code=${encodeURIComponent(
+            code
+          )}&state=${encodeURIComponent(
+            state
+          )}&redirect_uri=${encodeURIComponent(
+            window.location.origin + "/youtube-auth-success"
+          )}`;
+
+          console.log("Redirecting code to backend at:", callbackUrl);
+
+          const response = await axios.get(callbackUrl);
+
+          console.log("Backend callback response:", response.data);
+
+          if (response.data && response.data.status === "success") {
+            // Update global state
+            setYouTubeConnected(true);
             setProcessing(false);
-            toast.error("Error checking YouTube connection status");
-            navigate("/gallery");
+            toast.success("Successfully connected to YouTube!");
+
+            // Send success message and close window
+            const newToken = response.data.token || null;
+            if (newToken) {
+              localStorage.setItem("token", newToken);
+            }
+
+            sendMessageAndFinish(true, undefined, newToken);
+          } else {
+            const errorMsg =
+              response.data?.message ||
+              "YouTube connection verification failed";
+            setError(errorMsg);
+            setProcessing(false);
+            toast.error("YouTube connection failed: " + errorMsg);
+            sendMessageAndFinish(false, errorMsg);
           }
-        }, 1500);
+        } catch (error: any) {
+          console.error("Error sending code to backend:", error);
+
+          // Check if we got a redirect response (older server versions)
+          if (
+            error.request &&
+            error.request.responseURL &&
+            error.request.responseURL.includes("youtube_auth=success")
+          ) {
+            // This was actually a success, but received a redirect instead of JSON
+            setYouTubeConnected(true);
+            setProcessing(false);
+            toast.success("Successfully connected to YouTube!");
+
+            // Try to extract token from redirect URL
+            const url = new URL(error.request.responseURL);
+            const token = url.searchParams.get("token");
+            if (token) {
+              localStorage.setItem("token", token);
+            }
+
+            sendMessageAndFinish(true, undefined, token || undefined);
+            return;
+          }
+
+          // Wait a moment then check auth status anyway
+          setTimeout(async () => {
+            try {
+              // Check if we're connected to YouTube
+              console.log("Checking YouTube connection status...");
+              const response = await axios.get(
+                `${getAPIBaseURL()}/api/youtube-auth-status`,
+                {
+                  headers: {
+                    "x-access-token": token,
+                  },
+                }
+              );
+
+              console.log("YouTube auth status response:", response.data);
+
+              if (response.data.status === "success") {
+                if (response.data.is_connected || response.data.authenticated) {
+                  // Update global state
+                  setYouTubeConnected(true);
+                  setProcessing(false);
+                  toast.success("Successfully connected to YouTube!");
+                  sendMessageAndFinish(true);
+                } else {
+                  setError("YouTube connection verification failed");
+                  setProcessing(false);
+                  toast.error("YouTube connection failed");
+                  sendMessageAndFinish(false, "Connection verification failed");
+                }
+              } else {
+                setError("Invalid response from server");
+                setProcessing(false);
+                toast.error("Error verifying YouTube connection");
+                sendMessageAndFinish(false, "Invalid response from server");
+              }
+            } catch (statusError: any) {
+              console.error("Error checking YouTube connection:", statusError);
+              setError(
+                statusError?.response?.data?.message ||
+                  "Connection verification failed"
+              );
+              setProcessing(false);
+              toast.error("Error checking YouTube connection status");
+              sendMessageAndFinish(false, "Error checking connection status");
+            }
+          }, 1500);
+        }
       } catch (error: any) {
         console.error("Error in YouTube auth success page:", error);
         setError(error?.message || "An unknown error occurred");
         setProcessing(false);
         toast.error("Error processing YouTube authentication");
-        navigate("/gallery");
+
+        if (window.opener) {
+          window.opener.postMessage(
+            {
+              type: "youtube_auth_success",
+              success: false,
+              error: error?.message || "An unknown error occurred",
+            },
+            window.location.origin
+          );
+
+          // Start auto-close countdown
+          let seconds = 5;
+          const countdownInterval = setInterval(() => {
+            seconds -= 1;
+            setCountdownSeconds(seconds);
+
+            if (seconds <= 0) {
+              clearInterval(countdownInterval);
+              window.close();
+            }
+          }, 1000);
+        } else {
+          navigate(
+            `/gallery?error=auth_failed&message=${encodeURIComponent(
+              error?.message || "An unknown error occurred"
+            )}`
+          );
+        }
       }
     };
 
@@ -135,17 +323,28 @@ export default function YouTubeAuthSuccess() {
         ) : error ? (
           <>
             <p className="text-red-500 mb-6">{error}</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              This window will close automatically in {countdownSeconds} seconds
+            </p>
             <button
-              onClick={() => navigate("/gallery")}
+              onClick={() => window.close()}
               className="px-6 py-2 bg-primary text-white rounded-full hover:bg-primary/90 transition-colors"
             >
-              Return to Gallery
+              Close This Window
             </button>
           </>
         ) : (
           <>
             <p className="text-green-500 mb-6">Connection successful!</p>
-            <p>Redirecting to gallery...</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              This window will close automatically in {countdownSeconds} seconds
+            </p>
+            <button
+              onClick={() => window.close()}
+              className="px-6 py-2 bg-primary text-white rounded-full hover:bg-primary/90 transition-colors"
+            >
+              Close This Window
+            </button>
           </>
         )}
 

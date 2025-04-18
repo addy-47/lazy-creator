@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -16,8 +16,20 @@ import Logo from "@/components/Logo";
 import { toast } from "sonner";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AUTH_CHANGE_EVENT, AuthContext } from "@/App";
+import { AUTH_CHANGE_EVENT } from "@/App";
 import { setAuthToken } from "@/lib/socket";
+import { useAuth } from "@/contexts/AuthContext";
+import { getAPIBaseURL } from "@/lib/socket";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Import Firebase auth functions and providers
 import {
@@ -30,7 +42,7 @@ import { auth } from "@/firebase"; // Import the pre-configured auth instance
 
 const Auth = () => {
   const navigate = useNavigate();
-  const { refreshAuthState } = useContext(AuthContext);
+  const { refreshAuthState } = useAuth();
   const [isSignIn, setIsSignIn] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -86,32 +98,52 @@ const Auth = () => {
     setIsSubmitting(true);
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Determine which endpoint to call based on whether signing in or signing up
+      const endpoint = isSignIn ? "login" : "register";
+
+      // Call the actual backend authentication endpoint
+      const response = await fetch(`${getAPIBaseURL()}/api/${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          name: isSignIn ? undefined : name,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Authentication failed");
+      }
+
+      // Use the actual token from the backend
+      const token = data.token;
 
       const userData = {
         email,
-        name: isSignIn ? "User" : name,
+        name: data.user?.name || (isSignIn ? "User" : name),
       };
-
-      // Generate a demo token
-      const demoToken = "demo-token-for-testing";
 
       // Store user info and token in localStorage
       localStorage.setItem("user", JSON.stringify(userData));
-      localStorage.setItem("token", demoToken);
+      localStorage.setItem("token", token);
 
       // Set the auth token for API requests
-      setAuthToken(demoToken);
+      setAuthToken(token);
 
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
       refreshAuthState();
 
       if (isSignIn) {
-        console.log("Sign in with:", email, password);
+        console.log("Sign in successful");
         toast.success("Successfully signed in!");
       } else {
-        console.log("Sign up with:", name, email, password);
+        console.log("Sign up successful");
         toast.success("Account created successfully!");
       }
 
@@ -133,11 +165,31 @@ const Auth = () => {
     const provider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
-      // You can extract additional user info if needed:
-      // const user = result.user;
 
-      // Generate a demo token
-      const demoToken = "demo-token-for-testing";
+      // Use regular login endpoint instead of social-login
+      const response = await fetch(`${getAPIBaseURL()}/api/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: result.user.email,
+          // Use a special password format that indicates this is a social login
+          password: `FIREBASE_AUTH_${result.user.uid}`,
+          name: result.user.displayName || "User",
+          provider: "google",
+          providerId: result.user.uid,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Authentication failed");
+      }
+
+      // Use the token from the backend
+      const token = data.token;
 
       localStorage.setItem(
         "user",
@@ -148,10 +200,10 @@ const Auth = () => {
       );
 
       // Store token in localStorage
-      localStorage.setItem("token", demoToken);
+      localStorage.setItem("token", token);
 
       // Set the auth token for API requests
-      setAuthToken(demoToken);
+      setAuthToken(token);
 
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
@@ -174,8 +226,30 @@ const Auth = () => {
     try {
       const result = await signInWithPopup(auth, provider);
 
-      // Generate a demo token
-      const demoToken = "demo-token-for-testing";
+      // Use regular login endpoint instead of social-login
+      const response = await fetch(`${getAPIBaseURL()}/api/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: result.user.email,
+          // Use a special password format that indicates this is a social login
+          password: `FIREBASE_AUTH_${result.user.uid}`,
+          name: result.user.displayName || "User",
+          provider: "facebook",
+          providerId: result.user.uid,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Authentication failed");
+      }
+
+      // Use the token from the backend
+      const token = data.token;
 
       localStorage.setItem(
         "user",
@@ -186,10 +260,10 @@ const Auth = () => {
       );
 
       // Store token in localStorage
-      localStorage.setItem("token", demoToken);
+      localStorage.setItem("token", token);
 
       // Set the auth token for API requests
-      setAuthToken(demoToken);
+      setAuthToken(token);
 
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));

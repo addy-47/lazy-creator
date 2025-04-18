@@ -11,7 +11,8 @@ from .script_generator import (
 from .video_maker import YTShortsCreator_V
 from .image_maker import YTShortsCreator_I
 from .custom_maker import CustomShortsCreator
-from .youtube_upload import upload_video, get_authenticated_service
+from .youtube_upload import upload_video
+from youtube_auth import get_authenticated_service
 from nltk.corpus import stopwords
 import datetime # for timestamp
 import re # for regular expressions

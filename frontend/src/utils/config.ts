@@ -6,7 +6,7 @@
 export const getAPIBaseURL = (): string => {
   // For local development
   if (process.env.NODE_ENV === "development") {
-    return "http://localhost:5001/api";
+    return "http://localhost:4000/api";
   }
 
   // For production

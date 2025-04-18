@@ -1,20 +1,15 @@
-import { useContext, useEffect } from "react";
+import React, { useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
 import Footer from "@/components/Footer";
-import { AuthContext } from "../App";
 import WorkflowProcess from "@/components/WorkflowProcess";
 import Testimonials from "@/components/Testimonials";
 import Statistics from "@/components/Statistics";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
-  const { username, refreshAuthState } = useContext(AuthContext);
-
-  // Refresh auth state when component mounts
-  useEffect(() => {
-    refreshAuthState();
-  }, [refreshAuthState]);
+  const { isAuthenticated } = useAuth();
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -43,10 +38,10 @@ const Index = () => {
         </div>
       </div>
 
-      <Navbar username={username} />
+      <Navbar />
 
       <main className="flex-grow">
-        <Hero username={username} />
+        <Hero />
         <Features />
         <WorkflowProcess />
         <Testimonials />

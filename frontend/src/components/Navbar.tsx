@@ -1,7 +1,7 @@
-import { useState, useEffect, useReducer } from "react";
+import { useState, useEffect, useReducer, useCallback } from "react";
 import { NavLink } from "react-router-dom";
 import { Menu, X, Sun, Moon, LogIn, User, Youtube } from "lucide-react";
-import { Button } from "./Button";
+import { Button } from "@/components/Button";
 import Logo from "./Logo";
 import { AUTH_CHANGE_EVENT } from "../App";
 import { useTheme } from "next-themes";
@@ -9,6 +9,7 @@ import { useLocation } from "react-router-dom";
 import { setAuthToken } from "@/lib/socket";
 import axios from "axios";
 import { getAPIBaseURL } from "@/lib/socket";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface NavbarProps {
   username?: string;
@@ -19,12 +20,18 @@ const Navbar = ({ username }: NavbarProps) => {
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [currentUsername, setCurrentUsername] = useState<string | undefined>(
     undefined
   );
-  const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
+
+  // Initialize from props
+  const { isAuthenticated, setYouTubeConnected, isYouTubeConnected } =
+    useAuth();
+
+  // Theme toggle
+  const { setTheme, theme } = useTheme();
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   // Function to check and update the username directly from localStorage
   const updateUsernameFromStorage = () => {
@@ -42,31 +49,66 @@ const Navbar = ({ username }: NavbarProps) => {
     }
   };
 
-  // Check YouTube connection status
-  const checkYouTubeConnection = async () => {
+  // Check if connected to YouTube - with better error handling
+  const checkYouTubeConnection = useCallback(async () => {
+    if (!isAuthenticated) {
+      console.log("YouTube check skipped - not authenticated");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      console.log("YouTube check skipped - no token");
+      return;
+    }
+
     try {
-      const token = localStorage.getItem("token");
-      if (!token) return;
+      console.log("Checking YouTube connection status...");
 
-      const response = await axios({
-        method: "GET",
-        url: `${getAPIBaseURL()}/api/youtube-auth-status`,
-        headers: {
-          "x-access-token": token,
-          "Content-Type": "application/json",
-        },
-      });
+      // Use the consistent endpoint
+      const endpoint = `${getAPIBaseURL()}/api/youtube-auth-status`;
 
-      if (response.data && response.data.authenticated) {
-        setIsYouTubeConnected(true);
-      } else {
-        setIsYouTubeConnected(false);
+      // Add error handling with retry
+      let attempts = 0;
+      const maxAttempts = 2;
+
+      while (attempts < maxAttempts) {
+        try {
+          const response = await axios.get(endpoint, {
+            headers: {
+              "x-access-token": token,
+            },
+            // Add timeout to prevent hanging
+            timeout: 5000,
+          });
+
+          if (response.data.authenticated || response.data.is_connected) {
+            setYouTubeConnected(true);
+            console.log("YouTube is connected");
+          } else {
+            setYouTubeConnected(false);
+            console.log("YouTube is not connected");
+          }
+
+          // Success, exit the loop
+          break;
+        } catch (retryError) {
+          attempts++;
+          console.warn(`YouTube connection check attempt ${attempts} failed`);
+
+          if (attempts >= maxAttempts) {
+            throw retryError; // Rethrow the last error
+          }
+
+          // Wait before retrying
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
     } catch (error) {
       console.error("Error checking YouTube connection:", error);
-      setIsYouTubeConnected(false);
+      // Don't update the connected state on error - keep previous state
     }
-  };
+  }, [isAuthenticated, setYouTubeConnected]);
 
   // Initialize username on mount and when prop changes
   useEffect(() => {

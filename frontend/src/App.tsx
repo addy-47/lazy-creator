@@ -21,30 +21,14 @@ import TermsOfService from "./pages/TermsOFService";
 import NotFound from "./pages/NotFound";
 import { createContext, useEffect, useState, useCallback } from "react";
 import PageTransition from "./components/PageTransition";
-import { initSocket, disconnectSocket, setAuthToken } from "./lib/socket";
+import { initSocket, disconnectSocket } from "./lib/socket";
 import Processing from "./pages/Processing";
 import DebugLogin from "./pages/DebugLogin";
-
-// Create authentication context
-export interface AuthContextType {
-  isAuthenticated: boolean;
-  username: string | undefined;
-  refreshAuthState: () => void;
-  isYouTubeConnected: boolean;
-  setYouTubeConnected: (connected: boolean) => void;
-}
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 // Create a custom event for auth changes
 export const AUTH_CHANGE_EVENT = "auth-change";
 export const YOUTUBE_CONNECTED_EVENT = "youtube-connected";
-
-export const AuthContext = createContext<AuthContextType>({
-  isAuthenticated: false,
-  username: undefined,
-  refreshAuthState: () => {},
-  isYouTubeConnected: false,
-  setYouTubeConnected: () => {},
-});
 
 const queryClient = new QueryClient();
 
@@ -57,90 +41,17 @@ const RouteTransition = ({ children }: { children: React.ReactNode }) => {
 };
 
 const App = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [username, setUsername] = useState<string | undefined>(undefined);
-  const [isYouTubeConnected, setIsYouTubeConnected] = useState(false);
-
-  const checkAuthStatus = useCallback(() => {
-    const user = localStorage.getItem("user");
-    if (user) {
-      try {
-        const userData = JSON.parse(user);
-        setIsAuthenticated(true);
-        setUsername(userData.name);
-
-        // Dispatch a custom event to notify components about auth change
-        window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
-      } catch (e) {
-        console.error("Error parsing user data");
-        setIsAuthenticated(false);
-        setUsername(undefined);
-        // If auth fails, also clear YouTube connection
-        setIsYouTubeConnected(false);
-        localStorage.removeItem("youtubeConnected");
-      }
-    } else {
-      setIsAuthenticated(false);
-      setUsername(undefined);
-      // If logged out, also clear YouTube connection
-      setIsYouTubeConnected(false);
-      localStorage.removeItem("youtubeConnected");
-    }
-  }, []);
-
-  // Initial auth check
+  // Initialize socket on mount
   useEffect(() => {
-    checkAuthStatus();
-
-    // Set the auth token for API requests
-    const token = localStorage.getItem("token");
-    setAuthToken(token);
-
-    // Initialize socket connection
     (async () => {
       await initSocket();
     })();
 
-    // Listen for storage changes (for multi-tab support)
-    window.addEventListener("storage", checkAuthStatus);
-    // Listen for our custom auth change event
-    window.addEventListener(AUTH_CHANGE_EVENT, checkAuthStatus);
-
     return () => {
-      window.removeEventListener("storage", checkAuthStatus);
-      window.removeEventListener(AUTH_CHANGE_EVENT, checkAuthStatus);
       // Disconnect socket on unmount
       disconnectSocket();
     };
-  }, [checkAuthStatus]);
-
-  // Check YouTube connection status
-  useEffect(() => {
-    const storedYouTubeStatus = localStorage.getItem("youtubeConnected");
-    if (storedYouTubeStatus === "true") {
-      setIsYouTubeConnected(true);
-    }
   }, []);
-
-  // Set and persist YouTube connection status
-  const setYouTubeConnected = useCallback((connected: boolean) => {
-    setIsYouTubeConnected(connected);
-    if (connected) {
-      localStorage.setItem("youtubeConnected", "true");
-    } else {
-      localStorage.removeItem("youtubeConnected");
-    }
-    // Dispatch event for other components
-    window.dispatchEvent(new CustomEvent(YOUTUBE_CONNECTED_EVENT));
-  }, []);
-
-  const authValue = {
-    isAuthenticated,
-    username,
-    refreshAuthState: checkAuthStatus,
-    isYouTubeConnected,
-    setYouTubeConnected,
-  };
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -150,7 +61,7 @@ const App = () => {
         enableSystem
         disableTransitionOnChange
       >
-        <AuthContext.Provider value={authValue}>
+        <AuthProvider>
           <TooltipProvider>
             <Toaster />
             <Sonner />
@@ -223,13 +134,9 @@ const App = () => {
                 <Route
                   path="/auth"
                   element={
-                    isAuthenticated ? (
-                      <Navigate to="/" />
-                    ) : (
-                      <RouteTransition>
-                        <Auth />
-                      </RouteTransition>
-                    )
+                    <RouteWithAuth>
+                      <Auth />
+                    </RouteWithAuth>
                   }
                 />
                 <Route
@@ -244,10 +151,21 @@ const App = () => {
               </Routes>
             </BrowserRouter>
           </TooltipProvider>
-        </AuthContext.Provider>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
+};
+
+// Auth-protected route component
+const RouteWithAuth = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated } = useAuth();
+
+  if (isAuthenticated) {
+    return <Navigate to="/" />;
+  }
+
+  return <RouteTransition>{children}</RouteTransition>;
 };
 
 export default App;

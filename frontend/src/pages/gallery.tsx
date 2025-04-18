@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useContext, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
-import { getAPIBaseURL } from "@/lib/socket";
-import { AuthContext } from "../App";
+import { getAPIBaseURL, api, apiWithoutPreflight } from "@/lib/socket";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/Button";
+import { useToast } from "@/components/ui/use-toast";
 
 // Import gallery components
 import GalleryHeader from "@/components/gallery/GalleryHeader";
@@ -14,19 +16,19 @@ import MyVideosSection from "@/components/gallery/MyVideosSection";
 import ExploreSection from "@/components/gallery/ExploreSection";
 import VideoDialog from "@/components/gallery/VideoDialog";
 import UploadFormDialog from "@/components/gallery/UploadFormDialog";
-import ConnectToYouTube from "@/components/ConnectToYouTube";
 import {
   Video,
   DemoVideo,
   UploadData,
   YouTubeChannel,
 } from "@/components/gallery/types";
+import YouTubeConnect from "@/components/YouTubeConnect";
 
 function GalleryPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, username, isYouTubeConnected, setYouTubeConnected } =
-    useContext(AuthContext);
+  const { isAuthenticated, isYouTubeConnected, setYouTubeConnected } =
+    useAuth();
   const [videos, setVideos] = useState<Video[]>([]);
   const [demoVideos, setDemoVideos] = useState<DemoVideo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,25 +59,31 @@ function GalleryPage() {
     if (isCheckingAuth) return;
 
     const token = localStorage.getItem("token");
-    if (!token) return;
+    if (!token) {
+      toast.error("Authentication required. Please log in again.");
+      navigate("/auth");
+      return;
+    }
 
     setIsCheckingAuth(true);
     const toastId = toast.loading("Checking YouTube connection status...");
 
     try {
-      const response = await axios({
-        method: "GET",
-        url: `${getAPIBaseURL()}/api/youtube-auth-status`,
-        headers: {
-          "x-access-token": token,
-          "Content-Type": "application/json",
-        },
-      });
+      // Use direct approach with proper headers
+      const response = await axios.get(
+        `${getAPIBaseURL()}/api/youtube-auth-status`,
+        {
+          headers: {
+            "x-access-token": token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       toast.dismiss(toastId);
 
       if (response.data.status === "success") {
-        if (response.data.is_connected) {
+        if (response.data.is_connected || response.data.authenticated) {
           setYouTubeConnected(true);
           toast.success("Successfully connected to YouTube!");
         } else {
@@ -130,19 +138,8 @@ function GalleryPage() {
   // Enhanced fetchData function that returns the data for use with creation check
   const fetchVideos = async () => {
     try {
-      // Get authentication token
-      const token = localStorage.getItem("token");
-      if (!token) {
-        console.error("Authentication token missing");
-        setLoading(false);
-        return null;
-      }
-
-      const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
-        headers: {
-          "x-access-token": token,
-        },
-      });
+      // Use apiWithoutPreflight to avoid CORS preflight issues
+      const response = await apiWithoutPreflight.get("/api/gallery");
 
       if (response.data && response.data.videos) {
         setVideos(response.data.videos);
@@ -207,54 +204,50 @@ function GalleryPage() {
     }
   }, []);
 
-  // Check authentication status when returning from YouTube auth
+  // Check URL parameters for YouTube auth status
   useEffect(() => {
-    const shouldCheck = localStorage.getItem("checkYouTubeAuth");
+    const params = new URLSearchParams(location.search);
 
-    if (shouldCheck === "true") {
-      checkYouTubeAuth();
-    }
-  }, []);
+    // Check for YouTube auth success
+    if (params.get("youtube_auth") === "success") {
+      console.log("YouTube auth success detected in URL");
+      setYouTubeConnected(true);
+      toast.success("Successfully connected to YouTube!");
 
-  // Handle YouTube auth callback from URL
-  useEffect(() => {
-    // Check if this is a YouTube auth callback
-    if (location.pathname === "/youtube-auth-callback") {
-      // Get query parameters
-      const urlParams = new URLSearchParams(location.search);
-      const code = urlParams.get("code");
-      const state = urlParams.get("state");
+      // Update URL to remove the query parameters without refreshing
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
 
-      if (code && state) {
-        // Redirect to backend endpoint to complete OAuth flow
-        window.location.href = `${getAPIBaseURL()}/api/youtube-auth-callback?code=${code}&state=${state}`;
-      } else {
-        // If missing parameters, go back to gallery
-        toast.error("Authentication failed: Missing parameters");
-        navigate("/gallery");
+      // Get new token if provided
+      const token = params.get("token");
+      if (token) {
+        localStorage.setItem("token", token);
       }
+
+      // Fetch videos with new token
+      fetchVideos();
+      return;
     }
-  }, [location, navigate]);
+
+    // Check for YouTube auth error
+    if (params.get("error") === "auth_failed") {
+      console.log("YouTube auth error detected in URL");
+      const errorMessage = params.get("message") || "Authentication failed";
+      setYouTubeConnected(false);
+      toast.error(`YouTube connection error: ${errorMessage}`);
+
+      // Update URL to remove the query parameters without refreshing
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, [location.search]);
 
   const handleDownload = async (videoId: string) => {
     try {
-      // Get authentication token
-      const token = localStorage.getItem("token");
-      if (!token) {
-        toast.error("Authentication required. Please log in.");
-        navigate("/auth");
-        return;
-      }
-
-      const response = await axios.get(
-        `${getAPIBaseURL()}/api/download/${videoId}`,
-        {
-          responseType: "blob",
-          headers: {
-            "x-access-token": token,
-          },
-        }
-      );
+      // Use api instance for consistent auth
+      const response = await api.get(`/api/download/${videoId}`, {
+        responseType: "blob",
+      });
 
       // Create a blob URL and trigger download
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -287,11 +280,13 @@ function GalleryPage() {
       const token = localStorage.getItem("token");
       if (!token) return;
 
+      // Use direct approach with proper headers
       const response = await axios.get(
         `${getAPIBaseURL()}/api/youtube/channels`,
         {
           headers: {
             "x-access-token": token,
+            "Content-Type": "application/json",
           },
         }
       );
@@ -322,148 +317,9 @@ function GalleryPage() {
   }, [isYouTubeConnected, fetchYouTubeChannels]);
 
   // Updated connectYouTube function with more detailed debugging
-  const connectYouTube = async () => {
-    if (isConnecting) {
-      // Prevent multiple connection attempts
-      toast.info("YouTube connection already in progress");
-      return;
-    }
-
-    // If already connected, just show the channel modal
-    if (isYouTubeConnected) {
-      setShowYouTubeConnectModal(true);
-      return;
-    }
-
-    setIsConnecting(true);
-    const toastId = toast.loading("Connecting to YouTube...");
-
-    try {
-      // Check token
-      const token = localStorage.getItem("token");
-      if (!token) {
-        toast.error("You need to be logged in to connect YouTube");
-        navigate("/auth");
-        return;
-      }
-
-      // Debug token information
-      try {
-        console.log("Auth token:", token);
-        if (token === "demo-token-for-testing") {
-          console.log(
-            "⚠️ IMPORTANT: You are using a demo token. This will not work for YouTube authentication."
-          );
-          toast.error(
-            "Demo mode detected. Please log in with a real account to use YouTube features."
-          );
-        }
-      } catch (e) {
-        console.error("Error debugging token:", e);
-      }
-
-      // Set a flag in localStorage that we're expecting a callback
-      localStorage.setItem("checkYouTubeAuth", "true");
-
-      // Get the current origin for the redirect URI
-      const currentOrigin = window.location.origin;
-      console.log("Current origin:", currentOrigin);
-
-      // Expected redirect path - use the same one defined in client_secret.json
-      const redirectPath = "/youtube-auth-success";
-      const redirectUri = `${currentOrigin}${redirectPath}`;
-      console.log("Using redirect URI:", redirectUri);
-
-      // Get the auth URL
-      console.log("Requesting YouTube auth URL...");
-      const response = await axios({
-        method: "GET",
-        url: `${getAPIBaseURL()}/api/youtube-auth-start`,
-        headers: {
-          "x-access-token": token,
-        },
-        params: {
-          redirect_uri: redirectUri,
-        },
-      });
-
-      console.log("YouTube auth response:", response.data);
-
-      if (response.data.status === "success" && response.data.auth_url) {
-        // Check if we're in demo mode
-        if (response.data.is_demo) {
-          console.log(
-            "⚠️ IMPORTANT: Server is treating you as a demo user:",
-            response.data.demo_reason
-          );
-          toast.error(
-            "Demo mode detected on server. You need a real account to use YouTube features."
-          );
-        }
-
-        // Log the auth URL for debugging
-        console.log("YouTube Auth URL:", response.data.auth_url);
-        console.log("State:", response.data.state);
-        console.log("Redirect URI used:", response.data.redirect_uri);
-
-        toast.dismiss(toastId);
-        toast.info("Opening YouTube authentication...");
-
-        // Open auth URL in a new window
-        const authWindow = window.open(
-          response.data.auth_url,
-          "YouTube Authentication",
-          "width=800,height=600"
-        );
-
-        // Set up an interval to check if the window was closed
-        let authCheckInterval: NodeJS.Timeout | null = null;
-        if (authWindow) {
-          authCheckInterval = setInterval(() => {
-            if (authWindow.closed) {
-              if (authCheckInterval) {
-                clearInterval(authCheckInterval);
-                authCheckInterval = null;
-              }
-
-              // Check auth status after window closes
-              setTimeout(() => {
-                checkYouTubeAuth();
-              }, 1000);
-            }
-          }, 500);
-
-          // Add window cleanup after 2 minutes (failsafe)
-          setTimeout(() => {
-            if (authCheckInterval) {
-              clearInterval(authCheckInterval);
-              authCheckInterval = null;
-            }
-            if (!authWindow.closed) {
-              authWindow.close();
-            }
-
-            checkYouTubeAuth();
-          }, 120000);
-        } else {
-          toast.error(
-            "Unable to open authentication window. Please enable popups and try again."
-          );
-        }
-      } else {
-        toast.dismiss(toastId);
-        toast.error("Failed to start YouTube authentication");
-        console.error("Auth start response:", response.data);
-      }
-    } catch (error: any) {
-      toast.dismiss(toastId);
-      console.error("Error connecting to YouTube:", error);
-      toast.error(
-        error.response?.data?.message || "Failed to connect to YouTube"
-      );
-    } finally {
-      setIsConnecting(false);
-    }
+  const connectYouTube = () => {
+    // Just show the YouTube connect modal
+    setShowYouTubeConnectModal(true);
   };
 
   // Updated handleUpload function
@@ -488,26 +344,14 @@ function GalleryPage() {
         return;
       }
 
-      const token = localStorage.getItem("token");
-      if (!token) {
-        toast.error("Authentication required");
-        setUploading(null);
-        return;
-      }
-
       // Show upload starting toast
       const toastId = toast.loading("Preparing to upload video to YouTube...");
 
       try {
         // Send upload request to the server with video metadata
-        const response = await axios({
-          method: "POST",
-          url: `${getAPIBaseURL()}/api/upload-to-youtube/${videoId}`,
-          headers: {
-            "x-access-token": token,
-            "Content-Type": "application/json",
-          },
-          data: {
+        const response = await api.post(
+          `/api/upload-to-youtube/${videoId}`,
+          {
             title,
             description,
             tags: tags.split(",").map((tag) => tag.trim()),
@@ -515,9 +359,11 @@ function GalleryPage() {
             privacyStatus,
             channelId,
           },
-          // Add a longer timeout for uploads
-          timeout: 120000, // 2 minutes
-        });
+          {
+            // Add a longer timeout for uploads
+            timeout: 120000, // 2 minutes
+          }
+        );
 
         // Dismiss the loading toast
         toast.dismiss(toastId);
@@ -605,26 +451,6 @@ function GalleryPage() {
   };
 
   const handleDelete = async (videoId: string) => {
-    // Check for authentication
-    const token = localStorage.getItem("token") || "";
-    const userData = localStorage.getItem("user");
-
-    // Create a proper mock token if using demo mode
-    if (!token && userData) {
-      // This is a demo/development workaround
-      localStorage.setItem("token", "demo-token-for-testing");
-      console.log("Using demo token for delete operation");
-    }
-
-    // Final token check
-    const currentToken = localStorage.getItem("token");
-
-    if (!currentToken) {
-      toast.error("Authentication required. Please log in.");
-      navigate("/auth");
-      return;
-    }
-
     // Confirm deletion
     if (!window.confirm("Are you sure you want to delete this video?")) {
       return;
@@ -634,17 +460,8 @@ function GalleryPage() {
     const toastId = toast.loading("Deleting video...");
 
     try {
-      // Make API request with the correct endpoint
-      const response = await axios({
-        method: "DELETE",
-        url: `${getAPIBaseURL()}/api/delete-video/${videoId}`,
-        headers: {
-          "x-access-token": currentToken,
-          "Content-Type": "application/json",
-        },
-        // Set timeout to avoid hanging requests
-        timeout: 10000,
-      });
+      // Make API request using api instance
+      const response = await api.delete(`/api/delete-video/${videoId}`);
 
       // Handle success
       toast.dismiss(toastId);
@@ -664,22 +481,13 @@ function GalleryPage() {
       }
     } catch (error: any) {
       toast.dismiss(toastId);
-
       console.error("Delete error:", error);
 
       // Special case for 404 - wrong endpoint
       if (error.response?.status === 404) {
         // Try alternative endpoint as fallback
         try {
-          const fallbackResponse = await axios({
-            method: "DELETE",
-            url: `${getAPIBaseURL()}/api/delete/${videoId}`,
-            headers: {
-              "x-access-token": currentToken,
-              "Content-Type": "application/json",
-            },
-            timeout: 10000,
-          });
+          const fallbackResponse = await api.delete(`/api/delete/${videoId}`);
 
           if (
             fallbackResponse.data &&
@@ -757,17 +565,10 @@ function GalleryPage() {
       if (!isYouTubeConnected) return; // Only fetch if connected to YouTube
 
       setTrendingLoading(true); // Set loading state to true
-      const token = localStorage.getItem("token");
-      if (!token) return;
 
-      // Call your backend API to fetch trending shorts
-      const response = await axios.get(
-        `${getAPIBaseURL()}/api/youtube-trending-shorts`,
-        {
-          headers: {
-            "x-access-token": token,
-          },
-        }
+      // Use apiWithoutPreflight to avoid CORS preflight issues
+      const response = await apiWithoutPreflight.get(
+        "/api/youtube-trending-shorts"
       );
 
       if (response.data && response.data.shorts) {
@@ -876,7 +677,7 @@ function GalleryPage() {
   if (loading)
     return (
       <div className="min-h-screen flex flex-col">
-        <Navbar username={username} />
+        <Navbar />
         <main className="flex-grow flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <div className="relative w-16 h-16">
@@ -897,7 +698,7 @@ function GalleryPage() {
       {/* Background pattern */}
       <div className="fixed inset-0 -z-10 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:40px_40px] opacity-[0.03]"></div>
 
-      <Navbar username={username} />
+      <Navbar />
 
       <main className="flex-grow pt-20 pb-20 px-4">
         <div className="container mx-auto max-w-7xl">
@@ -906,7 +707,6 @@ function GalleryPage() {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             isAuthenticated={isAuthenticated}
-            youtubeAuthChecked={true}
             isYouTubeConnected={isYouTubeConnected}
             onConnectYouTube={connectYouTube}
           />
@@ -978,16 +778,22 @@ function GalleryPage() {
       {/* YouTube Connect Modal */}
       {showYouTubeConnectModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="relative p-5 flex flex-col max-w-md">
+          <div className="relative bg-card shadow-lg border rounded-xl p-5 flex flex-col max-w-md">
             <button
               onClick={() => setShowYouTubeConnectModal(false)}
-              className="absolute top-0 right-0 p-3 text-muted-foreground hover:text-foreground"
+              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
             >
               &times;
             </button>
-            <ConnectToYouTube
-              isYouTubeConnected={isYouTubeConnected}
-              onConnectYouTube={connectYouTube}
+            <h2 className="text-xl font-bold mb-4">YouTube Connection</h2>
+            <YouTubeConnect
+              onConnectionChange={(connected) => {
+                setYouTubeConnected(connected);
+                if (connected) {
+                  fetchYouTubeChannels();
+                }
+                setShowYouTubeConnectModal(false);
+              }}
             />
           </div>
         </div>

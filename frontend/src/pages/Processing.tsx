@@ -1,15 +1,14 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import GeneratingAnimation from "@/components/Loader";
 import Navbar from "@/components/Navbar";
-import { useContext } from "react";
-import { AuthContext } from "../App";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 const Processing = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { username } = useContext(AuthContext);
+  const { isAuthenticated } = useAuth();
   const [videoId, setVideoId] = useState<string | null>(null);
   const [duration, setDuration] = useState<number>(120);
 
@@ -69,7 +68,7 @@ const Processing = () => {
         </div>
       </div>
 
-      <Navbar username={username} />
+      <Navbar />
       <main className="flex-grow pt-32 pb-20 px-4">
         {videoId && (
           <GeneratingAnimation
