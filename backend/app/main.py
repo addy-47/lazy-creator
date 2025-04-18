@@ -917,75 +917,14 @@ def youtube_auth_callback_new():
             error_msg = "Missing code or state parameter"
             logger.error(f"Auth callback error: {error_msg}")
 
-            # Get the frontend URL from environment
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
-
-            # If no redirect_uri is provided, use default
-            if not redirect_uri:
-                redirect_uri = f"{frontend_url}/youtube-auth-success"
-
-            return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
-
         # Get the frontend URL from environment
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
 
-        # Use the provided redirect_uri or default to the environment one
+        # If no redirect_uri is provided, use default
         if not redirect_uri:
             redirect_uri = f"{frontend_url}/youtube-auth-success"
 
-        logger.info(f"YouTube Auth Callback - state: {state}, redirect URI: {redirect_uri}")
-
-        # Extract user ID from state
-        user_id = None
-        try:
-            # Try decoding with our function first
-            user_id = decode_state_param(state)
-            logger.info(f"Decoded user_id from state: {user_id}")
-        except Exception as decode_error:
-            logger.error(f"Error decoding state parameter: {decode_error}")
-
-            # Fallback: check if state has our prefix format
-            if state.startswith("user-"):
-                user_id = state[5:]
-                logger.info(f"Extracted user_id from state prefix: {user_id}")
-            else:
-                logger.error(f"Invalid state format: {state}")
-                return redirect(f"{redirect_uri}?error=auth_failed&message=Invalid state parameter")
-
-        if not user_id:
-            logger.error("Could not extract user ID from state parameter")
-            return redirect(f"{redirect_uri}?error=auth_failed&message=Invalid state parameter")
-
-        # Exchange code for credentials
-        try:
-            logger.info(f"Exchanging code for credentials - user: {user_id}, redirect: {redirect_uri}")
-            credentials = get_credentials_from_code(code, state, redirect_uri)
-            logger.info(f"Successfully exchanged code for credentials for user: {user_id}")
-
-            # Find the user and get their JWT token
-            user = users_collection.find_one({'_id': ObjectId(user_id)})
-            if not user:
-                logger.error(f"User not found for ID: {user_id}")
-                return redirect(f"{redirect_uri}?error=auth_failed&message=User not found")
-
-            # Generate a JWT token for the user
-            token = jwt.encode({
-                'email': user['email'],
-                'exp': datetime.utcnow().timestamp() + app.config['TOKEN_EXPIRATION']
-            }, app.config['SECRET_KEY'])
-
-            logger.info(f"Generated token for user {user_id} after successful YouTube auth")
-
-            # Redirect to frontend with token
-            return jsonify({
-                "status": "success",
-                "message": "Successfully authenticated with YouTube",
-                "token": token
-            })
-
-        except Exception as credential_error:
-            logger.error(f"Error exchanging code for credentials: {credential_error}")
-            return redirect(f"{redirect_uri}?error=auth_failed&message={str(credential_error)}")
+        return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
 
     except Exception as e:
         logger.error(f"Error in YouTube auth callback: {e}")
@@ -1235,7 +1174,7 @@ def serve_gallery_file_with_token(filename):
             logger.warning(f"No token provided for file: {filename}")
             return jsonify({'message': 'A valid token is required!'}), 401
 
-        # Validate token
+            # Validate token
         try:
             # Decode the token
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
@@ -1545,9 +1484,9 @@ def youtube_auth_status_compat(current_user):
     except Exception as e:
         logger.error(f"Error checking YouTube auth status: {e}")
         return jsonify({
-            "status": "error",
+                "status": "error",
             "message": str(e)
-        }), 500
+            }), 500
 
 # Old YouTube auth start route
 @app.route('/api/youtube-auth-start', methods=['GET'])

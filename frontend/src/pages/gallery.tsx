@@ -8,6 +8,7 @@ import { getAPIBaseURL, api, apiWithoutPreflight } from "@/lib/socket";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/Button";
 import { useToast } from "@/components/ui/use-toast";
+import { Youtube, ChevronRight } from "lucide-react";
 
 // Import gallery components
 import GalleryHeader from "@/components/gallery/GalleryHeader";
@@ -53,6 +54,9 @@ function GalleryPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
   const [creatingVideo, setCreatingVideo] = useState(false);
+  const [selectedYouTubeChannel, setSelectedYouTubeChannel] =
+    useState<any>(null);
+  const [isFetchingChannelData, setIsFetchingChannelData] = useState(false);
 
   // Define checkYouTubeAuth function early so it can be referenced elsewhere
   const checkYouTubeAuth = async () => {
@@ -272,15 +276,24 @@ function GalleryPage() {
 
   // Function to fetch YouTube channels
   const fetchYouTubeChannels = useCallback(async () => {
-    if (!isYouTubeConnected || loadingChannels) return;
+    if (!isYouTubeConnected && !loadingChannels) {
+      console.log("Skipping channel fetch, not connected or already loading");
+      return [];
+    }
 
+    console.log("Fetching YouTube channels...");
     setLoadingChannels(true);
 
     try {
       const token = localStorage.getItem("token");
-      if (!token) return;
+      if (!token) {
+        console.log("No token available for channel fetch");
+        setLoadingChannels(false);
+        return [];
+      }
 
       // Use direct approach with proper headers
+      console.log("Making API request to fetch channels");
       const response = await axios.get(
         `${getAPIBaseURL()}/api/youtube/channels`,
         {
@@ -291,19 +304,61 @@ function GalleryPage() {
         }
       );
 
-      if (response.data.status === "success" && response.data.channels) {
-        setYoutubeChannels(response.data.channels);
+      console.log("Channel API response data:", JSON.stringify(response.data));
 
-        // If we have a channel, update the upload data
+      if (response.data.status === "success" && response.data.channels) {
+        console.log(
+          `Found ${response.data.channels.length} channel(s):`,
+          response.data.channels
+        );
+
         if (response.data.channels.length > 0) {
+          setYoutubeChannels(response.data.channels);
+
+          // If we have a channel, update the upload data
+          // Try to get saved channel from localStorage
+          const savedChannelId = localStorage.getItem("selectedYouTubeChannel");
+          let selectedChannel = response.data.channels[0];
+
+          if (savedChannelId) {
+            const found = response.data.channels.find(
+              (c) => c.id === savedChannelId
+            );
+            if (found) {
+              selectedChannel = found;
+            }
+          }
+
+          console.log("Setting selected channel:", selectedChannel);
+          setSelectedYouTubeChannel(selectedChannel);
+
           setUploadData((prevData) => ({
             ...prevData,
-            channelId: response.data.channels[0].id,
+            channelId: selectedChannel.id,
           }));
+
+          return response.data.channels;
+        } else {
+          console.warn("API returned success but no channels found");
+          // Try again after a short delay
+          setTimeout(() => {
+            if (isYouTubeConnected) {
+              console.log("Retrying channel fetch after delay");
+              fetchYouTubeChannels();
+            }
+          }, 2000);
         }
+      } else {
+        console.log("Invalid API response format or no channels found");
       }
-    } catch (error) {
+      return [];
+    } catch (error: any) {
       console.error("Error fetching YouTube channels:", error);
+      if (error.response) {
+        console.error("Error response data:", error.response.data);
+        console.error("Error status:", error.response.status);
+      }
+      return [];
     } finally {
       setLoadingChannels(false);
     }
@@ -312,13 +367,28 @@ function GalleryPage() {
   // Fetch channels when YouTube connection status changes
   useEffect(() => {
     if (isYouTubeConnected) {
-      fetchYouTubeChannels();
+      fetchYouTubeChannels().then((channels) => {
+        // If we have channels and no selected channel yet, select the first one
+        if (channels?.length > 0 && !selectedYouTubeChannel) {
+          setSelectedYouTubeChannel(channels[0]);
+        }
+      });
     }
-  }, [isYouTubeConnected, fetchYouTubeChannels]);
+  }, [isYouTubeConnected]);
 
   // Updated connectYouTube function with more detailed debugging
   const connectYouTube = () => {
-    // Just show the YouTube connect modal
+    console.log("Opening YouTube connect modal");
+    // Try to refresh channel data when modal opens
+    if (isYouTubeConnected && youtubeChannels.length === 0) {
+      console.log(
+        "YouTube already connected but no channels loaded, refreshing channel data"
+      );
+      setIsFetchingChannelData(true);
+      fetchYouTubeChannels().finally(() => {
+        setIsFetchingChannelData(false);
+      });
+    }
     setShowYouTubeConnectModal(true);
   };
 
@@ -709,6 +779,7 @@ function GalleryPage() {
             isAuthenticated={isAuthenticated}
             isYouTubeConnected={isYouTubeConnected}
             onConnectYouTube={connectYouTube}
+            selectedChannel={selectedYouTubeChannel}
           />
 
           {/* Gallery Tab navigation */}
@@ -778,7 +849,7 @@ function GalleryPage() {
       {/* YouTube Connect Modal */}
       {showYouTubeConnectModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="relative bg-card shadow-lg border rounded-xl p-5 flex flex-col max-w-md">
+          <div className="relative bg-card shadow-lg border rounded-xl p-5 flex flex-col max-w-md w-full">
             <button
               onClick={() => setShowYouTubeConnectModal(false)}
               className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
@@ -786,15 +857,73 @@ function GalleryPage() {
               &times;
             </button>
             <h2 className="text-xl font-bold mb-4">YouTube Connection</h2>
-            <YouTubeConnect
-              onConnectionChange={(connected) => {
-                setYouTubeConnected(connected);
-                if (connected) {
-                  fetchYouTubeChannels();
-                }
-                setShowYouTubeConnectModal(false);
-              }}
-            />
+
+            {isFetchingChannelData ? (
+              <div className="py-4 text-center">
+                <div className="animate-spin w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full mx-auto mb-2"></div>
+                <p className="text-sm text-muted-foreground">
+                  Refreshing channel data...
+                </p>
+              </div>
+            ) : (
+              <YouTubeConnect
+                visible={showYouTubeConnectModal}
+                onConnectionChange={(connected) => {
+                  console.log("YouTube connection changed:", connected);
+                  // Only update if the connection state actually changed
+                  if (connected !== isYouTubeConnected) {
+                    setYouTubeConnected(connected);
+                    if (connected) {
+                      console.log("YouTube connected, fetching channels...");
+                      // Set loading state while fetching channels
+                      setIsFetchingChannelData(true);
+                      // Force a small delay to ensure backend has processed auth
+                      setTimeout(() => {
+                        fetchYouTubeChannels().finally(() => {
+                          setIsFetchingChannelData(false);
+                        });
+                      }, 1000);
+                    }
+                  }
+                }}
+                onChannelSelect={(channel) => {
+                  console.log("Channel selected:", channel);
+                  setSelectedYouTubeChannel(channel);
+                  // Update upload form if open
+                  if (showUploadForm) {
+                    setUploadData({
+                      ...uploadData,
+                      channelId: channel.id,
+                    });
+                  }
+                  // No longer auto-closing, let user close manually
+                }}
+                selectedChannelId={selectedYouTubeChannel?.id}
+              />
+            )}
+
+            <div className="mt-4 flex justify-between">
+              <Button
+                onClick={() => {
+                  console.log("Manually refreshing channel data");
+                  setIsFetchingChannelData(true);
+                  fetchYouTubeChannels().finally(() => {
+                    setIsFetchingChannelData(false);
+                  });
+                }}
+                variant="outline"
+                className="text-sm"
+              >
+                Refresh Channels
+              </Button>
+              <Button
+                onClick={() => setShowYouTubeConnectModal(false)}
+                variant="outline"
+                className="text-sm"
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}
