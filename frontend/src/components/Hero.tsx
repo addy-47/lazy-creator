@@ -10,105 +10,240 @@ interface HeroProps {
 
 const Hero = ({ username }: HeroProps) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const heroRef = useRef<HTMLDivElement>(null);
+
+  // Track mouse position for parallax effect
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (heroRef.current) {
+        const { left, top, width, height } =
+          heroRef.current.getBoundingClientRect();
+        const x = (e.clientX - left) / width - 0.5;
+        const y = (e.clientY - top) / height - 0.5;
+        setMousePosition({ x, y });
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
   return (
-    <section className="relative overflow-hidden pt-32 pb-20 lg:pt-40 lg:pb-32">
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-background to-background"></div>
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl aspect-[3/1] bg-purple-700/20 dark:bg-purple-700/10 rounded-full blur-3xl opacity-50"></div>
-      </div>
+    <section
+      ref={heroRef}
+      className="relative overflow-hidden pt-32 pb-20 lg:pt-40 lg:pb-32"
+    >
+      {/* Custom cursor effect within hero section */}
+      <div
+        className="custom-cursor hidden lg:block"
+        style={{
+          left: `${50 + mousePosition.x * 20}%`,
+          top: `${50 + mousePosition.y * 20}%`,
+        }}
+      />
 
-      <div className="container-tight relative">
-        {/* Stick figure animations */}
-        <div className="absolute -top-16 -right-10 hidden md:block">
-          <StickFigureAnimation type="wave" delay={300} height={90} />
-        </div>
-
-        <div className="absolute top-1/2 -left-10 hidden md:block">
-          <StickFigureAnimation type="dance" delay={600} height={90} />
-        </div>
-
-        <div className="absolute bottom-0 right-20 hidden md:block">
-          <StickFigureAnimation type="sleep" delay={900} height={90} />
-        </div>
-
-        <div
-          className={`text-center space-y-8 transition-all duration-1000 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
-        >
-          {/* Enhanced welcome banner with glow effect */}
-          {username ? (
-            <div className="inline-block relative">
-              <span className="inline-flex items-center gap-2 px-4 py-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-full shadow-sm shadow-purple-500/10">
-                <span className="animate-pulse">👋</span>
-                Welcome {username}, ready to create effortless Shorts?
-              </span>
-            </div>
-          ) : (
-            <div className="inline-block relative">
-              <span className="inline-flex items-center px-5 py-2 font-medium text-purple-600 dark:text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-full text-xl shadow-sm shadow-purple-500/10">
-                Less Work, More Content
-              </span>
-            </div>
-          )}
-
-          {/* Main heading with highlighted text and glow effect */}
-          <h1
-            className="font-bold relative transition-all duration-1000 delay-300"
-            style={{
-              textShadow: "0 0 30px rgba(147, 51, 234, 0.2)",
-            }}
-          >
-            <span className="text-gray-900 dark:text-gray-100">
-              Why Work Hard
-            </span>
-            <span className="block mt-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-400 dark:to-purple-600">
-              When AI Can Do It For You?
-            </span>
-          </h1>
-
-          <p className="mx-auto max-w-2xl text-lg text-gray-600 dark:text-gray-300 md:text-xl transition-all duration-1000 delay-500">
-            Create professional YouTube Shorts without lifting a finger. Just
-            pick a topic, let LazyCreator do the hard work, and take all the
-            credit. It's content creation for the effortlessly successful.
-          </p>
-
-          {/* CTA buttons with enhanced hover effects */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6 transition-all duration-1000 delay-700">
-            <NavLink to="/create">
-              <Button
-                size="lg"
-                variant="purple"
-                className="group relative overflow-hidden"
-              >
-                <span className="relative z-10 flex items-center">
-                  Start Creating
-                  <ArrowRight
-                    size={16}
-                    className="ml-2 transition-transform group-hover:translate-x-1"
-                  />
+      <div className="container-tight relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+          {/* Content column - left aligned */}
+          <div className="lg:col-span-7 text-left space-y-8">
+            {/* Enhanced welcome banner with glow effect */}
+            {username ? (
+              <div className="inline-block relative">
+                <span className="inline-flex items-center gap-2 px-4 py-1.5 text-sm font-medium text-[#E0115F] bg-[#E0115F]/10 border border-[#E0115F]/20 rounded-full shadow-sm shadow-[#E0115F]/10">
+                  <span className="animate-pulse">👋</span>
+                  Welcome {username}, ready to create effortless Shorts?
                 </span>
-                <span className="absolute inset-0 w-0 bg-white/10 transition-all duration-300 group-hover:w-full"></span>
-              </Button>
-            </NavLink>
-            <NavLink to="/learn">
-              <Button
-                variant="outline"
-                size="lg"
-                className="border-purple-300 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/30"
-              >
-                Learn more
-              </Button>
-            </NavLink>
+              </div>
+            ) : (
+              <div className="inline-block relative">
+                <span className="inline-flex items-center px-5 py-2 font-medium text-[#E0115F] bg-[#E0115F]/10 border border-[#E0115F]/20 rounded-full text-xl shadow-sm shadow-[#E0115F]/10">
+                  Advanced Automation for YouTube Creators
+                </span>
+              </div>
+            )}
+
+            {/* Main heading with highlighted text and glow effect */}
+            <h1
+              className={`font-bold relative transition-all duration-1000 delay-300 max-w-3xl ${
+                isVisible
+                  ? "opacity-100 translate-y-0"
+                  : "opacity-0 translate-y-8"
+              }`}
+              style={{
+                textShadow: "0 0 30px rgba(224, 17, 95, 0.3)",
+              }}
+            >
+              <span className="text-white">
+                Transform Your Content Creation
+              </span>
+              <span className="block mt-2 text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
+                With AI-Powered Automation
+              </span>
+            </h1>
+
+            <p
+              className={`max-w-2xl text-lg text-gray-300 md:text-xl transition-all duration-1000 delay-500 ${
+                isVisible
+                  ? "opacity-100 translate-y-0"
+                  : "opacity-0 translate-y-8"
+              }`}
+            >
+              Create professional YouTube Shorts without the tedious workflow.
+              Our sophisticated AI handles everything from ideation to
+              publishing, letting you scale your content creation effortlessly.
+            </p>
+
+            {/* Statistics row */}
+            <div
+              className={`grid grid-cols-3 gap-4 max-w-xl transition-all duration-1000 delay-700 ${
+                isVisible
+                  ? "opacity-100 translate-y-0"
+                  : "opacity-0 translate-y-8"
+              }`}
+            >
+              <div className="text-left">
+                <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
+                  10x
+                </div>
+                <div className="text-sm text-gray-400">Faster Creation</div>
+              </div>
+              <div className="text-left">
+                <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
+                  100%
+                </div>
+                <div className="text-sm text-gray-400">Automated</div>
+              </div>
+              <div className="text-left">
+                <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
+                  24/7
+                </div>
+                <div className="text-sm text-gray-400">Content Pipeline</div>
+              </div>
+            </div>
+
+            {/* CTA buttons with enhanced hover effects */}
+            <div
+              className={`flex flex-col sm:flex-row items-start gap-4 pt-6 transition-all duration-1000 delay-800 ${
+                isVisible
+                  ? "opacity-100 translate-y-0"
+                  : "opacity-0 translate-y-8"
+              }`}
+            >
+              <NavLink to="/create">
+                <Button
+                  size="lg"
+                  className="group relative overflow-hidden bg-gradient-to-r from-[#800000] to-[#E0115F] hover:shadow-lg hover:shadow-[#E0115F]/20 border-none text-white"
+                >
+                  <span className="relative z-10 flex items-center">
+                    Start Creating
+                    <ArrowRight
+                      size={16}
+                      className="ml-2 transition-transform group-hover:translate-x-1"
+                    />
+                  </span>
+                  <span className="absolute inset-0 w-0 bg-white/10 transition-all duration-300 group-hover:w-full"></span>
+                </Button>
+              </NavLink>
+              <NavLink to="/learn">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="border-[#722F37] text-[#E0115F] hover:bg-[#722F37]/10 hover:shadow-lg hover:shadow-[#722F37]/10"
+                >
+                  Learn more
+                </Button>
+              </NavLink>
+            </div>
+          </div>
+
+          {/* Visual showcase column - floating YouTube shorts visualization */}
+          <div className="lg:col-span-5 hidden lg:block relative min-h-[400px]">
+            <div
+              className={`absolute transition-all duration-1000 delay-1000 ${
+                isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+              }`}
+              style={{
+                transform: `perspective(1000px) rotateY(${
+                  mousePosition.x * 5
+                }deg) rotateX(${-mousePosition.y * 5}deg)`,
+                transformStyle: "preserve-3d",
+                top: "10%",
+                left: "5%",
+              }}
+            >
+              <div className="w-52 h-96 rounded-2xl border border-[#E0115F]/30 bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(224,17,95,0.2)] overflow-hidden">
+                <div className="h-full w-full bg-gradient-to-br from-[#800000]/20 via-transparent to-[#E0115F]/20"></div>
+                <div className="absolute inset-x-0 bottom-4 flex justify-center">
+                  <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`absolute transition-all duration-1000 delay-1200 ${
+                isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+              }`}
+              style={{
+                transform: `perspective(1000px) rotateY(${
+                  mousePosition.x * 8
+                }deg) rotateX(${-mousePosition.y * 8}deg)`,
+                transformStyle: "preserve-3d",
+                top: "5%",
+                left: "45%",
+              }}
+            >
+              <div className="w-44 h-80 rounded-2xl border border-[#722F37]/30 bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(114,47,55,0.2)] overflow-hidden">
+                <div className="h-full w-full bg-gradient-to-tr from-[#722F37]/20 via-transparent to-black/50"></div>
+                <div className="absolute inset-x-0 bottom-4 flex justify-center">
+                  <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`absolute transition-all duration-1000 delay-1400 ${
+                isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+              }`}
+              style={{
+                transform: `perspective(1000px) rotateY(${
+                  mousePosition.x * 10
+                }deg) rotateX(${-mousePosition.y * 10}deg)`,
+                transformStyle: "preserve-3d",
+                top: "35%",
+                left: "30%",
+              }}
+            >
+              <div className="w-48 h-88 rounded-2xl border border-[#800000]/30 bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(128,0,0,0.2)] overflow-hidden">
+                <div className="h-full w-full bg-gradient-to-bl from-transparent via-[#800000]/10 to-black/50"></div>
+                <div className="absolute inset-x-0 bottom-4 flex justify-center">
+                  <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Custom cursor style */}
+      <style>
+        {`
+        .custom-cursor {
+          position: absolute;
+          width: 400px;
+          height: 400px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(224,17,95,0.1) 0%, rgba(224,17,95,0.05) 30%, rgba(224,17,95,0) 70%);
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+          z-index: 0;
+        }
+        `}
+      </style>
     </section>
   );
 };

@@ -6,65 +6,73 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 0 0% 98%;
+    --foreground: 0 0% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 0 0% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 0 0% 10%;
 
-    --primary: 271 76% 53%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 350 95% 50%;
+    --primary-foreground: 0 0% 98%;
 
-    --secondary: 271 40% 96%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 351 35% 45%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
 
-    --accent: 271 40% 94%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 350 60% 55%;
+    --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 271 76% 53%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 350 95% 50%;
+
+    --ruby: 350 95% 50%;
+    --wine: 351 35% 45%;
+    --maroon: 0 100% 25%;
 
     --radius: 1rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 271 70% 64%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 350 95% 50%;
+    --primary-foreground: 0 0% 4%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 351 35% 45%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 65%;
 
-    --accent: 271 36% 25%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 350 60% 25%;
+    --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 271 70% 64%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 350 95% 50%;
+
+    --ruby: 350 95% 50%;
+    --wine: 351 35% 45%;
+    --maroon: 0 100% 25%;
   }
 }
 
@@ -117,19 +125,19 @@
   }
 
   h1 {
-    @apply text-4xl leading-tight md:text-5xl lg:text-6xl;
+    @apply text-3xl leading-tight md:text-4xl lg:text-5xl;
   }
 
   h2 {
-    @apply text-3xl leading-tight md:text-4xl;
-  }
-
-  h3 {
     @apply text-2xl leading-tight md:text-3xl;
   }
 
-  h4 {
+  h3 {
     @apply text-xl leading-tight md:text-2xl;
+  }
+
+  h4 {
+    @apply text-lg leading-tight md:text-xl;
   }
 
   p {
@@ -137,7 +145,7 @@
   }
 
   ::selection {
-    @apply bg-purple-500/20;
+    @apply bg-ruby/20;
   }
 }
 
@@ -150,12 +158,12 @@
     @apply glass rounded-2xl shadow-sm hover:shadow-md transition-all duration-300;
   }
 
-  .glass-purple {
-    @apply bg-white/80 dark:bg-black/50 backdrop-blur-lg border border-purple-200/30 dark:border-purple-800/20;
+  .glass-ruby {
+    @apply bg-white/80 dark:bg-black/50 backdrop-blur-lg border border-ruby/30 dark:border-ruby/20;
   }
 
-  .glass-card-purple {
-    @apply glass-purple rounded-2xl shadow-sm hover:shadow-md shadow-purple-500/10 hover:shadow-purple-500/20 transition-all duration-300;
+  .glass-card-ruby {
+    @apply glass-ruby rounded-2xl shadow-sm hover:shadow-md shadow-ruby/10 hover:shadow-ruby/20 transition-all duration-300;
   }
 
   .section {
@@ -171,15 +179,15 @@
   }
 
   .link-underline {
-    @apply relative after:absolute after:bottom-0 after:left-0 after:h-[2px] after:w-0 after:bg-purple-500 after:transition-all after:duration-300 hover:after:w-full;
+    @apply relative after:absolute after:bottom-0 after:left-0 after:h-[2px] after:w-0 after:bg-ruby after:transition-all after:duration-300 hover:after:w-full;
   }
 
   .magnetic-hover {
     @apply transition-transform duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-lg;
   }
 
-  .purple-glow {
-    @apply shadow-lg shadow-purple-500/20 hover:shadow-xl hover:shadow-purple-500/30 transition-all duration-300;
+  .ruby-glow {
+    @apply shadow-lg shadow-ruby/20 hover:shadow-xl hover:shadow-ruby/30 transition-all duration-300;
   }
 }
 
@@ -188,7 +196,7 @@
     text-wrap: balance;
   }
 
-  .text-gradient-purple {
-    @apply text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-400 dark:to-purple-600;
+  .text-gradient-ruby {
+    @apply text-transparent bg-clip-text bg-gradient-to-r from-maroon via-wine to-ruby;
   }
 }

@@ -74,7 +74,7 @@ const Counter = ({
   return (
     <div
       ref={counterRef}
-      className="font-bold text-3xl md:text-4xl lg:text-5xl text-gray-900 dark:text-white"
+      className="font-bold text-3xl md:text-4xl lg:text-5xl text-white"
     >
       {prefix}
       {count.toLocaleString()}
@@ -106,7 +106,7 @@ const stats = [
     description: "YouTube Shorts generated through our platform",
   },
   {
-    icon: <Award className="h-10 w-10 text-purple-500" />,
+    icon: <Award className="h-10 w-10 text-[#E0115F]" />,
     value: 98,
     suffix: "%",
     label: "Satisfaction Rate",
@@ -117,6 +117,20 @@ const stats = [
 const Statistics = () => {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+
+  // Track mouse position for interactive elements
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({
+        x: e.clientX / window.innerWidth - 0.5,
+        y: e.clientY / window.innerHeight - 0.5,
+      });
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -140,10 +154,21 @@ const Statistics = () => {
   }, []);
 
   return (
-    <section
-      className="section py-24 bg-gradient-to-b from-white to-purple-50 dark:from-black dark:to-purple-950/20 relative"
-      ref={sectionRef}
-    >
+    <section className="section py-24 bg-[#0A0A0A] relative" ref={sectionRef}>
+      {/* Dynamic background effect */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute top-0 left-0 w-full h-full opacity-15"
+          style={{
+            background: `radial-gradient(circle at ${
+              50 + mousePosition.x * 30
+            }% ${
+              50 + mousePosition.y * 30
+            }%, rgba(224,17,95,0.2) 0%, rgba(128,0,0,0.15) 30%, transparent 70%)`,
+          }}
+        ></div>
+      </div>
+
       {/* Stick figure animations */}
       <div className="absolute top-20 right-16 hidden lg:block">
         <StickFigureAnimation type="peek" delay={300} height={90} />
@@ -157,13 +182,14 @@ const Statistics = () => {
         <StickFigureAnimation type="spin" delay={900} height={90} />
       </div>
 
-      <div className="container-wide">
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <h2 className="font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-400 dark:to-purple-600">
-            LazyCreator by the Numbers
+      <div className="container-wide relative z-10">
+        <div className="max-w-3xl mb-16 text-left">
+          <h2 className="font-semibold mb-4 text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
+            Performance Metrics
           </h2>
-          <p className="text-lg text-gray-600 dark:text-gray-300">
-            See the impact our platform is making for content creators worldwide
+          <p className="text-lg text-gray-300">
+            Quantifiable results that demonstrate our platform's
+            industry-leading capabilities
           </p>
         </div>
 
@@ -172,79 +198,98 @@ const Statistics = () => {
             <div
               key={index}
               className={`
-                p-6 rounded-2xl transition-all duration-700 ease-out
+                p-8 rounded-2xl transition-all duration-700 ease-out
                 ${
                   isVisible
                     ? "opacity-100 translate-y-0"
                     : "opacity-0 translate-y-8"
                 }
-                bg-white dark:bg-gray-900 shadow-lg hover:shadow-xl
-                border border-purple-100 dark:border-purple-900/30
-                hover:border-purple-300 dark:hover:border-purple-700
-                group
+                bg-black/40 shadow-lg hover:shadow-xl backdrop-blur-sm
+                border border-[#722F37]/30 hover:border-[#E0115F]/30
+                group relative overflow-hidden
               `}
               style={{ transitionDelay: `${index * 100}ms` }}
             >
-              {/* Icon with animated background */}
-              <div className="rounded-full w-16 h-16 flex items-center justify-center bg-gray-100 dark:bg-gray-800 mb-6 group-hover:scale-110 transition-transform duration-300 relative">
-                {stat.icon}
-                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-400/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"></div>
+              {/* Gradient decoration */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#E0115F]/5 to-transparent opacity-30 group-hover:opacity-50 transition-opacity"></div>
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-[#800000]/5 to-transparent opacity-30 group-hover:opacity-50 transition-opacity"></div>
+
+              {/* Content */}
+              <div className="relative z-10">
+                {/* Icon with animated background */}
+                <div className="rounded-full w-16 h-16 flex items-center justify-center bg-black mb-6 group-hover:scale-110 transition-transform duration-300 relative border border-[#722F37]/30">
+                  {stat.icon}
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#800000]/20 to-[#E0115F]/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"></div>
+                </div>
+
+                {/* Animated counter */}
+                <Counter
+                  end={stat.value}
+                  duration={2000}
+                  suffix={stat.suffix}
+                  delay={index * 200}
+                />
+
+                <h3 className="text-lg font-medium mt-2 mb-1 text-[#E0115F]">
+                  {stat.label}
+                </h3>
+                <p className="text-gray-400 text-sm">{stat.description}</p>
               </div>
-
-              {/* Animated counter */}
-              <Counter
-                end={stat.value}
-                duration={2000}
-                suffix={stat.suffix}
-                delay={index * 200}
-              />
-
-              <h3 className="text-xl font-semibold mt-2 mb-1 text-gray-900 dark:text-white">
-                {stat.label}
-              </h3>
-
-              <p className="text-gray-600 dark:text-gray-400">
-                {stat.description}
-              </p>
             </div>
           ))}
         </div>
 
-        {/* Call to action */}
+        {/* Performance dashboard visualization */}
         <div
           className={`
-            mt-20 p-10 rounded-2xl bg-gradient-to-r from-purple-600 to-purple-800 text-white text-center
+            mt-16 p-8 rounded-2xl border border-[#722F37]/30 bg-black/30 backdrop-blur-sm
             ${isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"}
-            transition-all duration-1000 delay-500 shadow-xl shadow-purple-500/20
+            transition-all duration-1000 delay-800
           `}
         >
-          <h3 className="text-2xl md:text-3xl font-bold mb-4">
-            Ready to join them?
-          </h3>
-          <p className="text-lg text-purple-100 mb-8 max-w-2xl mx-auto">
-            Start creating effortless YouTube Shorts today and see the results
-            for yourself.
-          </p>
-          <a
-            href="/create"
-            className="inline-flex items-center px-8 py-3 rounded-full bg-white text-purple-700 font-semibold hover:bg-purple-50 transition-colors duration-300 group"
-          >
-            Get Started
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 ml-2 transform transition-transform duration-300 group-hover:translate-x-1"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M14 5l7 7m0 0l-7 7m7-7H3"
-              />
-            </svg>
-          </a>
+          <div className="flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="text-left">
+              <h3 className="text-2xl font-medium mb-4 text-transparent bg-clip-text bg-gradient-to-r from-[#800000] to-[#E0115F]">
+                Real-time Statistics
+              </h3>
+              <p className="text-gray-300 mb-6 max-w-lg">
+                Our platform constantly monitors performance metrics to ensure
+                you're getting the maximum return on your content investment.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="border border-[#722F37]/30 rounded-lg p-4 bg-black/30">
+                  <p className="text-sm text-gray-400 mb-1">
+                    Average View Duration
+                  </p>
+                  <p className="text-xl font-medium text-[#E0115F]">+42%</p>
+                </div>
+                <div className="border border-[#722F37]/30 rounded-lg p-4 bg-black/30">
+                  <p className="text-sm text-gray-400 mb-1">Engagement Rate</p>
+                  <p className="text-xl font-medium text-[#E0115F]">+68%</p>
+                </div>
+              </div>
+            </div>
+            <div className="w-full md:w-1/2 aspect-[4/3] bg-black/40 rounded-xl border border-[#722F37]/30 overflow-hidden relative">
+              {/* Graph visualization */}
+              <div className="absolute inset-0 p-4">
+                <div className="h-full flex items-end">
+                  {[...Array(12)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-full h-0 bg-gradient-to-t from-[#800000] to-[#E0115F] mx-0.5 rounded-t-sm transition-all duration-1000"
+                      style={{
+                        height: isVisible
+                          ? `${20 + Math.sin(i / 2) * 50}%`
+                          : "0%",
+                        transitionDelay: `${800 + i * 50}ms`,
+                      }}
+                    ></div>
+                  ))}
+                </div>
+                <div className="absolute bottom-2 left-0 right-0 h-px bg-[#722F37]/30"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

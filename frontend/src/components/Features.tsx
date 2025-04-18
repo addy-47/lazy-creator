@@ -6,12 +6,12 @@ import {
   Upload,
   ImagePlus,
 } from "lucide-react";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import StickFigureAnimation from "./StickFigureAnimation";
 
 const features = [
   {
-    icon: <Sparkles className="h-6 w-6 text-purple-500" />,
+    icon: <Sparkles className="h-6 w-6 text-[#E0115F]" />,
     title: "AI-Powered Prompts",
     description:
       "Choose from curated prompts or create your own to generate engaging content for your YouTube Shorts.",
@@ -24,7 +24,7 @@ const features = [
     ),
   },
   {
-    icon: <Sliders className="h-6 w-6 text-purple-500" />,
+    icon: <Sliders className="h-6 w-6 text-[#E0115F]" />,
     title: "Customizable Options",
     description:
       "Adjust every aspect of your Short to match your style and preferences with intuitive controls.",
@@ -37,7 +37,7 @@ const features = [
     ),
   },
   {
-    icon: <Clock className="h-6 w-6 text-purple-500" />,
+    icon: <Clock className="h-6 w-6 text-[#E0115F]" />,
     title: "Perfect Duration",
     description:
       "Set the exact length for your Shorts with our smooth duration slider for optimal viewer engagement.",
@@ -50,7 +50,7 @@ const features = [
     ),
   },
   {
-    icon: <Image className="h-6 w-6 text-purple-500" />,
+    icon: <Image className="h-6 w-6 text-[#E0115F]" />,
     title: "Background Selection",
     description:
       "Choose from our library of backgrounds or upload your own images and videos for a personalized touch.",
@@ -63,7 +63,7 @@ const features = [
     ),
   },
   {
-    icon: <Upload className="h-6 w-6 text-purple-500" />,
+    icon: <Upload className="h-6 w-6 text-[#E0115F]" />,
     title: "Direct Upload",
     description:
       "Publish your finished Shorts directly to YouTube or download them for later use.",
@@ -76,7 +76,7 @@ const features = [
     ),
   },
   {
-    icon: <ImagePlus className="h-6 w-6 text-purple-500" />,
+    icon: <ImagePlus className="h-6 w-6 text-[#E0115F]" />,
     title: "Thumbnail Creation",
     description:
       "Generate eye-catching thumbnails automatically from your Shorts with AI-powered optimization.",
@@ -91,7 +91,22 @@ const features = [
 ];
 
 const Features = () => {
+  const [activeFeature, setActiveFeature] = useState(-1);
   const featuresRef = useRef<HTMLDivElement>(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+
+  // Track mouse position for subtle effects
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({
+        x: e.clientX / window.innerWidth - 0.5,
+        y: e.clientY / window.innerHeight - 0.5,
+      });
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
 
   useEffect(() => {
     const options = {
@@ -123,10 +138,24 @@ const Features = () => {
   }, []);
 
   return (
-    <section
-      id="features"
-      className="section py-24 bg-gradient-to-b from-background to-purple-50 dark:to-purple-950/20 relative"
-    >
+    <section id="features" className="section py-24 bg-[#0A0A0A] relative">
+      {/* Background gradient patterns */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute top-0 left-0 w-full h-full opacity-10"
+          style={{
+            backgroundImage: `radial-gradient(circle at ${
+              50 + mousePosition.x * 20
+            }% ${
+              50 + mousePosition.y * 20
+            }%, rgba(224,17,95,0.2) 0%, rgba(128,0,0,0.1) 40%, transparent 70%)`,
+            backgroundSize: "100% 100%",
+            backgroundPosition: "center",
+            transition: "background-position 0.3s ease-out",
+          }}
+        ></div>
+      </div>
+
       {/* Stick figure animations */}
       <div className="absolute top-20 right-10 hidden lg:block">
         <StickFigureAnimation type="stretch" delay={300} height={90} />
@@ -136,19 +165,94 @@ const Features = () => {
         <StickFigureAnimation type="jump" delay={600} height={90} />
       </div>
 
-      <div className="absolute top-1/3 left-1/2 hidden lg:block">
-        <StickFigureAnimation type="peek" delay={900} height={90} />
-      </div>
-
-      <div className="container-wide" ref={featuresRef}>
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <h2 className="font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-400 dark:to-purple-600">
-            Laziness Elevated to an Art Form
+      <div className="container-wide relative z-10" ref={featuresRef}>
+        <div className="max-w-3xl mb-16">
+          <h2 className="font-semibold mb-4 text-4xl text-left text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
+            Enterprise-Grade Automation
           </h2>
-          <p className="text-lg text-gray-600 dark:text-gray-300">
-            Everything you need to create professional YouTube Shorts without
-            breaking a sweat
+          <p className="text-lg text-gray-300 text-left">
+            Our platform provides sophisticated tools that transform the way you
+            create and distribute YouTube Shorts
           </p>
+        </div>
+
+        {/* Feature comparison matrix */}
+        <div className="mb-20 overflow-hidden rounded-xl border border-[#722F37]/30 bg-black/30 backdrop-blur-sm">
+          <div className="grid grid-cols-4 text-left">
+            {/* Header row */}
+            <div className="p-6 border-b border-r border-[#722F37]/20 bg-[#800000]/10">
+              <h3 className="text-xl font-medium text-[#E0115F]">Features</h3>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20 bg-[#800000]/10">
+              <h3 className="text-lg font-medium text-white">Our Platform</h3>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20 bg-[#800000]/10">
+              <h3 className="text-lg font-medium text-gray-400">
+                Competitor A
+              </h3>
+            </div>
+            <div className="p-6 border-b border-[#722F37]/20 bg-[#800000]/10">
+              <h3 className="text-lg font-medium text-gray-400">
+                Competitor B
+              </h3>
+            </div>
+
+            {/* AI Generation row */}
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="font-medium text-white">AI Content Generation</p>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="text-[#E0115F]">Advanced</p>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="text-gray-400">Basic</p>
+            </div>
+            <div className="p-6 border-b border-[#722F37]/20">
+              <p className="text-gray-400">Limited</p>
+            </div>
+
+            {/* Direct Upload row */}
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="font-medium text-white">Direct YouTube Upload</p>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="text-[#E0115F]">Included</p>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="text-gray-400">Premium Only</p>
+            </div>
+            <div className="p-6 border-b border-[#722F37]/20">
+              <p className="text-gray-400">Not Available</p>
+            </div>
+
+            {/* Analytics row */}
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="font-medium text-white">Performance Analytics</p>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="text-[#E0115F]">Real-time</p>
+            </div>
+            <div className="p-6 border-b border-r border-[#722F37]/20">
+              <p className="text-gray-400">Delayed</p>
+            </div>
+            <div className="p-6 border-b border-[#722F37]/20">
+              <p className="text-gray-400">Basic</p>
+            </div>
+
+            {/* Customization row */}
+            <div className="p-6 border-r border-[#722F37]/20">
+              <p className="font-medium text-white">Customization Options</p>
+            </div>
+            <div className="p-6 border-r border-[#722F37]/20">
+              <p className="text-[#E0115F]">Unlimited</p>
+            </div>
+            <div className="p-6 border-r border-[#722F37]/20">
+              <p className="text-gray-400">Limited</p>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-400">Basic</p>
+            </div>
+          </div>
         </div>
 
         <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
@@ -157,36 +261,52 @@ const Features = () => {
               key={index}
               className="feature-card relative group opacity-0 translate-y-4 transition-all duration-700"
               style={{ transitionDelay: `${index * 50}ms` }}
+              onMouseEnter={() => setActiveFeature(index)}
+              onMouseLeave={() => setActiveFeature(-1)}
             >
               {/* Card background with gradient border */}
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-purple-400 dark:from-purple-700 dark:to-purple-500 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"></div>
+              <div
+                className={`absolute -inset-0.5 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-2xl opacity-0
+                ${
+                  activeFeature === index
+                    ? "opacity-100"
+                    : "group-hover:opacity-30"
+                }
+                transition-opacity duration-300 blur-sm`}
+              ></div>
 
               {/* Main card content */}
-              <div className="relative bg-white dark:bg-gray-900 shadow-xl rounded-2xl p-6 h-full z-10 overflow-hidden transition-all duration-300 group-hover:translate-y-[-4px]">
+              <div
+                className="relative bg-[#0A0A0A] shadow-xl rounded-2xl p-6 h-full z-10 overflow-hidden transition-all duration-300
+                border border-[#722F37]/30 group-hover:translate-y-[-4px]"
+              >
                 {/* Card content container */}
                 <div className="relative z-10 h-full flex flex-col">
                   {/* Icon and title in a row */}
                   <div className="flex items-center mb-3">
-                    <h3 className="text-xl font-medium mr-3 text-gray-900 dark:text-white">
+                    <h3 className="text-xl font-medium mr-3 text-white">
                       {feature.title}
                     </h3>
-                    <div className="rounded-full w-10 h-10 flex items-center justify-center bg-purple-100 dark:bg-purple-900/30 transition-all duration-300 group-hover:scale-110 group-hover:shadow-md group-hover:shadow-purple-500/20 flex-shrink-0">
+                    <div
+                      className="rounded-full w-10 h-10 flex items-center justify-center bg-[#800000]/10 transition-all duration-300
+                      group-hover:scale-110 group-hover:shadow-md group-hover:shadow-[#E0115F]/20 flex-shrink-0"
+                    >
                       {feature.icon}
                     </div>
                   </div>
 
-                  <p className="text-gray-600 dark:text-gray-300 group-hover:opacity-0 transition-opacity duration-300">
+                  <p className="text-gray-300 group-hover:opacity-0 transition-opacity duration-300">
                     {feature.description}
                   </p>
 
                   {/* Hover content that appears */}
-                  <div className="absolute inset-0 pt-[4rem] px-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col">
+                  <div className="absolute inset-0 pt-[4rem] px-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col text-gray-200">
                     {feature.hoverContent}
                   </div>
                 </div>
 
                 {/* Decorative elements */}
-                <div className="absolute bottom-0 right-0 w-24 h-24 bg-gradient-to-tl from-purple-200/40 to-transparent dark:from-purple-900/20 rounded-tl-full"></div>
+                <div className="absolute bottom-0 right-0 w-24 h-24 bg-gradient-to-tl from-[#E0115F]/10 to-transparent rounded-tl-full"></div>
               </div>
             </div>
           ))}

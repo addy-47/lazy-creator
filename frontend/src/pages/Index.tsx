@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
@@ -7,35 +7,90 @@ import WorkflowProcess from "@/components/WorkflowProcess";
 import Testimonials from "@/components/Testimonials";
 import Statistics from "@/components/Statistics";
 import { useAuth } from "@/contexts/AuthContext";
+import StickFigureAnimation from "@/components/StickFigureAnimation";
 
 const Index = () => {
   const { isAuthenticated } = useAuth();
+  const parallaxRef = useRef<HTMLDivElement>(null);
+
+  // Parallax scrolling effect
+  useEffect(() => {
+    const handleScroll = () => {
+      if (parallaxRef.current) {
+        const scrollY = window.scrollY;
+        parallaxRef.current.style.transform = `translateY(${scrollY * 0.3}px)`;
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Enhanced animated background with purple and black gradient */}
-      <div className="fixed inset-0 -z-10 bg-gradient-to-br from-purple-900/30 via-background to-background dark:from-purple-900/20 dark:via-background/95 dark:to-background">
-        <div className="absolute inset-0 opacity-20 dark:opacity-10">
-          <div className="h-full w-full bg-[radial-gradient(#9333ea_1px,transparent_1px)] [background-size:20px_20px]"></div>
+    <div className="min-h-screen flex flex-col bg-[#0A0A0A] text-white overflow-hidden">
+      {/* Morphing background gradient overlay */}
+      <div className="fixed inset-0 -z-10">
+        {/* Base gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#800000]/20 via-[#722F37]/10 to-[#0A0A0A]"></div>
+
+        {/* Animated gradient */}
+        <div className="absolute inset-0">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl aspect-[3/1] bg-[#E0115F]/10 rounded-full blur-[100px] opacity-30 animate-breathe"></div>
+          <div className="absolute bottom-0 left-1/4 w-full max-w-5xl aspect-[3/1] bg-[#800000]/15 rounded-full blur-[120px] opacity-20 animate-breathe delay-700"></div>
         </div>
 
-        {/* Animated subtle video frames representing content creation */}
-        <div className="absolute inset-0 overflow-hidden opacity-10 dark:opacity-5 pointer-events-none">
-          <div className="absolute top-0 left-0 w-[200%] h-[200%] -translate-y-1/2 animate-infinite-scroll-y-reverse">
-            {[...Array(20)].map((_, i) => (
-              <div
-                key={i}
-                className="absolute w-20 h-36 md:w-28 md:h-48 rounded-md border border-purple-400/20"
-                style={{
-                  top: `${Math.random() * 100}%`,
-                  left: `${Math.random() * 100}%`,
-                  transform: `rotate(${Math.random() * 20 - 10}deg)`,
-                  opacity: Math.random() * 0.5 + 0.1,
-                }}
-              />
-            ))}
+        {/* Pattern overlay */}
+        <div className="absolute inset-0 opacity-5">
+          <div className="h-full w-full bg-[radial-gradient(#E0115F_1px,transparent_1px)] [background-size:30px_30px]"></div>
+        </div>
+      </div>
+
+      {/* 3D Shorts visualization */}
+      <div
+        ref={parallaxRef}
+        className="fixed right-0 top-0 h-full w-1/2 pointer-events-none -z-5 opacity-70 overflow-hidden"
+      >
+        <div className="absolute right-10 top-40">
+          <div className="relative w-40 h-72 rounded-2xl border border-[#E0115F]/30 bg-black/30 backdrop-blur-sm rotate-6 shadow-[0_0_15px_rgba(224,17,95,0.3)] transform-gpu hover:rotate-3 transition-transform duration-700">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-white/50 rounded-full"></div>
           </div>
         </div>
+        <div className="absolute right-52 top-60">
+          <div className="relative w-40 h-72 rounded-2xl border border-[#722F37]/30 bg-black/30 backdrop-blur-sm -rotate-3 shadow-[0_0_15px_rgba(114,47,55,0.3)] transform-gpu hover:rotate-0 transition-transform duration-700">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-white/50 rounded-full"></div>
+          </div>
+        </div>
+        <div className="absolute right-20 top-[350px]">
+          <div className="relative w-40 h-72 rounded-2xl border border-[#800000]/30 bg-black/30 backdrop-blur-sm rotate-12 shadow-[0_0_15px_rgba(128,0,0,0.3)] transform-gpu hover:rotate-6 transition-transform duration-700">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-white/50 rounded-full"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stick figure animations scattered throughout */}
+      <div className="fixed top-[20%] left-[5%] z-20">
+        <StickFigureAnimation type="wave" delay={300} height={90} />
+      </div>
+      <div className="fixed top-[40%] right-[35%] z-20">
+        <StickFigureAnimation type="dance" delay={600} height={90} />
+      </div>
+      <div className="fixed bottom-[20%] left-[15%] z-20">
+        <StickFigureAnimation type="sleep" delay={900} height={90} />
+      </div>
+      <div className="fixed top-[70%] right-[10%] z-20">
+        <StickFigureAnimation type="jump" delay={1200} height={90} />
+      </div>
+
+      {/* Floating action button */}
+      <div className="fixed bottom-10 right-10 z-50 transition-all duration-500 hover:scale-105">
+        <button
+          onClick={() => (window.location.href = "/create")}
+          className="w-16 h-16 rounded-full bg-gradient-to-r from-[#800000] to-[#E0115F] flex items-center justify-center shadow-[0_0_20px_rgba(224,17,95,0.5)] group"
+        >
+          <span className="text-white text-2xl font-bold group-hover:scale-110 transition-transform duration-300">
+            +
+          </span>
+        </button>
       </div>
 
       <Navbar />
