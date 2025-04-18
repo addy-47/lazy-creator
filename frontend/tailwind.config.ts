@@ -116,6 +116,35 @@ export default {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.5" },
         },
+        "pulse-slow": {
+          "0%": { opacity: "0.7", transform: "scale(0.95)" },
+          "50%": { opacity: "1", transform: "scale(1.05)" },
+          "100%": { opacity: "0.7", transform: "scale(0.95)" },
+        },
+        "sphere-float": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-2px)" },
+        },
+        "particle-1": {
+          "0%": { transform: "translate(0, 0)", opacity: "0" },
+          "50%": { transform: "translate(-3px, -3px)", opacity: "0.8" },
+          "100%": { transform: "translate(-5px, -5px)", opacity: "0" },
+        },
+        "particle-2": {
+          "0%": { transform: "translate(0, 0)", opacity: "0" },
+          "50%": { transform: "translate(-3px, 1px)", opacity: "0.8" },
+          "100%": { transform: "translate(-5px, 2px)", opacity: "0" },
+        },
+        "particle-3": {
+          "0%": { transform: "translate(0, 0)", opacity: "0" },
+          "50%": { transform: "translate(2px, 2px)", opacity: "0.8" },
+          "100%": { transform: "translate(4px, 4px)", opacity: "0" },
+        },
+        "particle-4": {
+          "0%": { transform: "translate(0, 0)", opacity: "0" },
+          "50%": { transform: "translate(3px, -2px)", opacity: "0.8" },
+          "100%": { transform: "translate(5px, -4px)", opacity: "0" },
+        },
         breathe: {
           "0%, 100%": { transform: "scale(1)" },
           "50%": { transform: "scale(1.03)" },
@@ -184,6 +213,12 @@ export default {
         "slide-down": "slide-down 0.5s ease-out forwards",
         "scale-in": "scale-in 0.3s ease-out forwards",
         pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "pulse-slow": "pulse-slow 3s ease-in-out infinite",
+        "sphere-float": "sphere-float 3s ease-in-out infinite",
+        "particle-1": "particle-1 3s ease-in-out infinite",
+        "particle-2": "particle-2 3.5s ease-in-out infinite",
+        "particle-3": "particle-3 2.7s ease-in-out infinite",
+        "particle-4": "particle-4 4s ease-in-out infinite",
         breathe: "breathe 3s ease-in-out infinite",
         "spin-slow": "spin 6s linear infinite",
         progress: "progress 30s linear forwards",

@@ -5,6 +5,14 @@ import {
   Image,
   Upload,
   ImagePlus,
+  CheckCircle2,
+  Cpu,
+  BarChart2,
+  Hourglass,
+  Camera,
+  PenTool,
+  Zap,
+  Video,
 } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
 import StickFigureAnimation from "./StickFigureAnimation";
@@ -137,6 +145,52 @@ const Features = () => {
     };
   }, []);
 
+  const featuresList = [
+    {
+      icon: <Cpu className="h-6 w-6 text-[#E0115F]" />,
+      title: "AI-Powered",
+      description:
+        "Our advanced AI handles the entire creation process from script generation to editing.",
+    },
+    {
+      icon: <BarChart2 className="h-6 w-6 text-[#E0115F]" />,
+      title: "Analytics",
+      description: "Get detailed insights on how your shorts are performing.",
+    },
+    {
+      icon: <Upload className="h-6 w-6 text-[#E0115F]" />,
+      title: "Automated Upload",
+      description:
+        "Automatically upload to YouTube with optimized titles and descriptions.",
+    },
+    {
+      icon: <Hourglass className="h-6 w-6 text-[#E0115F]" />,
+      title: "Time-Saving",
+      description: "Create weeks worth of content in just minutes.",
+    },
+    {
+      icon: <Camera className="h-6 w-6 text-[#E0115F]" />,
+      title: "AI Thumbnails",
+      description: "Generate eye-catching thumbnails with our AI.",
+    },
+    {
+      icon: <PenTool className="h-6 w-6 text-[#E0115F]" />,
+      title: "Custom Style",
+      description:
+        "Tailor the look and feel of your shorts to match your brand.",
+    },
+    {
+      icon: <Zap className="h-6 w-6 text-[#E0115F]" />,
+      title: "Lightning Fast",
+      description: "Get your shorts ready in minutes, not hours or days.",
+    },
+    {
+      icon: <Video className="h-6 w-6 text-[#E0115F]" />,
+      title: "High Quality",
+      description: "Professional-grade shorts that stand out in the feed.",
+    },
+  ];
+
   return (
     <section id="features" className="section py-24 bg-[#0A0A0A] relative">
       {/* Background gradient patterns */}
@@ -166,95 +220,6 @@ const Features = () => {
       </div>
 
       <div className="container-wide relative z-10" ref={featuresRef}>
-        <div className="max-w-3xl mb-16">
-          <h2 className="font-semibold mb-4 text-4xl text-left text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
-            Enterprise-Grade Automation
-          </h2>
-          <p className="text-lg text-gray-300 text-left">
-            Our platform provides sophisticated tools that transform the way you
-            create and distribute YouTube Shorts
-          </p>
-        </div>
-
-        {/* Feature comparison matrix */}
-        <div className="mb-20 overflow-hidden rounded-xl border border-[#722F37]/30 bg-black/30 backdrop-blur-sm">
-          <div className="grid grid-cols-4 text-left">
-            {/* Header row */}
-            <div className="p-6 border-b border-r border-[#722F37]/20 bg-[#800000]/10">
-              <h3 className="text-xl font-medium text-[#E0115F]">Features</h3>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20 bg-[#800000]/10">
-              <h3 className="text-lg font-medium text-white">Our Platform</h3>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20 bg-[#800000]/10">
-              <h3 className="text-lg font-medium text-gray-400">
-                Competitor A
-              </h3>
-            </div>
-            <div className="p-6 border-b border-[#722F37]/20 bg-[#800000]/10">
-              <h3 className="text-lg font-medium text-gray-400">
-                Competitor B
-              </h3>
-            </div>
-
-            {/* AI Generation row */}
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="font-medium text-white">AI Content Generation</p>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="text-[#E0115F]">Advanced</p>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="text-gray-400">Basic</p>
-            </div>
-            <div className="p-6 border-b border-[#722F37]/20">
-              <p className="text-gray-400">Limited</p>
-            </div>
-
-            {/* Direct Upload row */}
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="font-medium text-white">Direct YouTube Upload</p>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="text-[#E0115F]">Included</p>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="text-gray-400">Premium Only</p>
-            </div>
-            <div className="p-6 border-b border-[#722F37]/20">
-              <p className="text-gray-400">Not Available</p>
-            </div>
-
-            {/* Analytics row */}
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="font-medium text-white">Performance Analytics</p>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="text-[#E0115F]">Real-time</p>
-            </div>
-            <div className="p-6 border-b border-r border-[#722F37]/20">
-              <p className="text-gray-400">Delayed</p>
-            </div>
-            <div className="p-6 border-b border-[#722F37]/20">
-              <p className="text-gray-400">Basic</p>
-            </div>
-
-            {/* Customization row */}
-            <div className="p-6 border-r border-[#722F37]/20">
-              <p className="font-medium text-white">Customization Options</p>
-            </div>
-            <div className="p-6 border-r border-[#722F37]/20">
-              <p className="text-[#E0115F]">Unlimited</p>
-            </div>
-            <div className="p-6 border-r border-[#722F37]/20">
-              <p className="text-gray-400">Limited</p>
-            </div>
-            <div className="p-6">
-              <p className="text-gray-400">Basic</p>
-            </div>
-          </div>
-        </div>
-
         <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
           {features.map((feature, index) => (
             <div
@@ -310,6 +275,168 @@ const Features = () => {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Comparison Table Section */}
+        <div className="mt-32 mb-12">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold md:text-4xl">
+              Why Choose{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
+                LazyCreator
+              </span>
+            </h2>
+            <p className="mt-4 text-lg text-muted-foreground max-w-xl mx-auto">
+              See how we stack up against the competition
+            </p>
+          </div>
+
+          <div className="overflow-x-auto glass-card-ruby p-6 shadow-lg">
+            <table className="w-full min-w-[750px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-border/30">
+                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                    Feature
+                  </th>
+                  <th className="py-4 px-4 font-medium text-[#E0115F]">
+                    LazyCreator
+                  </th>
+                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                    InVideo
+                  </th>
+                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                    Pictory
+                  </th>
+                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                    Synthesia
+                  </th>
+                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                    Wisecut
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-border/20">
+                  <td className="py-4 px-4 font-medium">Content Creation</td>
+                  <td className="py-4 px-4">
+                    <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Partial
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Partial
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Partial
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Partial
+                  </td>
+                </tr>
+                <tr className="border-b border-border/20">
+                  <td className="py-4 px-4 font-medium">Media Flexibility</td>
+                  <td className="py-4 px-4">
+                    <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
+                  </td>
+                  <td className="py-4 px-4">
+                    <CheckCircle2 className="h-5 w-5 text-green-500 mx-auto" />
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Limited
+                  </td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4">
+                    <CheckCircle2 className="h-5 w-5 text-green-500 mx-auto" />
+                  </td>
+                </tr>
+                <tr className="border-b border-border/20">
+                  <td className="py-4 px-4 font-medium">
+                    AI Thumbnail Generation
+                  </td>
+                  <td className="py-4 px-4">
+                    <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
+                  </td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Basic
+                  </td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                </tr>
+                <tr className="border-b border-border/20">
+                  <td className="py-4 px-4 font-medium">
+                    AI Metadata Generation
+                  </td>
+                  <td className="py-4 px-4">
+                    <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
+                  </td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Basic
+                  </td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                </tr>
+                <tr className="border-b border-border/20">
+                  <td className="py-4 px-4 font-medium">
+                    Direct YouTube Upload
+                  </td>
+                  <td className="py-4 px-4">
+                    <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Partial
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Limited
+                  </td>
+                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Limited
+                  </td>
+                </tr>
+                <tr className="border-b border-border/20">
+                  <td className="py-4 px-4 font-medium">
+                    Time to Create Short
+                  </td>
+                  <td className="py-4 px-4">
+                    <span className="text-[#E0115F] font-bold">Minutes</span>
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Hours
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Hours
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Hours
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Hours
+                  </td>
+                </tr>
+                <tr className="border-b border-border/20">
+                  <td className="py-4 px-4 font-medium">Learning Curve</td>
+                  <td className="py-4 px-4">
+                    <span className="text-[#E0115F] font-bold">Minimal</span>
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Moderate
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Moderate
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Moderate
+                  </td>
+                  <td className="py-4 px-4 text-amber-500 text-center">
+                    Moderate
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

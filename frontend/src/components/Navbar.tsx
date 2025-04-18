@@ -15,6 +15,48 @@ interface NavbarProps {
   username?: string;
 }
 
+// YouTube Connection Sphere component
+const ConnectionSphere = ({ isConnected }: { isConnected: boolean }) => {
+  return (
+    <div className="relative flex items-center justify-center w-4 h-4 ml-1 mr-2">
+      {/* Shadow beneath sphere for depth */}
+      <div className="absolute w-3 h-1 bg-black/20 dark:bg-black/30 rounded-full bottom-[-2px] blur-sm"></div>
+
+      {/* The main sphere */}
+      <div
+        className={`relative w-4 h-4 rounded-full transform-gpu transition-all duration-700
+          ${
+            isConnected
+              ? "animate-sphere-float bg-gradient-to-br from-[#E0115F] to-[#800000]"
+              : "bg-gray-700 dark:bg-gray-800"
+          }`}
+      >
+        {/* Inner glow */}
+        {isConnected && (
+          <>
+            {/* Pulse effect */}
+            <div className="absolute inset-0 rounded-full bg-[#E0115F] animate-pulse-slow opacity-70"></div>
+
+            {/* Core glow */}
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white via-[#E0115F] to-[#800000] blur-[1px] opacity-90"></div>
+
+            {/* Particles around sphere when connected */}
+            <div className="absolute w-6 h-6 -inset-1">
+              <div className="absolute top-0 left-1/2 w-[2px] h-[2px] rounded-full bg-[#E0115F]/80 animate-particle-1"></div>
+              <div className="absolute top-1/2 left-0 w-[2px] h-[2px] rounded-full bg-[#E0115F]/80 animate-particle-2"></div>
+              <div className="absolute bottom-0 right-1/4 w-[1px] h-[1px] rounded-full bg-[#E0115F]/80 animate-particle-3"></div>
+              <div className="absolute top-1/3 right-0 w-[1px] h-[1px] rounded-full bg-[#E0115F]/80 animate-particle-4"></div>
+            </div>
+          </>
+        )}
+
+        {/* Surface highlight */}
+        <div className="absolute top-[3px] left-[3px] w-1 h-1 rounded-full bg-white/40 opacity-80"></div>
+      </div>
+    </div>
+  );
+};
+
 const Navbar = ({ username }: NavbarProps) => {
   // Add forceUpdate function to force re-renders
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
@@ -239,8 +281,8 @@ const Navbar = ({ username }: NavbarProps) => {
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         isScrolled
-          ? "bg-white/90 dark:bg-black/90 backdrop-blur-lg shadow-sm border-b border-border/50"
-          : "bg-white/60 dark:bg-black/60 backdrop-blur-md"
+          ? "bg-black/20 backdrop-blur-sm shadow-md border-b border-border/30"
+          : "bg-black/20 backdrop-blur-sm"
       }`}
     >
       <div className="container-wide flex h-16 md:h-20 items-center justify-between">
@@ -290,20 +332,27 @@ const Navbar = ({ username }: NavbarProps) => {
 
             {displayUsername ? (
               <div className="flex items-center space-x-4">
-                {isYouTubeConnected && (
-                  <div className="flex items-center gap-1 text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded-full">
-                    <Youtube size={12} />
-                    <span>Connected</span>
-                  </div>
-                )}
                 <div className="relative group">
-                  <button className="flex items-center gap-2 py-1 px-3 rounded-full bg-[#E0115F]/10 hover:bg-[#E0115F]/20 dark:hover:bg-[#E0115F]/20 transition-colors">
-                    <User className="h-4 w-4 text-[#E0115F] dark:text-[#E0115F]" />
-                    <span className="text-sm font-medium">
-                      {displayUsername}
-                    </span>
-                  </button>
+                  <div className="flex items-center">
+                    <button className="flex items-center gap-2 py-1 px-3 rounded-full bg-[#E0115F]/10 hover:bg-[#E0115F]/20 dark:hover:bg-[#E0115F]/20 transition-colors">
+                      <User className="h-4 w-4 text-[#E0115F] dark:text-[#E0115F]" />
+                      <span className="text-sm font-medium">
+                        {displayUsername}
+                      </span>
+                    </button>
+                    {/* YouTube Connection Sphere */}
+                    <ConnectionSphere isConnected={isYouTubeConnected} />
+                  </div>
                   <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">
+                    {/* Connection status indicator in dropdown */}
+                    <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+                      <ConnectionSphere isConnected={isYouTubeConnected} />
+                      <span className="text-xs text-foreground/70">
+                        {isYouTubeConnected
+                          ? "YouTube Connected"
+                          : "YouTube Disconnected"}
+                      </span>
+                    </div>
                     <button
                       onClick={handleSignOut}
                       className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -345,7 +394,7 @@ const Navbar = ({ username }: NavbarProps) => {
 
       {/* Mobile Navigation Menu */}
       {isMenuOpen && (
-        <div className="md:hidden bg-white dark:bg-gray-900 shadow-lg">
+        <div className="md:hidden bg-white/95 dark:bg-gray-900/95 backdrop-blur-md shadow-lg">
           <div className="container-wide py-4 space-y-4">
             <div className="flex flex-col space-y-2">
               {navItems.map((item) => (
@@ -388,12 +437,14 @@ const Navbar = ({ username }: NavbarProps) => {
 
               {displayUsername ? (
                 <>
-                  {isYouTubeConnected && (
-                    <div className="flex items-center gap-2 py-2 text-sm text-green-600 dark:text-green-400">
-                      <Youtube size={16} />
-                      <span>YouTube Connected</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 py-2 text-sm">
+                    <ConnectionSphere isConnected={isYouTubeConnected} />
+                    <span className="text-foreground/70">
+                      {isYouTubeConnected
+                        ? "YouTube Connected"
+                        : "YouTube Disconnected"}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-3 py-2">
                     <div className="flex items-center space-x-2">
                       <User className="h-5 w-5 text-[#E0115F]" />

@@ -163,6 +163,7 @@ const Hero = ({ username }: HeroProps) => {
 
           {/* Visual showcase column - floating YouTube shorts visualization */}
           <div className="lg:col-span-5 hidden lg:block relative min-h-[400px]">
+            {/* First phone mockup */}
             <div
               className={`absolute transition-all duration-1000 delay-1000 ${
                 isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
@@ -176,14 +177,24 @@ const Hero = ({ username }: HeroProps) => {
                 left: "5%",
               }}
             >
-              <div className="w-52 h-96 rounded-2xl border border-[#E0115F]/30 bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(224,17,95,0.2)] overflow-hidden">
-                <div className="h-full w-full bg-gradient-to-br from-[#800000]/20 via-transparent to-[#E0115F]/20"></div>
-                <div className="absolute inset-x-0 bottom-4 flex justify-center">
-                  <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+              {/* Wrapper div to prevent border artifacts */}
+              <div className="p-[0.5px]">
+                <div className="w-52 h-96 rounded-2xl bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(224,17,95,0.2)] overflow-hidden relative">
+                  {/* Inner gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#800000]/20 via-transparent to-[#E0115F]/20"></div>
+
+                  {/* Border as pseudo-element to avoid rendering artifacts */}
+                  <div className="absolute inset-0 rounded-2xl border border-[#E0115F]/30"></div>
+
+                  {/* Home button indicator */}
+                  <div className="absolute inset-x-0 bottom-4 flex justify-center">
+                    <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Second phone mockup */}
             <div
               className={`absolute transition-all duration-1000 delay-1200 ${
                 isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
@@ -197,14 +208,24 @@ const Hero = ({ username }: HeroProps) => {
                 left: "45%",
               }}
             >
-              <div className="w-44 h-80 rounded-2xl border border-[#722F37]/30 bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(114,47,55,0.2)] overflow-hidden">
-                <div className="h-full w-full bg-gradient-to-tr from-[#722F37]/20 via-transparent to-black/50"></div>
-                <div className="absolute inset-x-0 bottom-4 flex justify-center">
-                  <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+              {/* Wrapper div to prevent border artifacts */}
+              <div className="p-[0.5px]">
+                <div className="w-44 h-80 rounded-2xl bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(114,47,55,0.2)] overflow-hidden relative">
+                  {/* Inner gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-[#722F37]/20 via-transparent to-black/50"></div>
+
+                  {/* Border as pseudo-element to avoid rendering artifacts */}
+                  <div className="absolute inset-0 rounded-2xl border border-[#722F37]/30"></div>
+
+                  {/* Home button indicator */}
+                  <div className="absolute inset-x-0 bottom-4 flex justify-center">
+                    <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Third phone mockup */}
             <div
               className={`absolute transition-all duration-1000 delay-1400 ${
                 isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
@@ -218,10 +239,19 @@ const Hero = ({ username }: HeroProps) => {
                 left: "30%",
               }}
             >
-              <div className="w-48 h-88 rounded-2xl border border-[#800000]/30 bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(128,0,0,0.2)] overflow-hidden">
-                <div className="h-full w-full bg-gradient-to-bl from-transparent via-[#800000]/10 to-black/50"></div>
-                <div className="absolute inset-x-0 bottom-4 flex justify-center">
-                  <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+              {/* Wrapper div to prevent border artifacts */}
+              <div className="p-[0.5px]">
+                <div className="w-48 h-88 rounded-2xl bg-black/50 backdrop-blur-sm shadow-[0_0_20px_rgba(128,0,0,0.2)] overflow-hidden relative">
+                  {/* Inner gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-bl from-transparent via-[#800000]/10 to-black/50"></div>
+
+                  {/* Border as pseudo-element to avoid rendering artifacts */}
+                  <div className="absolute inset-0 rounded-2xl border border-[#800000]/30"></div>
+
+                  {/* Home button indicator */}
+                  <div className="absolute inset-x-0 bottom-4 flex justify-center">
+                    <div className="w-16 h-1 bg-white/30 rounded-full"></div>
+                  </div>
                 </div>
               </div>
             </div>
