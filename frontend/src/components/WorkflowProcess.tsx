@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { Lightbulb, Settings, MonitorPlay, Upload } from "lucide-react";
-import StickFigureAnimation from "./StickFigureAnimation";
 
 const workflowSteps = [
   {
@@ -96,25 +95,12 @@ const WorkflowProcess = () => {
         ></div>
       </div>
 
-      {/* Stick figure animations */}
-      <div className="absolute -top-10 right-10 hidden lg:block">
-        <StickFigureAnimation type="sleep" delay={400} height={90} />
-      </div>
-
-      <div className="absolute bottom-40 left-10 hidden lg:block">
-        <StickFigureAnimation type="wave" delay={800} height={90} />
-      </div>
-
-      <div className="absolute top-1/2 right-10 hidden lg:block">
-        <StickFigureAnimation type="dance" delay={1200} height={90} />
-      </div>
-
       <div className="container-tight relative z-10">
         <div className="max-w-3xl mb-16 text-left">
           <h2 className="font-semibold mb-4 text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Sophisticated Automation Process
           </h2>
-          <p className="text-lg dark:text-gray-300 light:text-gray-700">
+          <p className="text-lg text-gray-300 dark:text-gray-300 light:text-gray-700">
             Our enterprise-grade workflow delivers professional results with
             minimal effort
           </p>
@@ -123,7 +109,7 @@ const WorkflowProcess = () => {
         {/* Automated workflow animation */}
         <div className="relative mt-16">
           {/* Progress line with enhanced styling */}
-          <div className="absolute left-0 right-0 top-16 h-1 dark:bg-[#0A0A0A] light:bg-gray-200 rounded-full border dark:border-[#722F37]/30 light:border-gray-300">
+          <div className="absolute left-0 right-0 top-16 h-1 bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-200 rounded-full border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-300">
             <div
               className="h-full bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full transition-all duration-500"
               style={{
@@ -156,7 +142,7 @@ const WorkflowProcess = () => {
                     ${
                       index <= activeStep
                         ? "bg-gradient-to-r from-[#800000] to-[#E0115F] text-white shadow-lg shadow-[#E0115F]/30"
-                        : "dark:bg-[#0A0A0A] light:bg-white text-gray-500 border dark:border-[#722F37]/30 light:border-gray-300"
+                        : "bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-white text-gray-500 border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-300"
                     }
                   `}
                 >
@@ -173,13 +159,13 @@ const WorkflowProcess = () => {
                     ${
                       index <= activeStep
                         ? "text-[#E0115F]"
-                        : "dark:text-gray-400 light:text-gray-600"
+                        : "text-gray-400 dark:text-gray-400 light:text-gray-600"
                     }
                   `}
                   >
                     {step.title}
                   </h3>
-                  <p className="dark:text-gray-400 light:text-gray-600 text-sm">
+                  <p className="text-gray-400 dark:text-gray-400 light:text-gray-600 text-sm">
                     {step.description}
                   </p>
                 </div>
@@ -191,12 +177,12 @@ const WorkflowProcess = () => {
         {/* Advanced process visualization */}
         <div
           className={`
-            mt-20 p-6 md:p-10 rounded-2xl shadow-xl dark:bg-black/30 light:bg-white/90 border dark:border-[#722F37]/30 light:border-gray-200 backdrop-blur-sm
+            mt-20 p-6 md:p-10 rounded-2xl shadow-xl bg-black/30 dark:bg-black/30 light:bg-white/90 border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-200 backdrop-blur-sm
             ${isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"}
             transition-all duration-1000 delay-500
           `}
         >
-          <div className="aspect-video w-full relative overflow-hidden rounded-lg dark:bg-[#0A0A0A] light:bg-gray-100 border dark:border-[#722F37]/20 light:border-gray-300">
+          <div className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-100 border border-[#722F37]/20 dark:border-[#722F37]/20 light:border-gray-300">
             {/* Animation showing automated workflow for each stage */}
             <div className="absolute inset-0 flex items-center justify-center">
               {activeStep === 0 && (
@@ -204,7 +190,7 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-amber-500/10 flex items-center justify-center mb-4 animate-pulse">
                     <Lightbulb className="h-10 w-10 text-amber-500" />
                   </div>
-                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
+                  <p className="text-gray-200 dark:text-gray-200 light:text-gray-800 font-medium">
                     Generating ideas...
                   </p>
 
@@ -220,7 +206,7 @@ const WorkflowProcess = () => {
                       ].map((idea, i) => (
                         <span
                           key={i}
-                          className="inline-block mx-4 px-3 py-1 rounded-full dark:bg-[#722F37]/20 light:bg-gray-200 text-sm"
+                          className="inline-block mx-4 px-3 py-1 rounded-full bg-[#722F37]/20 dark:bg-[#722F37]/20 light:bg-gray-200 text-sm"
                         >
                           {idea}
                         </span>
@@ -327,34 +313,6 @@ const WorkflowProcess = () => {
           </div>
         </div>
       </div>
-
-      <style jsx="true">{`
-        @keyframes infinite-scroll-x {
-          0% {
-            transform: translateX(100%);
-          }
-          100% {
-            transform: translateX(-100%);
-          }
-        }
-
-        @keyframes progress-bar {
-          0% {
-            width: 0%;
-          }
-          100% {
-            width: 67%;
-          }
-        }
-
-        .animate-infinite-scroll-x {
-          animation: infinite-scroll-x 15s linear infinite;
-        }
-
-        .animate-progress-bar {
-          animation: progress-bar 2s ease-out forwards;
-        }
-      `}</style>
     </section>
   );
 };
