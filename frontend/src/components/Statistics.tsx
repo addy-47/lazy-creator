@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { Clock, Users, Video, Award } from "lucide-react";
 import StickFigureAnimation from "./StickFigureAnimation";
+import { useInView } from "react-intersection-observer";
 
 interface CounterProps {
   end: number;
@@ -83,6 +84,61 @@ const Counter = ({
   );
 };
 
+// Counter animation function
+const useCountAnimation = (
+  target: number,
+  duration: number = 2000,
+  delay: number = 0,
+  isVisible: boolean = false
+) => {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!isVisible) return;
+
+    let startTime: number;
+    let animationFrame: number;
+
+    const updateCount = (timestamp: number) => {
+      if (!startTime) {
+        startTime = timestamp;
+      }
+
+      const elapsed = timestamp - startTime;
+
+      if (elapsed < delay) {
+        animationFrame = requestAnimationFrame(updateCount);
+        return;
+      }
+
+      const progress = Math.min((elapsed - delay) / duration, 1);
+      const easedProgress = easeOutExpo(progress);
+      const currentCount = Math.floor(easedProgress * target);
+
+      setCount(currentCount);
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(updateCount);
+      } else {
+        setCount(target);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(updateCount);
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+    };
+  }, [target, duration, delay, isVisible]);
+
+  return count;
+};
+
+// Easing function for smooth counter animation
+const easeOutExpo = (x: number): number => {
+  return x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+};
+
 const stats = [
   {
     icon: <Clock className="h-10 w-10 text-amber-500" />,
@@ -118,6 +174,10 @@ const Statistics = () => {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const { ref, inView } = useInView({
+    threshold: 0.1,
+    triggerOnce: true,
+  });
 
   // Track mouse position for interactive elements
   useEffect(() => {
@@ -154,7 +214,10 @@ const Statistics = () => {
   }, []);
 
   return (
-    <section className="section py-24 bg-[#0A0A0A] relative" ref={sectionRef}>
+    <section
+      ref={ref}
+      className="py-24 dark:bg-gradient-to-b dark:from-[#0A0A0A] dark:to-black light:bg-gradient-to-b light:from-gray-100 light:to-white"
+    >
       {/* Dynamic background effect */}
       <div className="absolute inset-0 overflow-hidden">
         <div
@@ -187,63 +250,72 @@ const Statistics = () => {
           <h2 className="font-semibold mb-4 text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Performance Metrics
           </h2>
-          <p className="text-lg text-gray-300">
+          <p className="text-lg dark:text-gray-300 light:text-gray-700">
             Quantifiable results that demonstrate our platform's
             industry-leading capabilities
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {stats.map((stat, index) => (
-            <div
-              key={index}
-              className={`
-                p-8 rounded-2xl transition-all duration-700 ease-out
+          {stats.map((stat, index) => {
+            const animatedValue = useCountAnimation(
+              stat.value,
+              2000,
+              index * 200,
+              inView
+            );
+
+            return (
+              <div
+                key={index}
+                className={`
+                  p-8 rounded-2xl transition-all duration-700 ease-out
                 ${
-                  isVisible
+                  inView
                     ? "opacity-100 translate-y-0"
                     : "opacity-0 translate-y-8"
                 }
-                bg-black/40 shadow-lg hover:shadow-xl backdrop-blur-sm
-                border border-[#722F37]/30 hover:border-[#E0115F]/30
-                group relative overflow-hidden
+                  bg-black/40 shadow-lg hover:shadow-xl backdrop-blur-sm
+                  border border-[#722F37]/30 hover:border-[#E0115F]/30
+                  group relative overflow-hidden
               `}
-              style={{ transitionDelay: `${index * 100}ms` }}
-            >
-              {/* Gradient decoration */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#E0115F]/5 to-transparent opacity-30 group-hover:opacity-50 transition-opacity"></div>
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-[#800000]/5 to-transparent opacity-30 group-hover:opacity-50 transition-opacity"></div>
+                style={{ transitionDelay: `${index * 100}ms` }}
+              >
+                {/* Gradient decoration */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#E0115F]/5 to-transparent opacity-30 group-hover:opacity-50 transition-opacity"></div>
+                <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-[#800000]/5 to-transparent opacity-30 group-hover:opacity-50 transition-opacity"></div>
 
-              {/* Content */}
-              <div className="relative z-10">
-                {/* Icon with animated background */}
-                <div className="rounded-full w-16 h-16 flex items-center justify-center bg-black mb-6 group-hover:scale-110 transition-transform duration-300 relative border border-[#722F37]/30">
-                  {stat.icon}
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#800000]/20 to-[#E0115F]/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"></div>
+                {/* Content */}
+                <div className="relative z-10">
+                  {/* Icon with animated background */}
+                  <div className="rounded-full w-16 h-16 flex items-center justify-center bg-black mb-6 group-hover:scale-110 transition-transform duration-300 relative border border-[#722F37]/30">
+                    {stat.icon}
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-[#800000]/20 to-[#E0115F]/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-sm"></div>
+                  </div>
+
+                  {/* Animated counter */}
+                  <Counter
+                    end={animatedValue}
+                    duration={2000}
+                    suffix={stat.suffix}
+                    delay={index * 200}
+                  />
+
+                  <h3 className="text-lg font-medium mt-2 mb-1 text-[#E0115F]">
+                    {stat.label}
+                  </h3>
+                  <p className="text-gray-400 text-sm">{stat.description}</p>
                 </div>
-
-                {/* Animated counter */}
-                <Counter
-                  end={stat.value}
-                  duration={2000}
-                  suffix={stat.suffix}
-                  delay={index * 200}
-                />
-
-                <h3 className="text-lg font-medium mt-2 mb-1 text-[#E0115F]">
-                  {stat.label}
-                </h3>
-                <p className="text-gray-400 text-sm">{stat.description}</p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Performance dashboard visualization */}
         <div
           className={`
             mt-16 p-8 rounded-2xl border border-[#722F37]/30 bg-black/30 backdrop-blur-sm
-            ${isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"}
+            ${inView ? "opacity-100 scale-100" : "opacity-0 scale-95"}
             transition-all duration-1000 delay-800
           `}
         >
@@ -278,9 +350,7 @@ const Statistics = () => {
                       key={i}
                       className="w-full h-0 bg-gradient-to-t from-[#800000] to-[#E0115F] mx-0.5 rounded-t-sm transition-all duration-1000"
                       style={{
-                        height: isVisible
-                          ? `${20 + Math.sin(i / 2) * 50}%`
-                          : "0%",
+                        height: inView ? `${20 + Math.sin(i / 2) * 50}%` : "0%",
                         transitionDelay: `${800 + i * 50}ms`,
                       }}
                     ></div>

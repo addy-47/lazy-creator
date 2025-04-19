@@ -192,7 +192,10 @@ const Features = () => {
   ];
 
   return (
-    <section id="features" className="section py-24 bg-[#0A0A0A] relative">
+    <section
+      id="features"
+      className="section py-24 bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-100 relative"
+    >
       {/* Background gradient patterns */}
       <div className="absolute inset-0 overflow-hidden">
         <div
@@ -220,6 +223,16 @@ const Features = () => {
       </div>
 
       <div className="container-wide relative z-10" ref={featuresRef}>
+        <div className="max-w-3xl mb-16">
+          <h2 className="font-semibold mb-4 text-4xl text-left text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
+            Enterprise-Grade Automation
+          </h2>
+          <p className="text-lg dark:text-gray-300 light:text-gray-700 text-left">
+            Our platform provides sophisticated tools that transform the way you
+            create and distribute YouTube Shorts
+          </p>
+        </div>
+
         <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
           {features.map((feature, index) => (
             <div
@@ -242,14 +255,14 @@ const Features = () => {
 
               {/* Main card content */}
               <div
-                className="relative bg-[#0A0A0A] shadow-xl rounded-2xl p-6 h-full z-10 overflow-hidden transition-all duration-300
+                className="relative dark:bg-[#0A0A0A] light:bg-white shadow-xl rounded-2xl p-6 h-full z-10 overflow-hidden transition-all duration-300
                 border border-[#722F37]/30 group-hover:translate-y-[-4px]"
               >
                 {/* Card content container */}
                 <div className="relative z-10 h-full flex flex-col">
                   {/* Icon and title in a row */}
                   <div className="flex items-center mb-3">
-                    <h3 className="text-xl font-medium mr-3 text-white">
+                    <h3 className="text-xl font-medium mr-3 dark:text-white light:text-gray-800">
                       {feature.title}
                     </h3>
                     <div
@@ -260,12 +273,12 @@ const Features = () => {
                     </div>
                   </div>
 
-                  <p className="text-gray-300 group-hover:opacity-0 transition-opacity duration-300">
+                  <p className="dark:text-gray-300 light:text-gray-600 group-hover:opacity-0 transition-opacity duration-300">
                     {feature.description}
                   </p>
 
                   {/* Hover content that appears */}
-                  <div className="absolute inset-0 pt-[4rem] px-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col text-gray-200">
+                  <div className="absolute inset-0 pt-[4rem] px-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col dark:text-gray-200 light:text-gray-700">
                     {feature.hoverContent}
                   </div>
                 </div>
@@ -280,157 +293,179 @@ const Features = () => {
         {/* Comparison Table Section */}
         <div className="mt-32 mb-12">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold md:text-4xl">
+            <h2 className="text-3xl font-bold md:text-4xl dark:text-white light:text-gray-800">
               Why Choose{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
                 LazyCreator
               </span>
             </h2>
-            <p className="mt-4 text-lg text-muted-foreground max-w-xl mx-auto">
+            <p className="mt-4 text-lg max-w-xl mx-auto dark:text-gray-300 light:text-gray-600">
               See how we stack up against the competition
             </p>
           </div>
 
-          <div className="overflow-x-auto glass-card-ruby p-6 shadow-lg">
+          <div className="overflow-x-auto glass-card-ruby p-6 shadow-lg dark:bg-black/50 light:bg-white/95 rounded-xl border dark:border-[#722F37]/30 light:border-[#722F37]/20">
             <table className="w-full min-w-[750px] border-collapse text-left">
               <thead>
-                <tr className="border-b border-border/30">
-                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                <tr className="border-b dark:border-[#722F37]/40 light:border-[#722F37]/30">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800">
                     Feature
                   </th>
                   <th className="py-4 px-4 font-medium text-[#E0115F]">
                     LazyCreator
                   </th>
-                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800">
                     InVideo
                   </th>
-                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800">
                     Pictory
                   </th>
-                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800">
                     Synthesia
                   </th>
-                  <th className="py-4 px-4 font-medium text-muted-foreground">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800">
                     Wisecut
                   </th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-border/20">
-                  <td className="py-4 px-4 font-medium">Content Creation</td>
+                <tr className="border-b dark:border-[#722F37]/30 light:border-[#722F37]/20">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
+                    Content Creation
+                  </td>
                   <td className="py-4 px-4">
                     <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Partial
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Partial
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Partial
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Partial
                   </td>
                 </tr>
-                <tr className="border-b border-border/20">
-                  <td className="py-4 px-4 font-medium">Media Flexibility</td>
+                <tr className="border-b dark:border-[#722F37]/30 light:border-[#722F37]/20">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
+                    Media Flexibility
+                  </td>
                   <td className="py-4 px-4">
                     <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
                   <td className="py-4 px-4">
                     <CheckCircle2 className="h-5 w-5 text-green-500 mx-auto" />
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Limited
                   </td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
                   <td className="py-4 px-4">
                     <CheckCircle2 className="h-5 w-5 text-green-500 mx-auto" />
                   </td>
                 </tr>
-                <tr className="border-b border-border/20">
-                  <td className="py-4 px-4 font-medium">
+                <tr className="border-b dark:border-[#722F37]/30 light:border-[#722F37]/20">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     AI Thumbnail Generation
                   </td>
                   <td className="py-4 px-4">
                     <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Basic
                   </td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
                 </tr>
-                <tr className="border-b border-border/20">
-                  <td className="py-4 px-4 font-medium">
+                <tr className="border-b dark:border-[#722F37]/30 light:border-[#722F37]/20">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     AI Metadata Generation
                   </td>
                   <td className="py-4 px-4">
                     <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Basic
                   </td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
                 </tr>
-                <tr className="border-b border-border/20">
-                  <td className="py-4 px-4 font-medium">
+                <tr className="border-b dark:border-[#722F37]/30 light:border-[#722F37]/20">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     Direct YouTube Upload
                   </td>
                   <td className="py-4 px-4">
                     <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Partial
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Limited
                   </td>
-                  <td className="py-4 px-4 text-red-500 text-center">No</td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-red-400 light:text-red-600 text-center font-medium">
+                    No
+                  </td>
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Limited
                   </td>
                 </tr>
-                <tr className="border-b border-border/20">
-                  <td className="py-4 px-4 font-medium">
+                <tr className="border-b dark:border-[#722F37]/30 light:border-[#722F37]/20">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     Time to Create Short
                   </td>
                   <td className="py-4 px-4">
                     <span className="text-[#E0115F] font-bold">Minutes</span>
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Hours
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Hours
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Hours
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Hours
                   </td>
                 </tr>
-                <tr className="border-b border-border/20">
-                  <td className="py-4 px-4 font-medium">Learning Curve</td>
+                <tr className="border-b dark:border-[#722F37]/30 light:border-[#722F37]/20">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
+                    Learning Curve
+                  </td>
                   <td className="py-4 px-4">
                     <span className="text-[#E0115F] font-bold">Minimal</span>
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Moderate
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Moderate
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Moderate
                   </td>
-                  <td className="py-4 px-4 text-amber-500 text-center">
+                  <td className="py-4 px-4 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Moderate
                   </td>
                 </tr>

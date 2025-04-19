@@ -79,7 +79,7 @@ const WorkflowProcess = () => {
 
   return (
     <section
-      className="section py-24 bg-[#0A0A0A] overflow-hidden relative"
+      className="section py-24 dark:bg-[#0A0A0A] light:bg-gray-100 overflow-hidden relative"
       ref={sectionRef}
     >
       {/* Dynamic shadow overlay */}
@@ -114,7 +114,7 @@ const WorkflowProcess = () => {
           <h2 className="font-semibold mb-4 text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Sophisticated Automation Process
           </h2>
-          <p className="text-lg text-gray-300">
+          <p className="text-lg dark:text-gray-300 light:text-gray-700">
             Our enterprise-grade workflow delivers professional results with
             minimal effort
           </p>
@@ -123,7 +123,7 @@ const WorkflowProcess = () => {
         {/* Automated workflow animation */}
         <div className="relative mt-16">
           {/* Progress line with enhanced styling */}
-          <div className="absolute left-0 right-0 top-16 h-1 bg-[#0A0A0A] rounded-full border border-[#722F37]/30">
+          <div className="absolute left-0 right-0 top-16 h-1 dark:bg-[#0A0A0A] light:bg-gray-200 rounded-full border dark:border-[#722F37]/30 light:border-gray-300">
             <div
               className="h-full bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full transition-all duration-500"
               style={{
@@ -156,7 +156,7 @@ const WorkflowProcess = () => {
                     ${
                       index <= activeStep
                         ? "bg-gradient-to-r from-[#800000] to-[#E0115F] text-white shadow-lg shadow-[#E0115F]/30"
-                        : "bg-[#0A0A0A] text-gray-500 border border-[#722F37]/30"
+                        : "dark:bg-[#0A0A0A] light:bg-white text-gray-500 border dark:border-[#722F37]/30 light:border-gray-300"
                     }
                   `}
                 >
@@ -170,12 +170,18 @@ const WorkflowProcess = () => {
                   <h3
                     className={`
                     text-lg font-medium mb-2 transition-colors duration-500
-                    ${index <= activeStep ? "text-[#E0115F]" : "text-gray-400"}
+                    ${
+                      index <= activeStep
+                        ? "text-[#E0115F]"
+                        : "dark:text-gray-400 light:text-gray-600"
+                    }
                   `}
                   >
                     {step.title}
                   </h3>
-                  <p className="text-gray-400 text-sm">{step.description}</p>
+                  <p className="dark:text-gray-400 light:text-gray-600 text-sm">
+                    {step.description}
+                  </p>
                 </div>
               </div>
             ))}
@@ -185,12 +191,12 @@ const WorkflowProcess = () => {
         {/* Advanced process visualization */}
         <div
           className={`
-            mt-20 p-6 md:p-10 rounded-2xl shadow-xl bg-black/30 border border-[#722F37]/30 backdrop-blur-sm
+            mt-20 p-6 md:p-10 rounded-2xl shadow-xl dark:bg-black/30 light:bg-white/90 border dark:border-[#722F37]/30 light:border-gray-200 backdrop-blur-sm
             ${isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"}
             transition-all duration-1000 delay-500
           `}
         >
-          <div className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#0A0A0A] border border-[#722F37]/20">
+          <div className="aspect-video w-full relative overflow-hidden rounded-lg dark:bg-[#0A0A0A] light:bg-gray-100 border dark:border-[#722F37]/20 light:border-gray-300">
             {/* Animation showing automated workflow for each stage */}
             <div className="absolute inset-0 flex items-center justify-center">
               {activeStep === 0 && (
@@ -198,7 +204,7 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-amber-500/10 flex items-center justify-center mb-4 animate-pulse">
                     <Lightbulb className="h-10 w-10 text-amber-500" />
                   </div>
-                  <p className="text-gray-200 font-medium">
+                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
                     Generating ideas...
                   </p>
 
@@ -214,7 +220,7 @@ const WorkflowProcess = () => {
                       ].map((idea, i) => (
                         <span
                           key={i}
-                          className="inline-block mx-4 px-3 py-1 rounded-full bg-[#722F37]/20 text-sm"
+                          className="inline-block mx-4 px-3 py-1 rounded-full dark:bg-[#722F37]/20 light:bg-gray-200 text-sm"
                         >
                           {idea}
                         </span>
@@ -229,33 +235,33 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-blue-500/10 flex items-center justify-center mb-4 animate-pulse">
                     <Settings className="h-10 w-10 text-blue-500" />
                   </div>
-                  <p className="text-gray-200 font-medium">
+                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
                     Customizing content...
                   </p>
 
                   {/* Slider and controls visualization */}
                   <div className="max-w-md mx-auto mt-6 flex flex-col gap-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400 w-24 text-right">
+                      <span className="text-xs dark:text-gray-400 light:text-gray-600 w-24 text-right">
                         Background:
                       </span>
-                      <div className="h-2 flex-1 bg-[#722F37]/20 rounded-full overflow-hidden">
+                      <div className="h-2 flex-1 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
                         <div className="h-full w-3/4 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400 w-24 text-right">
+                      <span className="text-xs dark:text-gray-400 light:text-gray-600 w-24 text-right">
                         Duration:
                       </span>
-                      <div className="h-2 flex-1 bg-[#722F37]/20 rounded-full overflow-hidden">
+                      <div className="h-2 flex-1 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
                         <div className="h-full w-1/2 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400 w-24 text-right">
-                        Text style:
+                      <span className="text-xs dark:text-gray-400 light:text-gray-600 w-24 text-right">
+                        Style:
                       </span>
-                      <div className="h-2 flex-1 bg-[#722F37]/20 rounded-full overflow-hidden">
+                      <div className="h-2 flex-1 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
                         <div className="h-full w-2/3 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
                       </div>
                     </div>
@@ -268,24 +274,17 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mb-4 animate-pulse">
                     <MonitorPlay className="h-10 w-10 text-green-500" />
                   </div>
-                  <p className="text-gray-200 font-medium">
-                    Creating your video...
+                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
+                    Creating your Short...
                   </p>
 
-                  {/* Progress bar */}
-                  <div className="max-w-md mx-auto mt-6 px-4">
-                    <div className="w-full h-3 bg-[#722F37]/20 rounded-full overflow-hidden">
-                      <div className="h-full w-2/3 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
-                    </div>
-                    <div className="flex justify-between mt-2">
-                      <span className="text-xs text-gray-400">
-                        Processing frames
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        Rendering video
-                      </span>
-                    </div>
+                  {/* Progress indicator */}
+                  <div className="w-64 h-2 mx-auto mt-4 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
+                    <div className="h-full animate-progress-bar bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]"></div>
                   </div>
+                  <p className="mt-2 text-xs dark:text-gray-400 light:text-gray-600">
+                    Processing: 67%
+                  </p>
                 </div>
               )}
 
@@ -294,38 +293,68 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-[#E0115F]/10 flex items-center justify-center mb-4 animate-pulse">
                     <Upload className="h-10 w-10 text-[#E0115F]" />
                   </div>
-                  <p className="text-gray-200 font-medium">
+                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
                     Uploading to YouTube...
                   </p>
 
-                  {/* Upload visualization */}
-                  <div className="max-w-md mx-auto mt-6 px-4">
-                    <div className="w-full p-4 rounded-lg border border-[#722F37]/30 bg-black/20">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 rounded bg-[#800000]/20"></div>
-                        <div className="flex-1">
-                          <div className="h-2 w-3/4 bg-[#722F37]/20 rounded-full mb-2"></div>
-                          <div className="h-2 w-1/2 bg-[#722F37]/20 rounded-full"></div>
+                  <div className="max-w-xs mx-auto flex flex-col gap-4 mt-6">
+                    <div className="flex text-xs">
+                      <span className="dark:text-gray-400 light:text-gray-600">
+                        Optimizing metadata
+                      </span>
+                      <span className="ml-auto text-green-500">✓</span>
+                    </div>
+                    <div className="flex text-xs">
+                      <span className="dark:text-gray-400 light:text-gray-600">
+                        Generating thumbnail
+                      </span>
+                      <span className="ml-auto text-green-500">✓</span>
+                    </div>
+                    <div className="flex text-xs">
+                      <span className="dark:text-gray-400 light:text-gray-600">
+                        Uploading video (86%)
+                      </span>
+                      <span className="ml-auto">
+                        <div className="w-16 h-1 bg-gray-700 rounded-full overflow-hidden">
+                          <div className="h-full w-5/6 bg-[#E0115F] rounded-full"></div>
                         </div>
-                      </div>
-                      <div className="w-full h-3 bg-[#722F37]/20 rounded-full overflow-hidden">
-                        <div className="h-full w-3/4 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
-                      </div>
-                      <div className="flex justify-end mt-2">
-                        <span className="text-xs text-[#E0115F]">75%</span>
-                      </div>
+                      </span>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* Decorative elements */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#E0115F]/5 to-transparent"></div>
-            <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-[#800000]/5 to-transparent"></div>
           </div>
         </div>
       </div>
+
+      <style jsx="true">{`
+        @keyframes infinite-scroll-x {
+          0% {
+            transform: translateX(100%);
+          }
+          100% {
+            transform: translateX(-100%);
+          }
+        }
+
+        @keyframes progress-bar {
+          0% {
+            width: 0%;
+          }
+          100% {
+            width: 67%;
+          }
+        }
+
+        .animate-infinite-scroll-x {
+          animation: infinite-scroll-x 15s linear infinite;
+        }
+
+        .animate-progress-bar {
+          animation: progress-bar 2s ease-out forwards;
+        }
+      `}</style>
     </section>
   );
 };

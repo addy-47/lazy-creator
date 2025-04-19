@@ -10,6 +10,7 @@ const Create = () => {
   const { isAuthenticated } = useAuth();
   const { theme, setTheme } = useTheme();
 
+  // Improved theme handling - force document class update
   useEffect(() => {
     // If theme is not set, detect browser preference
     if (!theme) {
@@ -20,16 +21,26 @@ const Create = () => {
     }
 
     // Ensure the theme is applied to the document
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-      document.documentElement.classList.remove("light");
-    } else {
-      document.documentElement.classList.add("light");
-      document.documentElement.classList.remove("dark");
-    }
+    const applyTheme = () => {
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
+      } else {
+        document.documentElement.classList.add("light");
+        document.documentElement.classList.remove("dark");
+      }
+    };
+
+    // Apply immediately
+    applyTheme();
+
+    // Also apply after a short delay to ensure all components update
+    const timeout = setTimeout(applyTheme, 50);
+
+    return () => clearTimeout(timeout);
   }, [theme, setTheme]);
 
-  // Force-apply theme immediately
+  // Force-apply theme immediately on render
   if (theme === "dark") {
     document.documentElement.classList.add("dark");
     document.documentElement.classList.remove("light");
@@ -39,11 +50,11 @@ const Create = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col overflow-hidden">
+    <div className="min-h-screen flex flex-col overflow-hidden text-foreground">
       {/* Enhanced animated background */}
       <div className="fixed inset-0 -z-10">
-        {/* Base gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br dark:from-[#800000]/10 dark:via-[#722F37]/5 dark:to-background from-[#FFF5F5]/70 via-[#FFF0F0]/80 to-background"></div>
+        {/* Base gradient - improved for both light and dark mode */}
+        <div className="absolute inset-0 bg-gradient-to-br dark:from-[#800000]/10 dark:via-[#722F37]/5 dark:to-[#0A0A0A] light:from-[#FFF5F5]/70 light:via-[#FFF0F0]/80 light:to-white"></div>
 
         {/* Animated gradient */}
         <div className="absolute inset-0">
@@ -70,11 +81,11 @@ const Create = () => {
             <div className="inline-block px-4 py-1 mb-4 text-sm font-medium text-[#E0115F] bg-[#E0115F]/10 dark:bg-[#E0115F]/5 border border-[#E0115F]/20 rounded-full">
               AI-Powered Creation
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-4 leading-tight">
+            <h1 className="text-3xl md:text-4xl font-bold dark:text-white light:text-gray-800 mb-4 leading-tight">
               Unleash Creative Sloth Mode
               <span className="text-[#E0115F]">.</span>
             </h1>
-            <p className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-base md:text-lg dark:text-gray-400 light:text-gray-600 max-w-2xl mx-auto">
               Let AI do the heavy lifting while you kick back. Transform scripts
               into viral shorts without lifting a finger. Your inner laziness
               has never been so productive.
@@ -93,6 +104,9 @@ const Create = () => {
           </div>
         </div>
       </main>
+
+      {/* Added spacing before footer */}
+      <div className="py-16 md:py-20"></div>
 
       <Footer />
     </div>

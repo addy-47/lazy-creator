@@ -28,7 +28,7 @@ const Index = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // First, check and set theme based on browser or saved preference
+  // Improved theme handling - force document class update
   useEffect(() => {
     // If theme is not set, detect browser preference
     if (!theme) {
@@ -39,16 +39,26 @@ const Index = () => {
     }
 
     // Ensure the theme is applied to the document
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-      document.documentElement.classList.remove("light");
-    } else {
-      document.documentElement.classList.add("light");
-      document.documentElement.classList.remove("dark");
-    }
+    const applyTheme = () => {
+      if (theme === "dark") {
+        document.documentElement.classList.add("dark");
+        document.documentElement.classList.remove("light");
+      } else {
+        document.documentElement.classList.add("light");
+        document.documentElement.classList.remove("dark");
+      }
+    };
+
+    // Apply immediately
+    applyTheme();
+
+    // Also apply after a short delay to ensure all components update
+    const timeout = setTimeout(applyTheme, 50);
+
+    return () => clearTimeout(timeout);
   }, [theme, setTheme]);
 
-  // Force-apply theme immediately
+  // Force-apply theme immediately on render
   if (theme === "dark") {
     document.documentElement.classList.add("dark");
     document.documentElement.classList.remove("light");
@@ -58,11 +68,11 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col overflow-hidden">
+    <div className="min-h-screen flex flex-col overflow-hidden text-foreground">
       {/* Morphing background gradient overlay */}
       <div className="fixed inset-0 -z-10">
-        {/* Base gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br dark:from-[#800000]/20 dark:via-[#722F37]/10 dark:to-[#0A0A0A] from-[#FFF5F5] via-[#FFF0F0] to-[#FFFFFF]"></div>
+        {/* Base gradient - improved for both light and dark mode */}
+        <div className="absolute inset-0 bg-gradient-to-br dark:from-[#800000]/20 dark:via-[#722F37]/10 dark:to-[#0A0A0A] light:from-[#FFF5F5] light:via-[#FFF0F0] light:to-[#FFFFFF]"></div>
 
         {/* Animated gradient */}
         <div className="absolute inset-0">
