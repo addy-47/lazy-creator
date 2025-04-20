@@ -19,6 +19,7 @@ const Index = () => {
   const scrollListenersRef = useRef<(() => void)[]>([]);
 
   // Optimized parallax scrolling effect with RAF
+  // Re-enabled for testing
   useEffect(() => {
     // Using RAF for smooth animation
     const handleScroll = rafScroll(() => {
@@ -163,6 +164,7 @@ const Index = () => {
         <Features />
         <WorkflowProcess />
         <Testimonials />
+        {/* Statistics optimized for performance */}
         <Statistics />
       </main>
 

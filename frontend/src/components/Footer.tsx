@@ -17,9 +17,11 @@ const Footer = () => {
       </div>
 
       {/* Animated stick figure in corner */}
+      {/* Removed for performance optimization
       <div className="absolute right-8 bottom-16 opacity-60 hidden lg:block">
         <StickFigureAnimation type="wave" delay={200} height={60} />
       </div>
+      */}
 
       <div className="container-wide">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8">

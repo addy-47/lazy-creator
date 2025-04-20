@@ -27,6 +27,7 @@ from automation.youtube_upload import upload_video
 import youtube_auth
 from youtube_auth import get_authenticated_service, check_auth_status, get_auth_url, get_credentials_from_code
 from storage import cloud_storage
+import storage_helper  # Import our custom storage helper
 from dotenv import load_dotenv
 
 # Configure logging
@@ -41,6 +42,10 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Initialize storage helper to ensure correct service account is used
+logger.info("Initializing storage helper in main application")
+storage_helper.init_module()
 
 # Configure CORS with explicit settings
 CORS(app,
@@ -672,6 +677,46 @@ def check_video_status(current_user, video_id):
     except Exception as e:
         logger.error(f"Error checking video status: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# Get status for a specific video
+@app.route('/api/video-status/<video_id>', methods=['GET'])
+@token_required
+def get_video_status(current_user, video_id):
+    try:
+        user_id = str(current_user['_id'])
+
+        # Find the video
+        video = videos_collection.find_one({'_id': ObjectId(video_id)})
+
+        # Check if video exists
+        if not video:
+            return jsonify({
+                'status': 'error',
+                'message': 'Video not found'
+            }), 404
+
+        # Check if user owns this video
+        if video.get('user_id') != user_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Unauthorized to access this video'
+            }), 403
+
+        # Return video status information
+        response = {
+            'status': video.get('status', 'unknown'),
+            'progress': video.get('progress', 0),
+            'created_at': video.get('created_at', '').isoformat() if video.get('created_at') else None,
+            'completed_at': video.get('completed_at', '').isoformat() if video.get('completed_at') else None
+        }
+
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"Error getting video status: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 # Helper function to get normalized file path for a user's file
 def get_normalized_file_path(user_id, filename):
@@ -1517,6 +1562,90 @@ def add_cors_headers(response):
     response.headers.add('Access-Control-Allow-Credentials', 'true')
 
     return response
+
+# Add a new endpoint to cancel video generation
+@app.route('/api/cancel-video/<video_id>', methods=['POST'])
+@token_required
+def cancel_video_generation(current_user, video_id):
+    try:
+        # Get user ID for permission check
+        user_id = str(current_user['_id'])
+
+        # Find the video
+        video = videos_collection.find_one({'_id': ObjectId(video_id)})
+
+        # Check if video exists
+        if not video:
+            return jsonify({
+                'status': 'error',
+                'message': 'Video not found'
+            }), 404
+
+        # Check if user owns this video
+        if video.get('user_id') != user_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Unauthorized to cancel this video'
+            }), 403
+
+        # Check if video is in a cancellable state
+        if video.get('status') not in ['processing', 'queued']:
+            return jsonify({
+                'status': 'error',
+                'message': 'Video cannot be cancelled in its current state'
+            }), 400
+
+        # Update video status to cancelled
+        videos_collection.update_one(
+            {'_id': ObjectId(video_id)},
+            {'$set': {
+                'status': 'cancelled',
+                'cancelled_at': datetime.utcnow()
+            }}
+        )
+
+        # Return success
+        return jsonify({
+            'status': 'success',
+            'message': 'Video generation cancelled'
+        })
+    except Exception as e:
+        logger.error(f"Error cancelling video: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# Get videos that are still in processing status for current user
+@app.route('/api/processing-videos', methods=['GET'])
+@token_required
+def get_processing_videos(current_user):
+    try:
+        user_id = str(current_user['_id'])
+
+        # Find all videos in processing state for this user
+        processing_videos = list(videos_collection.find({
+            'user_id': user_id,
+            'status': {'$in': ['processing', 'queued']}
+        }))
+
+        # Convert ObjectIds to strings for JSON serialization
+        for video in processing_videos:
+            video['_id'] = str(video['_id'])
+            # Convert any datetime objects to strings
+            if 'created_at' in video:
+                video['created_at'] = video['created_at'].isoformat()
+
+        return jsonify({
+            'status': 'success',
+            'videos': processing_videos
+        })
+    except Exception as e:
+        logger.error(f"Error getting processing videos: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 if __name__ == '__main__':
     try:

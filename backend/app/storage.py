@@ -26,9 +26,14 @@ class CloudStorage:
         self.uploads_bucket = os.getenv('UPLOADS_BUCKET', 'lazycreator-uploads')
         self.local_storage_dir = os.getenv('LOCAL_STORAGE_DIR', os.path.join(os.path.dirname(__file__), 'local_storage'))
 
-        # Service account information
+        # Service account information - prioritize the specific GCS_SERVICE_ACCOUNT value
         self.service_account_email = os.getenv('GCS_SERVICE_ACCOUNT', 'lazycreator-1@yt-shorts-automation-452420.iam.gserviceaccount.com')
-        self.service_account_key_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+
+        # First try to get the credentials file path from environment variable specific for GCS
+        gcs_credentials_path = os.getenv('GCS_CREDENTIALS_FILE')
+
+        # Fall back to GOOGLE_APPLICATION_CREDENTIALS if GCS_CREDENTIALS_FILE is not set
+        self.service_account_key_path = gcs_credentials_path or os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 
         # Fix Windows path if needed (convert E:\path\to\file.json to proper format)
         if self.service_account_key_path:
@@ -84,30 +89,34 @@ class CloudStorage:
                             logger.info(f"Successfully authenticated with service account key file")
                     except Exception as auth_error:
                         logger.error(f"Error authenticating with service account key file: {auth_error}")
-                        logger.info("Falling back to application default credentials")
+                        logger.info("Falling back to default authentication")
+
+                        # Use the explicit service account email with application default credentials
                         try:
-                            self.client = storage.Client()
-                            logger.info(f"Successfully authenticated with application default credentials")
+                            # Try to use the GCS_SERVICE_ACCOUNT email with default credentials mechanism
+                            logger.info(f"Attempting to use default credentials with specific service account {self.service_account_email}")
+                            self.client = storage.Client(project="yt-shorts-automation-452420")
+                            logger.info(f"Successfully authenticated with default credentials")
                         except Exception as default_auth_error:
                             logger.error(f"Error with default authentication: {default_auth_error}")
                             raise
                 else:
-                    # Try default credentials
-                    logger.info(f"No service account key file available, using default Google Cloud credentials")
-                    self.client = storage.Client()
+                    # Try default credentials with the correct service account
+                    logger.info(f"No service account key file available, using default Google Cloud credentials with service account {self.service_account_email}")
+                    self.client = storage.Client(project="yt-shorts-automation-452420")
                     logger.info(f"Successfully authenticated with default Google Cloud credentials")
 
                 # Check if buckets exist, create them if not - wrap in try/except for each bucket
                 try:
                     self._ensure_bucket_exists(self.media_bucket)
                 except Exception as media_bucket_error:
-                    logger.error(f"Error ensuring media bucket exists: {media_bucket_error}")
+                    logger.warning(f"Error ensuring media bucket exists: {media_bucket_error}")
                     # Continue and try uploads bucket
 
                 try:
                     self._ensure_bucket_exists(self.uploads_bucket)
                 except Exception as uploads_bucket_error:
-                    logger.error(f"Error ensuring uploads bucket exists: {uploads_bucket_error}")
+                    logger.warning(f"Error ensuring uploads bucket exists: {uploads_bucket_error}")
                     # Continue as we might only need one bucket
 
                 logger.info("Using Google Cloud Storage")

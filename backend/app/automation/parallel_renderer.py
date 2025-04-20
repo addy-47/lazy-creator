@@ -21,6 +21,11 @@ import weakref
 import threading
 import numpy as np
 
+# Import the storage_helper to use the correct service account
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from storage_helper import get_storage_client, reset_client
+
 logger = logging.getLogger(__name__)
 
 # Thread-safe shutdown flag
@@ -38,7 +43,7 @@ def is_shutdown_requested():
 
 def handle_shutdown_signal(signum, frame):
     """Handle shutdown signals gracefully"""
-    print(f"Received signal {signum}, requesting graceful shutdown...")
+    print(f"Received shutdown signal {signum}, requesting graceful shutdown...")
     request_shutdown()
 
 # Install signal handlers for common termination signals
@@ -549,6 +554,10 @@ def render_clip_process(mp_tuple):
     Returns:
         Path to the rendered clip or None if rendering failed
     """
+    # Ensure we use the correct storage client with proper credentials for this process
+    reset_client()  # Clear any previous clients
+    storage_client = get_storage_client()  # This will set up the correct service account
+
     idx, clip, output_dir, fps = mp_tuple
     output_path = None
 
@@ -585,7 +594,7 @@ def render_clip_process(mp_tuple):
                 clip = clip.set_position(mid_pos)
                 logging.debug(f"Fixed callable position in clip {idx}")
             except Exception as e:
-                logging.warning(f"Failed to fix position in clip {idx}: {e}")
+                logging.warning(f"Error fixing position in clip {idx}: {e}")
                 # Set a safe default position
                 try:
                     clip = clip.set_position('center')
@@ -745,6 +754,12 @@ def render_clips_in_parallel(clips, output_file, fps=30, num_processes=None, log
 
     # Function to process rendering in a temp directory
     def process_in_temp_dir(temp_directory):
+        # Initialize storage client with correct credentials before starting parallelization
+        # This ensures the main process has the right credentials
+        logger.info("Initializing storage client in main process")
+        reset_client()
+        storage_client = get_storage_client()
+
         # Store paths to rendered clips rather than clip objects to save memory
         processed_clips_paths = []
         temp_files_to_cleanup = set()

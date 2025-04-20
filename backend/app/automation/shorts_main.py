@@ -28,6 +28,8 @@ import threading
 from .parallel_renderer import is_shutdown_requested
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from app.storage import cloud_storage
+# Import our storage helper
+from app.storage_helper import get_storage_client, reset_client
 
 load_dotenv()
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
@@ -285,30 +287,45 @@ def create_youtube_short(
         raise
 
 def generate_youtube_short(topic, max_duration=25, background_type='video', background_source='provided', background_path=None, style="photorealistic", progress_callback=None):
-    """Generate a YouTube short video.
+    """
+    Generate a YouTube Short video based on a topic.
+
+    Args:
+        topic (str): The topic for the short video
+        max_duration (int): Maximum duration in seconds (default: 25)
+        background_type (str): Type of background - 'video' or 'image'
+        background_source (str): Source of background - 'provided', 'custom'
+        background_path (str): Path to custom background file if background_source is 'custom'
+        style (str): Style for images if background_type is 'image'
+        progress_callback (callable): Optional callback function for progress updates
 
     Returns:
-        tuple: (video_path, content_package) - path to the created video and the content package used
+        dict: Information about the generated video including path and metadata
     """
     try:
+        # Ensure we have the correct storage credentials
+        reset_client()
+        storage_client = get_storage_client()
+
+        # Set up a default callback if none provided
+        if progress_callback is None:
+            def update_progress(progress, message=""):
+                logger.info(f"Progress: {progress}%, {message}")
+            progress_callback = update_progress
+        else:
+            def update_progress(progress, message=""):
+                progress_callback(progress, message)
+                logger.info(f"Progress: {progress}%, {message}")
+
+        # Create a temporary directory for processing
+        temp_dir = ensure_output_directory()
+
         # Log the input parameters for debugging
         logger.info(f"generate_youtube_short called with: topic={topic}, max_duration={max_duration}, "
                    f"background_type={background_type}, background_source={background_source}, background_path={background_path}, style={style}")
 
-        # Helper function to update progress
-        def update_progress(progress, message=""):
-            if progress_callback:
-                try:
-                    progress_callback(progress)
-                    logger.info(f"Progress update: {progress}% - {message}")
-                except Exception as e:
-                    logger.error(f"Error updating progress: {e}")
-
         # Initialize progress
         update_progress(5, "Starting video generation")
-
-        # Create a temporary directory for processing
-        temp_dir = ensure_output_directory()
 
         # Check if processing should be aborted
         if should_abort_processing():

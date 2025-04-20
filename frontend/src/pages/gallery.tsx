@@ -140,19 +140,39 @@ function GalleryPage() {
       // Poll for video status periodically
       const checkInterval = setInterval(async () => {
         try {
-          const updatedData = await fetchVideos();
-          if (updatedData?.videos?.length > videos.length) {
-            // New video found, creation must be complete
+          // Check all videos in processing state
+          const token = localStorage.getItem("token");
+          if (!token) {
+            clearInterval(checkInterval);
+            return;
+          }
+
+          const response = await axios.get(
+            `${getAPIBaseURL()}/api/processing-videos`,
+            {
+              headers: {
+                "x-access-token": token,
+              },
+            }
+          );
+
+          if (response.data.videos && response.data.videos.length === 0) {
+            // No videos in processing state, creation must be complete
             setCreatingVideo(false);
             localStorage.removeItem("videoCreationInProgress");
             clearInterval(checkInterval);
+            toast.success("Your video creation process has completed!");
+            await fetchVideos(); // Refresh the videos list
           }
         } catch (error) {
-          console.error("Error checking for new videos:", error);
+          console.error("Error checking for processing videos:", error);
         }
       }, 5000); // Check every 5 seconds
 
       return () => clearInterval(checkInterval);
+    } else {
+      // Ensure creation state is reset when no creation is in progress
+      setCreatingVideo(false);
     }
   }, []);
 
@@ -947,6 +967,28 @@ function GalleryPage() {
               >
                 Close
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Only show creation-related UI if creatingVideo is true */}
+      {creatingVideo && (
+        <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+          <div className="max-w-md w-full mx-auto p-6">
+            <div className="bg-card p-6 rounded-lg shadow-lg text-center">
+              <h2 className="text-xl font-semibold mb-4">
+                Creating Your Video
+              </h2>
+              <p className="text-muted-foreground mb-6">
+                Your video is being generated. Please wait until the process is
+                complete.
+              </p>
+              <div className="animate-pulse flex space-x-2 justify-center">
+                <div className="h-2 w-2 bg-primary rounded-full"></div>
+                <div className="h-2 w-2 bg-primary rounded-full"></div>
+                <div className="h-2 w-2 bg-primary rounded-full"></div>
+              </div>
             </div>
           </div>
         </div>

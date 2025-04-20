@@ -15,7 +15,7 @@ const Hero = ({ username }: HeroProps) => {
   const heroRef = useRef<HTMLDivElement>(null);
   const mouseMoveListenerRef = useRef<(() => void) | null>(null);
 
-  // Track mouse position for parallax effect with RAF and throttle for better performance
+  // Parallax effect re-enabled for testing
   useEffect(() => {
     // Only update mouse position every 100ms to reduce overhead
     const handleMouseMove = throttle((e: MouseEvent) => {

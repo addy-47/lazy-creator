@@ -4,6 +4,24 @@ import App from "./App";
 import "./index.css";
 import performanceMonitor from "./utils/performance-monitor";
 
+// Detect if we should run in performance mode
+if (typeof window !== "undefined") {
+  // Check for low-end devices or slow connection
+  const isLowEndDevice =
+    window.navigator.hardwareConcurrency < 4 ||
+    // Use safer approach for connection API which might not be supported everywhere
+    (navigator as any).connection?.effectiveType === "slow-2g" ||
+    (navigator as any).connection?.effectiveType === "2g";
+
+  // Set performance mode attribute to selectively disable heavy features
+  if (isLowEndDevice) {
+    document.documentElement.setAttribute("data-performance-mode", "high");
+    console.info(
+      "[Performance] Enabled high-performance mode for low-end device"
+    );
+  }
+}
+
 // Expose performance monitor to the global window object for console debugging
 if (typeof window !== "undefined") {
   (window as any).performanceMonitor = performanceMonitor;

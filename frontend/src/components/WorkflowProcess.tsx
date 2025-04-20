@@ -37,6 +37,9 @@ const workflowSteps = [
 ];
 
 const WorkflowProcess = () => {
+  // Component re-enabled for testing
+  // return null;
+
   const [activeStep, setActiveStep] = useState(0);
   const sectionRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -94,39 +97,8 @@ const WorkflowProcess = () => {
       gradientRef.current.style.background = gradientStyleRef.current;
     }
 
-    // Heavily throttled handler (500ms)
-    const handleMouseMove = throttle((e: MouseEvent) => {
-      // Skip when scrolling or not visible
-      if (isScrolling.current || !isInView.current) return;
-
-      if (gradientRef.current) {
-        const x = e.clientX / window.innerWidth - 0.5;
-        const y = e.clientY / window.innerHeight - 0.5;
-
-        // Apply with requestAnimationFrame to avoid layout thrashing
-        if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
-
-        rafIdRef.current = requestAnimationFrame(() => {
-          if (gradientRef.current) {
-            gradientRef.current.style.background = `radial-gradient(circle at ${
-              50 + x * 15
-            }% ${
-              50 + y * 15
-            }%, rgba(224,17,95,0.3) 0%, rgba(128,0,0,0.2) 15%, transparent 50%)`;
-          }
-        });
-      }
-    }, 500); // Very high throttle for better performance
-
-    const removeListener = addPassiveEventListener(
-      window,
-      "mousemove",
-      handleMouseMove
-    );
-    mouseMoveListenerRef.current = removeListener;
-
+    // OPTIMIZATION: Disable mouse move effect completely for better performance
     return () => {
-      if (mouseMoveListenerRef.current) mouseMoveListenerRef.current();
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
   }, []);
@@ -320,9 +292,14 @@ const WorkflowProcess = () => {
           `}
           style={{
             contain: "content",
+            transform: "translateZ(0)",
+            willChange: "auto",
           }}
         >
-          <div className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-100 border border-[#722F37]/20 dark:border-[#722F37]/20 light:border-gray-300">
+          <div
+            className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-100 border border-[#722F37]/20 dark:border-[#722F37]/20 light:border-gray-300"
+            style={{ transform: "translateZ(0)" }}
+          >
             <div className="absolute inset-0 flex items-center justify-center">
               {activeStep === 0 && (
                 <div className="text-center">
