@@ -1,5 +1,5 @@
 import React from "react";
-import { Youtube, ExternalLink, Film } from "lucide-react";
+import { Youtube, ExternalLink, Film, RefreshCw } from "lucide-react";
 import { InfiniteMovingCards } from "@/components/ui/infinite-moving-cards";
 import { DemoVideo } from "./types";
 import { getAPIBaseURL } from "@/lib/socket";
@@ -7,11 +7,13 @@ import { getAPIBaseURL } from "@/lib/socket";
 interface TrendingYouTubeShortsProps {
   demoVideos: DemoVideo[];
   isYouTubeConnected: boolean;
+  onRefresh?: () => void;
 }
 
 const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
   demoVideos,
   isYouTubeConnected,
+  onRefresh,
 }) => {
   // Only show this section when there are videos
   if (demoVideos.length === 0) {
@@ -119,22 +121,38 @@ const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
           ) : (
             <>
               <Film size={18} />
-              <span>Featured Shorts</span>
+              <span>Trending Shorts</span>
             </>
           )}
         </h2>
 
-        {isYouTubeConnected && (
-          <a
-            href="https://www.youtube.com/shorts"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
-          >
-            <span>View All</span>
-            <ExternalLink size={14} />
-          </a>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Refresh button */}
+          {onRefresh && isYouTubeConnected && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                onRefresh();
+              }}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors p-1 rounded-full hover:bg-secondary/30"
+              title="Refresh trending videos"
+            >
+              <RefreshCw size={16} />
+            </button>
+          )}
+
+          {isYouTubeConnected && (
+            <a
+              href="https://www.youtube.com/shorts"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+            >
+              <span>View All</span>
+              <ExternalLink size={14} />
+            </a>
+          )}
+        </div>
       </div>
 
       <InfiniteMovingCards

@@ -32,6 +32,7 @@ function GalleryPage() {
     useAuth();
   const [videos, setVideos] = useState<Video[]>([]);
   const [demoVideos, setDemoVideos] = useState<DemoVideo[]>([]);
+  const [trendingVideos, setTrendingVideos] = useState<DemoVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null);
   const [showUploadForm, setShowUploadForm] = useState<string | null>(null);
@@ -58,6 +59,9 @@ function GalleryPage() {
     useState<any>(null);
   const [isFetchingChannelData, setIsFetchingChannelData] = useState(false);
   const [authCheckComplete, setAuthCheckComplete] = useState(false);
+  const [lastTrendingFetch, setLastTrendingFetch] = useState<number>(0);
+  const [trendingRequestInProgress, setTrendingRequestInProgress] =
+    useState(false);
 
   // Define checkYouTubeAuth function early so it can be referenced elsewhere
   const checkYouTubeAuth = async () => {
@@ -672,86 +676,317 @@ function GalleryPage() {
     window.open(`https://youtube.com/watch?v=${youtubeId}`, "_blank");
   };
 
-  // Update the fetchTrendingYouTubeShorts function to show loading state
-  const fetchTrendingYouTubeShorts = useCallback(async () => {
-    try {
-      if (!isYouTubeConnected) return; // Only fetch if connected to YouTube
-
-      setTrendingLoading(true); // Set loading state to true
-
-      // Use apiWithoutPreflight to avoid CORS preflight issues
-      const response = await apiWithoutPreflight.get(
-        "/api/youtube-trending-shorts"
-      );
-
-      if (response.data && response.data.shorts) {
-        const trendingShorts = response.data.shorts.map((short) => ({
-          id: short.id,
-          url: short.thumbnail,
-          title: short.title,
-          views: short.views,
-          youtubeUrl: `https://youtube.com/shorts/${short.id}`,
-          channel: short.channel,
-        }));
-
-        if (trendingShorts.length > 0) {
-          console.log("Setting trending shorts:", trendingShorts);
-          // Create a new array for setDemoVideos to ensure React recognizes the change
-          setDemoVideos([...trendingShorts]);
+  // Limit API requests for trending YouTube shorts with timestamp
+  const fetchTrendingYouTubeShorts = useCallback(
+    async (forceRefresh = false) => {
+      try {
+        // First check if connected to YouTube
+        if (!isYouTubeConnected) {
+          console.log(
+            "Not connected to YouTube, skipping trending shorts fetch"
+          );
+          return;
         }
-      }
-    } catch (error) {
-      console.error("Error fetching trending shorts:", error);
-      // Fallback to demo videos on error
-    } finally {
-      setTrendingLoading(false); // Set loading state to false regardless of outcome
-    }
-  }, [isYouTubeConnected]);
 
-  // Fetch trending shorts when YouTube is connected
+        // Check if we already have a request in progress
+        if (trendingRequestInProgress) {
+          console.log(
+            "A trending shorts request is already in progress, skipping duplicate request"
+          );
+          return;
+        }
+
+        // Check if we need to refresh based on timestamp
+        const now = Date.now();
+        if (
+          !forceRefresh &&
+          lastTrendingFetch > 0 &&
+          now - lastTrendingFetch < 3600000
+        ) {
+          console.log(
+            "Using cached trending shorts, last fetched:",
+            new Date(lastTrendingFetch).toLocaleTimeString()
+          );
+          return; // Use cached data if less than an hour has passed
+        }
+
+        // Additional check for loading state
+        if (trendingLoading) {
+          console.log(
+            "Already loading trending videos, skipping duplicate request"
+          );
+          return;
+        }
+
+        // Set both flags to prevent concurrent requests
+        setTrendingRequestInProgress(true);
+        setTrendingLoading(true);
+
+        console.log(
+          "Fetching new trending shorts at:",
+          new Date().toLocaleTimeString()
+        );
+
+        try {
+          // Use apiWithoutPreflight to avoid CORS preflight issues
+          const response = await apiWithoutPreflight.get(
+            "/api/youtube-trending-shorts"
+          );
+
+          if (response.data && response.data.shorts) {
+            const trendingShorts = response.data.shorts.map((short) => ({
+              id: short.id,
+              url: short.thumbnail,
+              title: short.title,
+              views: short.views,
+              youtubeUrl: `https://youtube.com/shorts/${short.id}`,
+              channel: short.channel,
+            }));
+
+            if (trendingShorts.length > 0) {
+              console.log(`Setting ${trendingShorts.length} trending shorts`);
+              // Set trending videos in separate state
+              setTrendingVideos([...trendingShorts]);
+              // Update last fetch timestamp
+              setLastTrendingFetch(now);
+            } else {
+              console.log("No trending shorts returned from API");
+            }
+          } else {
+            console.log("Invalid trending shorts response:", response.data);
+          }
+        } catch (error) {
+          console.error("Error fetching trending shorts:", error);
+          // Don't clear trending videos on error - keep the existing ones
+        } finally {
+          // Clear both flags
+          setTrendingLoading(false);
+          setTrendingRequestInProgress(false);
+        }
+      } catch (outerError) {
+        console.error(
+          "Unexpected error in fetchTrendingYouTubeShorts:",
+          outerError
+        );
+        setTrendingLoading(false);
+        setTrendingRequestInProgress(false);
+      }
+    },
+    [
+      isYouTubeConnected,
+      lastTrendingFetch,
+      trendingLoading,
+      trendingRequestInProgress,
+    ]
+  );
+
+  // Fetch trending shorts when YouTube is connected or when active section changes
   useEffect(() => {
     if (isYouTubeConnected && activeSection === "explore") {
       console.log("YouTube is connected, fetching trending shorts");
-      fetchTrendingYouTubeShorts();
+      // Delay the initial fetch to avoid multiple calls during component mount
+      const timer = setTimeout(() => {
+        fetchTrendingYouTubeShorts(true); // Force refresh when active section changes
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [isYouTubeConnected, activeSection, fetchTrendingYouTubeShorts]);
 
-  // Handle Featured Demos videos
+  // Set up interval to check for hourly updates when the component is mounted
+  useEffect(() => {
+    // Only set up interval if we're on explore section and connected to YouTube
+    if (activeSection === "explore" && isYouTubeConnected) {
+      const checkInterval = setInterval(() => {
+        fetchTrendingYouTubeShorts();
+      }, 300000); // Check every 5 minutes (300000ms)
+
+      return () => clearInterval(checkInterval);
+    }
+  }, [activeSection, isYouTubeConnected, fetchTrendingYouTubeShorts]);
+
+  // Handle Featured Demos videos - separate from trending videos
   useEffect(() => {
     if (activeSection === "explore") {
-      // Set demo videos with dynamic URLs - these are for Featured Demos section
-      setDemoVideos([
-        {
-          id: "demo1",
-          url: `${getAPIBaseURL()}/demo/demo1.mp4`,
-          title: "Demo Short #1",
-        },
-        {
-          id: "demo2",
-          url: `${getAPIBaseURL()}/demo/demo2.mp4`,
-          title: "Demo Short #2",
-        },
-        {
-          id: "demo3",
-          url: `${getAPIBaseURL()}/demo/demo3.mp4`,
-          title: "Demo Short #3",
-        },
-        {
-          id: "demo4",
-          url: `${getAPIBaseURL()}/demo/demo4.mp4`,
-          title: "Demo Short #4",
-        },
-        {
-          id: "demo5",
-          url: `${getAPIBaseURL()}/demo/demo5.mp4`,
-          title: "Demo Short #5",
-        },
-        {
-          id: "demo6",
-          url: `${getAPIBaseURL()}/demo/demo6.mp4`,
-          title: "Demo Short #6",
-        },
-      ]);
+      console.log(
+        "Setting up demo videos using specified path: lazycreator-media/demo"
+      );
+
+      // Use the specific path provided in requirements
+      const demoPath = "/lazycreator-media/demo/";
+
+      // Test if this path works
+      const testDemoAvailability = async () => {
+        try {
+          // Test if the specified path works
+          const testUrl = `${getAPIBaseURL()}${demoPath}demo1.mp4`;
+          console.log(`Testing demo video availability at: ${testUrl}`);
+
+          const response = await fetch(testUrl, { method: "HEAD" });
+          console.log(`Demo video test response status: ${response.status}`);
+
+          if (response.ok) {
+            console.log(
+              "lazycreator-media/demo path is valid, using local videos"
+            );
+            // Set videos with the confirmed working path
+            setDemoVideos([
+              {
+                id: "demo1",
+                url: `${getAPIBaseURL()}${demoPath}demo1.mp4`,
+                title: "Demo Short #1",
+              },
+              {
+                id: "demo2",
+                url: `${getAPIBaseURL()}${demoPath}demo2.mp4`,
+                title: "Demo Short #2",
+              },
+              {
+                id: "demo3",
+                url: `${getAPIBaseURL()}${demoPath}demo3.mp4`,
+                title: "Demo Short #3",
+              },
+              {
+                id: "demo4",
+                url: `${getAPIBaseURL()}${demoPath}demo4.mp4`,
+                title: "Demo Short #4",
+              },
+              {
+                id: "demo5",
+                url: `${getAPIBaseURL()}${demoPath}demo5.mp4`,
+                title: "Demo Short #5",
+              },
+              {
+                id: "demo6",
+                url: `${getAPIBaseURL()}${demoPath}demo6.mp4`,
+                title: "Demo Short #6",
+              },
+            ]);
+          } else {
+            console.log(
+              "lazycreator-media/demo path returned 404, falling back to fallback videos"
+            );
+            // Try path without the slash
+            const altPath = "lazycreator-media/demo/";
+            const altUrl = `${getAPIBaseURL()}/${altPath}demo1.mp4`;
+            console.log(`Testing alternative URL: ${altUrl}`);
+
+            try {
+              const altResponse = await fetch(altUrl, { method: "HEAD" });
+              if (altResponse.ok) {
+                console.log("Alternative path works, using it");
+                setDemoVideos([
+                  {
+                    id: "demo1",
+                    url: `${getAPIBaseURL()}/${altPath}demo1.mp4`,
+                    title: "Demo Short #1",
+                  },
+                  {
+                    id: "demo2",
+                    url: `${getAPIBaseURL()}/${altPath}demo2.mp4`,
+                    title: "Demo Short #2",
+                  },
+                  {
+                    id: "demo3",
+                    url: `${getAPIBaseURL()}/${altPath}demo3.mp4`,
+                    title: "Demo Short #3",
+                  },
+                  {
+                    id: "demo4",
+                    url: `${getAPIBaseURL()}/${altPath}demo4.mp4`,
+                    title: "Demo Short #4",
+                  },
+                  {
+                    id: "demo5",
+                    url: `${getAPIBaseURL()}/${altPath}demo5.mp4`,
+                    title: "Demo Short #5",
+                  },
+                  {
+                    id: "demo6",
+                    url: `${getAPIBaseURL()}/${altPath}demo6.mp4`,
+                    title: "Demo Short #6",
+                  },
+                ]);
+                return;
+              }
+            } catch (error) {
+              console.error("Error testing alternative URL:", error);
+            }
+
+            // Fallback to external videos if both attempts fail
+            console.log("All local paths failed, using external sample videos");
+            setDemoVideos([
+              {
+                id: "demo1",
+                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                title: "Demo Short #1",
+              },
+              {
+                id: "demo2",
+                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+                title: "Demo Short #2",
+              },
+              {
+                id: "demo3",
+                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                title: "Demo Short #3",
+              },
+              {
+                id: "demo4",
+                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+                title: "Demo Short #4",
+              },
+              {
+                id: "demo5",
+                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+                title: "Demo Short #5",
+              },
+              {
+                id: "demo6",
+                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+                title: "Demo Short #6",
+              },
+            ]);
+          }
+        } catch (error) {
+          console.error("Error testing demo video availability:", error);
+          // Use external sample videos as fallback
+          setDemoVideos([
+            {
+              id: "demo1",
+              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+              title: "Demo Short #1",
+            },
+            {
+              id: "demo2",
+              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+              title: "Demo Short #2",
+            },
+            {
+              id: "demo3",
+              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+              title: "Demo Short #3",
+            },
+            {
+              id: "demo4",
+              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+              title: "Demo Short #4",
+            },
+            {
+              id: "demo5",
+              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+              title: "Demo Short #5",
+            },
+            {
+              id: "demo6",
+              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+              title: "Demo Short #6",
+            },
+          ]);
+        }
+      };
+
+      // Try to load the demo videos
+      testDemoAvailability();
     }
   }, [activeSection]);
 
@@ -854,9 +1089,11 @@ function GalleryPage() {
           {activeSection === "explore" && (
             <ExploreSection
               demoVideos={demoVideos}
+              trendingVideos={trendingVideos}
               trendingLoading={trendingLoading}
               onDemoVideoClick={handleDemoVideoClick}
               isYouTubeConnected={isYouTubeConnected}
+              onRefreshTrending={() => fetchTrendingYouTubeShorts(true)}
             />
           )}
         </div>
