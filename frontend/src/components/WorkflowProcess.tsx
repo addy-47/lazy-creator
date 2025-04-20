@@ -1,6 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Lightbulb, Settings, MonitorPlay, Upload } from "lucide-react";
+import {
+  throttle,
+  rafScroll,
+  addPassiveEventListener,
+  debounce,
+  isInViewport,
+} from "@/utils/scroll";
 
+// Pre-define the step data outside the component to avoid recreating on each render
 const workflowSteps = [
   {
     icon: <Lightbulb className="h-6 w-6 text-amber-500" />,
@@ -32,65 +40,222 @@ const WorkflowProcess = () => {
   const [activeStep, setActiveStep] = useState(0);
   const sectionRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mouseMoveListenerRef = useRef<(() => void) | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const gradientRef = useRef<HTMLDivElement>(null);
+  const gradientStyleRef = useRef<string>(
+    `radial-gradient(circle at 50% 50%, rgba(224,17,95,0.3) 0%, rgba(128,0,0,0.2) 20%, transparent 60%)`
+  );
+  const isScrolling = useRef(false);
+  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
+  const isInView = useRef(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const rafIdRef = useRef<number | null>(null);
 
-  // Track mouse position for interactive elements
+  // Simplified scroll detection - only detect start and end
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({
-        x: e.clientX / window.innerWidth - 0.5,
-        y: e.clientY / window.innerHeight - 0.5,
-      });
+    let scrollTimer: NodeJS.Timeout | null = null;
+
+    const handleScroll = () => {
+      isScrolling.current = true;
+
+      // Clear previous timeout
+      if (scrollTimer) {
+        clearTimeout(scrollTimer);
+      }
+
+      // Set end detection with a reasonable delay
+      scrollTimer = setTimeout(() => {
+        isScrolling.current = false;
+      }, 200);
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % workflowSteps.length);
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-        }
-      },
-      { threshold: 0.2 }
-    );
-
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current);
-    }
+    // Use passive event listener to improve performance
+    window.addEventListener("scroll", handleScroll, { passive: true });
 
     return () => {
-      if (sectionRef.current) {
-        observer.unobserve(sectionRef.current);
-      }
+      window.removeEventListener("scroll", handleScroll);
+      if (scrollTimer) clearTimeout(scrollTimer);
     };
   }, []);
+
+  // Simplified mouse move effect with very high throttle
+  useEffect(() => {
+    // Skip effect on low-end devices
+    if (
+      typeof window === "undefined" ||
+      window.navigator.hardwareConcurrency < 4
+    )
+      return;
+
+    // Set initial gradient
+    if (gradientRef.current) {
+      gradientRef.current.style.background = gradientStyleRef.current;
+    }
+
+    // Heavily throttled handler (500ms)
+    const handleMouseMove = throttle((e: MouseEvent) => {
+      // Skip when scrolling or not visible
+      if (isScrolling.current || !isInView.current) return;
+
+      if (gradientRef.current) {
+        const x = e.clientX / window.innerWidth - 0.5;
+        const y = e.clientY / window.innerHeight - 0.5;
+
+        // Apply with requestAnimationFrame to avoid layout thrashing
+        if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+
+        rafIdRef.current = requestAnimationFrame(() => {
+          if (gradientRef.current) {
+            gradientRef.current.style.background = `radial-gradient(circle at ${
+              50 + x * 15
+            }% ${
+              50 + y * 15
+            }%, rgba(224,17,95,0.3) 0%, rgba(128,0,0,0.2) 15%, transparent 50%)`;
+          }
+        });
+      }
+    }, 500); // Very high throttle for better performance
+
+    const removeListener = addPassiveEventListener(
+      window,
+      "mousemove",
+      handleMouseMove
+    );
+    mouseMoveListenerRef.current = removeListener;
+
+    return () => {
+      if (mouseMoveListenerRef.current) mouseMoveListenerRef.current();
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
+
+  // Step rotation interval with condition to pause during scrolling
+  useEffect(() => {
+    if (!isVisible) return;
+
+    // Use a longer interval
+    const interval = setInterval(() => {
+      // Skip during scrolling or when not visible
+      if (isScrolling.current || !isInView.current) return;
+
+      setActiveStep((prev) => (prev + 1) % workflowSteps.length);
+    }, 5000);
+
+    intervalRef.current = interval;
+
+    return () => {
+      clearInterval(interval);
+      intervalRef.current = null;
+    };
+  }, [isVisible]);
+
+  // Handle section visibility with IntersectionObserver
+  const handleIntersection = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [entry] = entries;
+
+      // Update in-view status
+      isInView.current = entry.isIntersecting;
+
+      // Only process visibility change when entering viewport
+      if (entry.isIntersecting && !isVisible) {
+        // Set visible after a small delay
+        const timer = setTimeout(() => {
+          setIsVisible(true);
+        }, 100);
+
+        animationTimeoutRef.current = timer;
+      }
+    },
+    [isVisible]
+  );
+
+  // Setup intersection observer
+  useEffect(() => {
+    if (!sectionRef.current) return;
+
+    const options = {
+      threshold: 0.1,
+      rootMargin: "200px 0px",
+    };
+
+    observerRef.current = new IntersectionObserver(handleIntersection, options);
+    observerRef.current.observe(sectionRef.current);
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
+  }, [handleIntersection]);
+
+  // Pre-compute all step classes
+  const stepVisibilityClasses = useMemo(
+    () =>
+      workflowSteps.map(() =>
+        isVisible
+          ? "opacity-100 translate-y-0 transition-opacity duration-500 ease-out"
+          : "opacity-0 translate-y-8"
+      ),
+    [isVisible]
+  );
+
+  const stepCircleClasses = useMemo(
+    () =>
+      workflowSteps.map((_, index) => {
+        const baseClasses =
+          "w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-6";
+
+        return index <= activeStep
+          ? `${baseClasses} bg-gradient-to-r from-[#800000] to-[#E0115F] text-white shadow-lg shadow-[#E0115F]/30 transition-colors duration-300`
+          : `${baseClasses} bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-white text-gray-500 border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-300 transition-colors duration-300`;
+      }),
+    [activeStep]
+  );
+
+  const stepTitleClasses = useMemo(
+    () =>
+      workflowSteps.map((_, index) => {
+        const baseClasses =
+          "text-lg font-medium mb-2 transition-colors duration-300";
+
+        return index <= activeStep
+          ? `${baseClasses} text-[#E0115F]`
+          : `${baseClasses} text-gray-400 dark:text-gray-400 light:text-gray-600`;
+      }),
+    [activeStep]
+  );
+
+  // Pre-calculate progress width
+  const progressWidth = useMemo(
+    () => `${((activeStep + 1) / workflowSteps.length) * 100}%`,
+    [activeStep]
+  );
 
   return (
     <section
       className="section py-24 dark:bg-[#0A0A0A] light:bg-gray-100 overflow-hidden relative"
       ref={sectionRef}
+      style={{
+        contain: "content",
+        contentVisibility: isVisible ? "visible" : "auto",
+      }}
     >
-      {/* Dynamic shadow overlay */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
+          ref={gradientRef}
           className="absolute top-0 left-0 w-full h-full opacity-20"
           style={{
-            background: `radial-gradient(circle at ${
-              50 + mousePosition.x * 30
-            }% ${
-              50 + mousePosition.y * 30
-            }%, rgba(224,17,95,0.3) 0%, rgba(128,0,0,0.2) 20%, transparent 60%)`,
+            background: gradientStyleRef.current,
+            willChange: "background",
+            transform: "translateZ(0)",
+            contain: "paint",
           }}
         ></div>
       </div>
@@ -106,65 +271,38 @@ const WorkflowProcess = () => {
           </p>
         </div>
 
-        {/* Automated workflow animation */}
         <div className="relative mt-16">
-          {/* Progress line with enhanced styling */}
           <div className="absolute left-0 right-0 top-16 h-1 bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-200 rounded-full border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-300">
             <div
-              className="h-full bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full transition-all duration-500"
+              className="h-full bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"
               style={{
-                width: `${((activeStep + 1) / workflowSteps.length) * 100}%`,
+                width: progressWidth,
                 boxShadow: "0 0 10px rgba(224,17,95,0.5)",
+                transition: "width 0.3s ease-out",
+                contain: "strict",
               }}
             ></div>
           </div>
 
-          {/* Steps */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 relative z-10">
             {workflowSteps.map((step, index) => (
               <div
                 key={index}
-                className={`
-                  ${
-                    isVisible
-                      ? "opacity-100 translate-y-0"
-                      : "opacity-0 translate-y-8"
-                  }
-                  transition-all duration-700 ease-out
-                `}
-                style={{ transitionDelay: `${index * 200}ms` }}
+                className={stepVisibilityClasses[index]}
+                style={{
+                  transitionDelay: isVisible
+                    ? `${Math.min(index * 30, 90)}ms`
+                    : "0ms",
+                }}
               >
-                {/* Step circle */}
-                <div
-                  className={`
-                    w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-6
-                    transition-all duration-500
-                    ${
-                      index <= activeStep
-                        ? "bg-gradient-to-r from-[#800000] to-[#E0115F] text-white shadow-lg shadow-[#E0115F]/30"
-                        : "bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-white text-gray-500 border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-300"
-                    }
-                  `}
-                >
+                <div className={stepCircleClasses[index]}>
                   <div className={index === activeStep ? "animate-pulse" : ""}>
                     {step.icon}
                   </div>
                 </div>
 
-                {/* Step content */}
                 <div className="text-center">
-                  <h3
-                    className={`
-                    text-lg font-medium mb-2 transition-colors duration-500
-                    ${
-                      index <= activeStep
-                        ? "text-[#E0115F]"
-                        : "text-gray-400 dark:text-gray-400 light:text-gray-600"
-                    }
-                  `}
-                  >
-                    {step.title}
-                  </h3>
+                  <h3 className={stepTitleClasses[index]}>{step.title}</h3>
                   <p className="text-gray-400 dark:text-gray-400 light:text-gray-600 text-sm">
                     {step.description}
                   </p>
@@ -174,139 +312,59 @@ const WorkflowProcess = () => {
           </div>
         </div>
 
-        {/* Advanced process visualization */}
         <div
           className={`
             mt-20 p-6 md:p-10 rounded-2xl shadow-xl bg-black/30 dark:bg-black/30 light:bg-white/90 border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-200 backdrop-blur-sm
             ${isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"}
-            transition-all duration-1000 delay-500
+            transition-opacity duration-700 delay-300
           `}
+          style={{
+            contain: "content",
+          }}
         >
           <div className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-100 border border-[#722F37]/20 dark:border-[#722F37]/20 light:border-gray-300">
-            {/* Animation showing automated workflow for each stage */}
             <div className="absolute inset-0 flex items-center justify-center">
               {activeStep === 0 && (
                 <div className="text-center">
-                  <div className="mx-auto w-24 h-24 rounded-full bg-amber-500/10 flex items-center justify-center mb-4 animate-pulse">
+                  <div className="mx-auto w-24 h-24 rounded-full bg-amber-500/10 flex items-center justify-center mb-4">
                     <Lightbulb className="h-10 w-10 text-amber-500" />
                   </div>
                   <p className="text-gray-200 dark:text-gray-200 light:text-gray-800 font-medium">
                     Generating ideas...
                   </p>
-
-                  <div className="absolute w-full top-10 left-0 opacity-20 overflow-hidden">
-                    <div className="animate-infinite-scroll-x whitespace-nowrap">
-                      {[
-                        "Travel tips",
-                        "AI news",
-                        "Cooking tutorial",
-                        "Tech review",
-                        "Life hack",
-                        "Fitness routine",
-                      ].map((idea, i) => (
-                        <span
-                          key={i}
-                          className="inline-block mx-4 px-3 py-1 rounded-full bg-[#722F37]/20 dark:bg-[#722F37]/20 light:bg-gray-200 text-sm"
-                        >
-                          {idea}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               )}
 
               {activeStep === 1 && (
                 <div className="text-center">
-                  <div className="mx-auto w-24 h-24 rounded-full bg-blue-500/10 flex items-center justify-center mb-4 animate-pulse">
+                  <div className="mx-auto w-24 h-24 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
                     <Settings className="h-10 w-10 text-blue-500" />
                   </div>
                   <p className="dark:text-gray-200 light:text-gray-800 font-medium">
                     Customizing content...
                   </p>
-
-                  {/* Slider and controls visualization */}
-                  <div className="max-w-md mx-auto mt-6 flex flex-col gap-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs dark:text-gray-400 light:text-gray-600 w-24 text-right">
-                        Background:
-                      </span>
-                      <div className="h-2 flex-1 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
-                        <div className="h-full w-3/4 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs dark:text-gray-400 light:text-gray-600 w-24 text-right">
-                        Duration:
-                      </span>
-                      <div className="h-2 flex-1 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
-                        <div className="h-full w-1/2 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs dark:text-gray-400 light:text-gray-600 w-24 text-right">
-                        Style:
-                      </span>
-                      <div className="h-2 flex-1 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
-                        <div className="h-full w-2/3 bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"></div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
 
               {activeStep === 2 && (
                 <div className="text-center">
-                  <div className="mx-auto w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mb-4 animate-pulse">
+                  <div className="mx-auto w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                     <MonitorPlay className="h-10 w-10 text-green-500" />
                   </div>
                   <p className="dark:text-gray-200 light:text-gray-800 font-medium">
-                    Creating your Short...
-                  </p>
-
-                  {/* Progress indicator */}
-                  <div className="w-64 h-2 mx-auto mt-4 dark:bg-[#722F37]/20 light:bg-gray-300 rounded-full overflow-hidden">
-                    <div className="h-full animate-progress-bar bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]"></div>
-                  </div>
-                  <p className="mt-2 text-xs dark:text-gray-400 light:text-gray-600">
-                    Processing: 67%
+                    Creating video...
                   </p>
                 </div>
               )}
 
               {activeStep === 3 && (
                 <div className="text-center">
-                  <div className="mx-auto w-24 h-24 rounded-full bg-[#E0115F]/10 flex items-center justify-center mb-4 animate-pulse">
+                  <div className="mx-auto w-24 h-24 rounded-full bg-[#E0115F]/10 flex items-center justify-center mb-4">
                     <Upload className="h-10 w-10 text-[#E0115F]" />
                   </div>
                   <p className="dark:text-gray-200 light:text-gray-800 font-medium">
                     Uploading to YouTube...
                   </p>
-
-                  <div className="max-w-xs mx-auto flex flex-col gap-4 mt-6">
-                    <div className="flex text-xs">
-                      <span className="dark:text-gray-400 light:text-gray-600">
-                        Optimizing metadata
-                      </span>
-                      <span className="ml-auto text-green-500">✓</span>
-                    </div>
-                    <div className="flex text-xs">
-                      <span className="dark:text-gray-400 light:text-gray-600">
-                        Generating thumbnail
-                      </span>
-                      <span className="ml-auto text-green-500">✓</span>
-                    </div>
-                    <div className="flex text-xs">
-                      <span className="dark:text-gray-400 light:text-gray-600">
-                        Uploading video (86%)
-                      </span>
-                      <span className="ml-auto">
-                        <div className="w-16 h-1 bg-gray-700 rounded-full overflow-hidden">
-                          <div className="h-full w-5/6 bg-[#E0115F] rounded-full"></div>
-                        </div>
-                      </span>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>

@@ -48,9 +48,9 @@ const GalleryHeader: React.FC<GalleryHeaderProps> = ({
             className={`flex items-center gap-2 rounded-full shrink-0 ${
               isYouTubeConnected
                 ? "bg-primary/10 hover:bg-primary/20 text-primary"
-                : ""
+                : "bg-gradient-to-r from-[#800000] to-[#E0115F] hover:from-[#800000]/90 hover:to-[#E0115F]/90 text-white border-transparent"
             }`}
-            variant={isYouTubeConnected ? "outline" : "purple"}
+            variant={isYouTubeConnected ? "outline" : "default"}
           >
             <div className="flex items-center gap-2">
               <Youtube size={16} className="flex-shrink-0" />

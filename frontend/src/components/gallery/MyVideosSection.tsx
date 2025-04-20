@@ -3,6 +3,7 @@ import { Button } from "@/components/Button";
 import VideoCard from "./VideoCard";
 import CreateNewCard from "./CreateNewCard";
 import SkeletonLoader from "./SkeletonLoader";
+import { UserCircle2 } from "lucide-react";
 
 interface Video {
   id: string;
@@ -27,6 +28,7 @@ interface MyVideosSectionProps {
   onOpenYouTube: (youtubeId: string) => void;
   onDelete: (videoId: string) => void;
   onClearSearch: () => void;
+  isAuthenticated: boolean;
 }
 
 const MyVideosSection: React.FC<MyVideosSectionProps> = ({
@@ -42,11 +44,36 @@ const MyVideosSection: React.FC<MyVideosSectionProps> = ({
   onOpenYouTube,
   onDelete,
   onClearSearch,
+  isAuthenticated,
 }) => {
   // Filter videos based on search query
   const filteredVideos = videos.filter((video) =>
     video.original_prompt.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Show auth required message if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+        <div className="bg-card rounded-xl p-8 max-w-md w-full shadow-lg border border-border">
+          <UserCircle2 className="h-16 w-16 mx-auto mb-4 text-primary opacity-80" />
+          <h2 className="text-2xl font-bold mb-3">
+            Sign in to view your videos
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            Your personal video gallery is available after signing in. Create
+            and manage your own AI-generated shorts.
+          </p>
+          <Button
+            onClick={() => (window.location.href = "/auth")}
+            className="bg-gradient-to-r from-[#800000] to-[#E0115F] hover:from-[#800000]/90 hover:to-[#E0115F]/90 text-white w-full"
+          >
+            Sign In
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10">

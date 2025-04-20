@@ -508,22 +508,18 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
       )}
 
       <Button
+        size="lg"
+        variant="outline"
+        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#800000] to-[#E0115F] hover:from-[#800000]/90 hover:to-[#E0115F]/90 text-white border-transparent"
         onClick={connectToYouTube}
         disabled={isConnecting}
-        variant="purple"
-        className="w-full"
       >
         {isConnecting ? (
-          <div className="flex items-center justify-center">
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            <span>Connecting...</span>
-          </div>
+          <Loader2 className="h-5 w-5 animate-spin" />
         ) : (
-          <div className="flex items-center justify-center">
-            <Youtube size={16} className="mr-2" />
-            <span>Connect to YouTube</span>
-          </div>
+          <Youtube className="h-5 w-5" />
         )}
+        <span>{isConnecting ? "Connecting..." : "Connect to YouTube"}</span>
       </Button>
 
       <p className="mt-4 text-xs text-muted-foreground">

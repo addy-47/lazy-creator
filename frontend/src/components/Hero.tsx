@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { Button } from "./Button";
 import { useEffect, useRef, useState } from "react";
 import StickFigureAnimation from "./StickFigureAnimation";
+import { rafScroll, addPassiveEventListener, throttle } from "@/utils/scroll";
 
 interface HeroProps {
   username?: string;
@@ -12,21 +13,38 @@ const Hero = ({ username }: HeroProps) => {
   const [isVisible, setIsVisible] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const heroRef = useRef<HTMLDivElement>(null);
+  const mouseMoveListenerRef = useRef<(() => void) | null>(null);
 
-  // Track mouse position for parallax effect
+  // Track mouse position for parallax effect with RAF and throttle for better performance
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (heroRef.current) {
-        const { left, top, width, height } =
-          heroRef.current.getBoundingClientRect();
-        const x = (e.clientX - left) / width - 0.5;
-        const y = (e.clientY - top) / height - 0.5;
-        setMousePosition({ x, y });
+    // Only update mouse position every 100ms to reduce overhead
+    const handleMouseMove = throttle((e: MouseEvent) => {
+      // Use RAF to ensure we're not blocking the main thread
+      requestAnimationFrame(() => {
+        if (heroRef.current) {
+          const { left, top, width, height } =
+            heroRef.current.getBoundingClientRect();
+          const x = (e.clientX - left) / width - 0.5;
+          const y = (e.clientY - top) / height - 0.5;
+          setMousePosition({ x, y });
+        }
+      });
+    }, 100);
+
+    // Add passive event listener for better touch performance
+    const removeListener = addPassiveEventListener(
+      window,
+      "mousemove",
+      handleMouseMove
+    );
+    mouseMoveListenerRef.current = removeListener;
+
+    return () => {
+      if (mouseMoveListenerRef.current) {
+        mouseMoveListenerRef.current();
+        mouseMoveListenerRef.current = null;
       }
     };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
   useEffect(() => {
@@ -38,12 +56,14 @@ const Hero = ({ username }: HeroProps) => {
       ref={heroRef}
       className="relative overflow-hidden pt-32 pb-20 lg:pt-40 lg:pb-32"
     >
-      {/* Custom cursor effect within hero section */}
+      {/* Custom cursor effect within hero section - using will-change for performance */}
       <div
         className="custom-cursor hidden lg:block"
         style={{
           left: `${50 + mousePosition.x * 20}%`,
           top: `${50 + mousePosition.y * 20}%`,
+          willChange: "transform",
+          transform: "translateZ(0)", // Force GPU acceleration
         }}
       />
 
@@ -161,7 +181,7 @@ const Hero = ({ username }: HeroProps) => {
             </div>
           </div>
 
-          {/* Visual showcase column - floating YouTube shorts visualization */}
+          {/* Visual showcase column - optimized phone mockups with GPU acceleration */}
           <div className="lg:col-span-5 hidden lg:block relative min-h-[400px]">
             {/* First phone mockup */}
             <div
@@ -169,9 +189,10 @@ const Hero = ({ username }: HeroProps) => {
                 isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
               }`}
               style={{
+                willChange: "transform",
                 transform: `perspective(1000px) rotateY(${
                   mousePosition.x * 5
-                }deg) rotateX(${-mousePosition.y * 5}deg)`,
+                }deg) rotateX(${-mousePosition.y * 5}deg) translateZ(0)`,
                 transformStyle: "preserve-3d",
                 top: "10%",
                 left: "5%",
@@ -200,9 +221,10 @@ const Hero = ({ username }: HeroProps) => {
                 isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
               }`}
               style={{
+                willChange: "transform",
                 transform: `perspective(1000px) rotateY(${
                   mousePosition.x * 8
-                }deg) rotateX(${-mousePosition.y * 8}deg)`,
+                }deg) rotateX(${-mousePosition.y * 8}deg) translateZ(0)`,
                 transformStyle: "preserve-3d",
                 top: "5%",
                 left: "45%",

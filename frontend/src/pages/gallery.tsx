@@ -57,6 +57,7 @@ function GalleryPage() {
   const [selectedYouTubeChannel, setSelectedYouTubeChannel] =
     useState<any>(null);
   const [isFetchingChannelData, setIsFetchingChannelData] = useState(false);
+  const [authCheckComplete, setAuthCheckComplete] = useState(false);
 
   // Define checkYouTubeAuth function early so it can be referenced elsewhere
   const checkYouTubeAuth = async () => {
@@ -114,6 +115,22 @@ function GalleryPage() {
     }
   };
 
+  // Check authentication status
+  useEffect(() => {
+    if (!isAuthenticated && !authCheckComplete) {
+      // Show sign-in toast only once
+      toast.error("Please sign in to view your videos", {
+        description: "You can still browse demo videos in the Demo Videos tab",
+        action: {
+          label: "Sign In",
+          onClick: () => navigate("/auth"),
+        },
+      });
+      setAuthCheckComplete(true);
+      setActiveSection("explore"); // Switch to explore tab automatically
+    }
+  }, [isAuthenticated, authCheckComplete, navigate]);
+
   // Check if there's an active video creation on page load
   useEffect(() => {
     const creationInProgress = localStorage.getItem("videoCreationInProgress");
@@ -142,6 +159,12 @@ function GalleryPage() {
   // Enhanced fetchData function that returns the data for use with creation check
   const fetchVideos = async () => {
     try {
+      // Skip fetching videos if not authenticated
+      if (!isAuthenticated) {
+        setLoading(false);
+        return null;
+      }
+
       // Use apiWithoutPreflight to avoid CORS preflight issues
       const response = await apiWithoutPreflight.get("/api/gallery");
 
@@ -803,6 +826,7 @@ function GalleryPage() {
               onConnectYouTube={connectYouTube}
               onOpenYouTube={handleOpenYouTube}
               onClearSearch={() => setSearchQuery("")}
+              isAuthenticated={isAuthenticated}
             />
           )}
 

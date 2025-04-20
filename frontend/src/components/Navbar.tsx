@@ -1,4 +1,4 @@
-import { useState, useEffect, useReducer, useCallback } from "react";
+import { useState, useEffect, useReducer, useCallback, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import { Menu, X, Sun, Moon, LogIn, User, Youtube } from "lucide-react";
 import { Button } from "@/components/Button";
@@ -66,6 +66,9 @@ const Navbar = ({ username }: NavbarProps) => {
   const [currentUsername, setCurrentUsername] = useState<string | undefined>(
     undefined
   );
+  // Add ref for the mobile navigation menu
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   // Initialize from props
   const { isAuthenticated, setYouTubeConnected, isYouTubeConnected } =
@@ -277,6 +280,33 @@ const Navbar = ({ username }: NavbarProps) => {
   const displayUsername =
     currentUsername || (userInfo ? userInfo.name : undefined);
 
+  // Handle clicks outside the navigation menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (!isMenuOpen) return;
+
+      // Check if the click was outside both the menu and the toggle button
+      if (
+        mobileMenuRef.current &&
+        !mobileMenuRef.current.contains(event.target as Node) &&
+        menuButtonRef.current &&
+        !menuButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    // Add event listeners for both mouse and touch events
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+
+    // Clean up event listeners
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isMenuOpen]);
+
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
@@ -380,6 +410,7 @@ const Navbar = ({ username }: NavbarProps) => {
 
         {/* Mobile Navigation Toggle */}
         <button
+          ref={menuButtonRef}
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-foreground"
           aria-label={isMenuOpen ? "Close menu" : "Open menu"}
@@ -392,91 +423,96 @@ const Navbar = ({ username }: NavbarProps) => {
         </button>
       </div>
 
-      {/* Mobile Navigation Menu */}
-      {isMenuOpen && (
-        <div className="md:hidden bg-white/95 dark:bg-gray-900/95 backdrop-blur-md shadow-lg">
-          <div className="container-wide py-4 space-y-4">
-            <div className="flex flex-col space-y-2">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  onClick={() => setIsMenuOpen(false)}
-                  className={({ isActive }) =>
-                    `px-4 py-2 rounded-lg ${
-                      isActive
-                        ? "font-medium text-[#E0115F] dark:text-[#E0115F] bg-[#E0115F]/5 dark:bg-[#E0115F]/10"
-                        : "hover:bg-gray-100 dark:hover:bg-gray-800"
-                    }`
-                  }
-                >
-                  {item.name}
-                </NavLink>
-              ))}
-            </div>
-
-            <hr className="border-gray-200 dark:border-gray-800" />
-
-            <div className="flex flex-col space-y-3 px-4">
-              <button
-                onClick={toggleDarkMode}
-                className="flex items-center gap-3 py-2"
+      {/* Mobile Navigation Menu with improved animation */}
+      <div
+        ref={mobileMenuRef}
+        className={`md:hidden fixed top-16 left-0 right-0 bg-black/20 backdrop-blur-sm shadow-lg border-b border-border/30 transform transition-all duration-300 ease-in-out ${
+          isMenuOpen
+            ? "translate-y-0 opacity-100"
+            : "translate-y-[-10px] opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="container-wide py-4 space-y-4">
+          <div className="flex flex-col space-y-2">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.name}
+                to={item.path}
+                onClick={() => setIsMenuOpen(false)}
+                className={({ isActive }) =>
+                  `px-4 py-2 rounded-lg ${
+                    isActive
+                      ? "font-medium text-[#E0115F] dark:text-[#E0115F] bg-[#E0115F]/5 dark:bg-[#E0115F]/10"
+                      : "hover:bg-gray-100/10 dark:hover:bg-gray-800/20"
+                  }`
+                }
               >
-                {isDarkMode ? (
-                  <div className="flex items-center space-x-2">
-                    <Sun className="h-5 w-5" />
-                    <span>Switch to Light Mode</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    <Moon className="h-5 w-5" />
-                    <span>Switch to Dark Mode</span>
-                  </div>
-                )}
-              </button>
+                {item.name}
+              </NavLink>
+            ))}
+          </div>
 
-              {displayUsername ? (
-                <>
-                  <div className="flex items-center gap-2 py-2 text-sm">
-                    <ConnectionSphere isConnected={isYouTubeConnected} />
-                    <span className="text-foreground/70">
-                      {isYouTubeConnected
-                        ? "YouTube Connected"
-                        : "YouTube Disconnected"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 py-2">
-                    <div className="flex items-center space-x-2">
-                      <User className="h-5 w-5 text-[#E0115F]" />
-                      <span>{displayUsername}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleSignOut}
-                    className="flex items-center gap-3 py-2 text-red-600"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <LogIn className="h-5 w-5" />
-                      <span>Sign Out</span>
-                    </div>
-                  </button>
-                </>
+          <hr className="border-gray-200/20 dark:border-gray-800/30" />
+
+          <div className="flex flex-col space-y-3 px-4">
+            <button
+              onClick={toggleDarkMode}
+              className="flex items-center gap-3 py-2"
+            >
+              {isDarkMode ? (
+                <div className="flex items-center space-x-2">
+                  <Sun className="h-5 w-5" />
+                  <span>Switch to Light Mode</span>
+                </div>
               ) : (
-                <NavLink
-                  to="/auth"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-3 py-2"
+                <div className="flex items-center space-x-2">
+                  <Moon className="h-5 w-5" />
+                  <span>Switch to Dark Mode</span>
+                </div>
+              )}
+            </button>
+
+            {displayUsername ? (
+              <>
+                <div className="flex items-center gap-2 py-2 text-sm">
+                  <ConnectionSphere isConnected={isYouTubeConnected} />
+                  <span className="text-foreground/70">
+                    {isYouTubeConnected
+                      ? "YouTube Connected"
+                      : "YouTube Disconnected"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex items-center space-x-2">
+                    <User className="h-5 w-5 text-[#E0115F]" />
+                    <span>{displayUsername}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center gap-3 py-2 text-red-600"
                 >
                   <div className="flex items-center space-x-2">
                     <LogIn className="h-5 w-5" />
-                    <span>Sign In</span>
+                    <span>Sign Out</span>
                   </div>
-                </NavLink>
-              )}
-            </div>
+                </button>
+              </>
+            ) : (
+              <NavLink
+                to="/auth"
+                onClick={() => setIsMenuOpen(false)}
+                className="flex items-center gap-3 py-2"
+              >
+                <div className="flex items-center space-x-2">
+                  <LogIn className="h-5 w-5" />
+                  <span>Sign In</span>
+                </div>
+              </NavLink>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </nav>
   );
 };

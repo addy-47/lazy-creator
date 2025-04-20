@@ -15,6 +15,7 @@ import {
   Video,
 } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
+import { throttle, addPassiveEventListener } from "@/utils/scroll";
 
 const features = [
   {
@@ -104,34 +105,54 @@ const Features = () => {
 
   // Track mouse position for subtle effects
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({
-        x: e.clientX / window.innerWidth - 0.5,
-        y: e.clientY / window.innerHeight - 0.5,
+    // Use throttled mouse tracking with RAF for better performance
+    const handleMouseMove = throttle((e: MouseEvent) => {
+      requestAnimationFrame(() => {
+        setMousePosition({
+          x: e.clientX / window.innerWidth - 0.5,
+          y: e.clientY / window.innerHeight - 0.5,
+        });
       });
-    };
+    }, 100); // Only update every 100ms
 
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
+    // Use passive event listener
+    const removeListener = addPassiveEventListener(
+      window,
+      "mousemove",
+      handleMouseMove
+    );
+
+    return () => removeListener();
   }, []);
 
   useEffect(() => {
     const options = {
       root: null,
-      rootMargin: "0px",
+      rootMargin: "50px", // Larger margin to start loading earlier
       threshold: 0.1,
     };
 
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const cards = featuresRef.current?.querySelectorAll(".feature-card");
-          cards?.forEach((card, index) => {
-            setTimeout(() => {
-              card.classList.add("show");
-            }, 100 * index);
-          });
-        }
+      // Use requestAnimationFrame to avoid blocking the main thread
+      requestAnimationFrame(() => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const cards =
+              featuresRef.current?.querySelectorAll(".feature-card");
+            if (!cards) return;
+
+            // Add show class to cards with staggered delay
+            cards.forEach((card, index) => {
+              const delay = 50 * index; // Reduced delay for better performance
+              setTimeout(() => {
+                card.classList.add("show");
+              }, delay);
+            });
+
+            // Disconnect observer after animation to reduce overhead
+            observer.disconnect();
+          }
+        });
       });
     }, options);
 
@@ -347,7 +368,7 @@ const Features = () => {
                     <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
                   <td className="py-4 px-4 text-center">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto" />
+                    <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
                   <td className="py-4 px-4 text-amber-400 dark:text-amber-400 light:text-amber-600 text-center font-medium">
                     Limited
@@ -356,7 +377,7 @@ const Features = () => {
                     No
                   </td>
                   <td className="py-4 px-4 text-center">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto" />
+                    <CheckCircle2 className="h-5 w-5 text-[#E0115F] mx-auto" />
                   </td>
                 </tr>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">

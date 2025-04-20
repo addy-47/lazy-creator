@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
@@ -9,23 +9,47 @@ import Statistics from "@/components/Statistics";
 import { useAuth } from "@/contexts/AuthContext";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
 import { useTheme } from "next-themes";
+import { rafScroll, addPassiveEventListener } from "@/utils/scroll";
 
 const Index = () => {
   const { isAuthenticated } = useAuth();
   const { theme, setTheme } = useTheme();
   const parallaxRef = useRef<HTMLDivElement>(null);
+  const [scrollY, setScrollY] = useState(0);
+  const scrollListenersRef = useRef<(() => void)[]>([]);
 
-  // Parallax scrolling effect
+  // Optimized parallax scrolling effect with RAF
   useEffect(() => {
-    const handleScroll = () => {
-      if (parallaxRef.current) {
-        const scrollY = window.scrollY;
-        parallaxRef.current.style.transform = `translateY(${scrollY * 0.3}px)`;
-      }
-    };
+    // Using RAF for smooth animation
+    const handleScroll = rafScroll(() => {
+      const currentScrollY = window.scrollY;
+      setScrollY(currentScrollY);
 
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+      // Apply transform directly in RAF callback for better performance
+      if (parallaxRef.current) {
+        // Use transform3d for GPU acceleration
+        parallaxRef.current.style.transform = `translate3d(0, ${
+          currentScrollY * 0.3
+        }px, 0)`;
+      }
+    });
+
+    // Use passive event listener to improve scrolling performance
+    const removeListener = addPassiveEventListener(
+      window,
+      "scroll",
+      handleScroll
+    );
+    scrollListenersRef.current.push(removeListener);
+
+    // Run once on mount to set initial position
+    handleScroll();
+
+    return () => {
+      // Clean up all event listeners on unmount
+      scrollListenersRef.current.forEach((remove) => remove());
+      scrollListenersRef.current = [];
+    };
   }, []);
 
   // Improved theme handling - force document class update
@@ -86,10 +110,14 @@ const Index = () => {
         </div>
       </div>
 
-      {/* 3D Shorts visualization */}
+      {/* 3D Shorts visualization with will-change and transform3d for performance */}
       <div
         ref={parallaxRef}
         className="fixed right-0 top-0 h-full w-1/2 pointer-events-none -z-5 opacity-70 overflow-hidden"
+        style={{
+          willChange: "transform",
+          transform: `translate3d(0, ${scrollY * 0.3}px, 0)`,
+        }}
       >
         <div className="absolute right-10 top-40">
           <div className="relative w-40 h-72 rounded-2xl border border-[#E0115F]/30 bg-black/30 backdrop-blur-sm rotate-6 shadow-[0_0_15px_rgba(224,17,95,0.3)] transform-gpu hover:rotate-3 transition-transform duration-700">
