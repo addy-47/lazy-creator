@@ -1,8 +1,9 @@
-import logging # for logging events
-import logging.handlers # Import handlers
 import os # for environment variables and file paths
 from pathlib import Path # for file paths and directory creation
 from dotenv import load_dotenv # for loading environment variables
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from app.logging_config import get_video_logger
 from .script_generator import (
     generate_batch_video_queries,
     parse_script_to_cards,
@@ -35,67 +36,8 @@ load_dotenv()
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 YOUTUBE_TOPIC = os.getenv("YOUTUBE_TOPIC", "Artificial Intelligence")
 
-# Configure logging with daily rotation
-LOG_DIR = 'logs'  # Define log directory
-LOG_FILENAME = os.path.join(LOG_DIR, 'youtube_shorts_daily.log') # Create full path
-LOG_LEVEL = logging.INFO
-
-# Ensure log directory exists
-Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
-
-# Set up a specific logger with our desired output level
-logger = logging.getLogger(__name__)
-logger.setLevel(LOG_LEVEL)
-
-# Define log format
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-
-# Add the log message handler to the logger
-# Rotate logs daily at midnight, keep 7 backups
-handler = logging.handlers.TimedRotatingFileHandler(
-    LOG_FILENAME, when='midnight', interval=1, backupCount=7,
-    delay=True  # Only open the file when we actually log something
-)
-handler.setFormatter(formatter)
-# Set a less strict rollover policy
-handler.namer = lambda name: name + ".backup"  # Use a different naming scheme to avoid conflicts
-handler.rotator = lambda source, dest: shutil.copy2(source, dest)  # Copy instead of rename
-logger.addHandler(handler)
-
-# Add a handler to also output to console
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(formatter)
-logger.addHandler(stream_handler)
-
-# Configure root logger with a separate file handler to avoid conflicts
-root_handler = logging.handlers.RotatingFileHandler(
-    os.path.join(LOG_DIR, 'app.log'),
-    maxBytes=10*1024*1024,
-    backupCount=5
-)
-root_handler.setFormatter(formatter)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(formatter)
-
-# This ensures consistency if other modules just call logging.info etc.
-# Use a different implementation to avoid conflicts with the main logger
-logging.basicConfig(level=LOG_LEVEL,
-                   format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-                   handlers=[root_handler, console_handler])
-
-def ensure_output_directory(directory="ai_shorts_output"):
-    """Ensure the output directory exists."""
-    # Use a single temp directory for processing
-    temp_dir = tempfile.mkdtemp()
-
-    # Make sure we create the output directory if it doesn't exist
-    # We'll use an absolute path to avoid path resolution issues
-    output_dir = os.path.abspath(directory)
-    os.makedirs(output_dir, exist_ok=True)
-
-    logger.info(f"Using temp dir: {temp_dir}, output dir: {output_dir}")
-
-    return temp_dir
+# Get the video creation logger
+logger = get_video_logger()
 
 def get_latest_ai_news():
     """Get the latest technology or AI news."""
@@ -313,12 +255,15 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
                 logger.info(f"Progress: {progress}%, {message}")
             progress_callback = update_progress
         else:
+            # Modified to handle callbacks that accept only one parameter
             def update_progress(progress, message=""):
-                progress_callback(progress, message)
+                try:
+                    # Try calling with both parameters
+                    progress_callback(progress, message)
+                except TypeError:
+                    # If that fails, assume the callback only takes the progress parameter
+                    progress_callback(progress)
                 logger.info(f"Progress: {progress}%, {message}")
-
-        # Create a temporary directory for processing
-        temp_dir = ensure_output_directory()
 
         # Log the input parameters for debugging
         logger.info(f"generate_youtube_short called with: topic={topic}, max_duration={max_duration}, "

@@ -80,7 +80,10 @@ const MyVideosSection: React.FC<MyVideosSectionProps> = ({
       {/* My Videos Grid */}
       <div>
         {loading ? (
-          <SkeletonLoader count={6} />
+          <SkeletonLoader
+            showSingle
+            message="Your created short will appear here"
+          />
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
             {/* Create New Button */}

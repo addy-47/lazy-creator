@@ -21,8 +21,6 @@ import TermsOfService from "./pages/TermsOFService";
 import NotFound from "./pages/NotFound";
 import { createContext, useEffect, useState, useCallback } from "react";
 import PageTransition from "./components/PageTransition";
-import { initSocket, disconnectSocket } from "./lib/socket";
-import Processing from "./pages/Processing";
 import DebugLogin from "./pages/DebugLogin";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
@@ -41,18 +39,6 @@ const RouteTransition = ({ children }: { children: React.ReactNode }) => {
 };
 
 const App = () => {
-  // Initialize socket on mount
-  useEffect(() => {
-    (async () => {
-      await initSocket();
-    })();
-
-    return () => {
-      // Disconnect socket on unmount
-      disconnectSocket();
-    };
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider
@@ -98,14 +84,6 @@ const App = () => {
                     </RouteTransition>
                   }
                   path="/gallery"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <Processing />
-                    </RouteTransition>
-                  }
-                  path="/processing"
                 />
                 <Route
                   element={

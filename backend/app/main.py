@@ -1,26 +1,29 @@
+from flask import Flask, request, jsonify, send_file, redirect, url_for, make_response
+from flask_cors import CORS
 import os
+import sys
 import logging
-from datetime import datetime
-import re
 import tempfile
 import threading
-import atexit
-import signal
-import sys
-import base64
 import json
-import googleapiclient.http
-
-from flask import Flask, request, jsonify, send_file, redirect, make_response
+import time
+import uuid
+import re
+import signal
+import concurrent.futures
+from datetime import datetime, timedelta
+from typing import Tuple, List, Dict, Any, Optional
 from werkzeug.utils import secure_filename
-from flask_cors import CORS
-from pymongo import MongoClient
-from bson.objectid import ObjectId
-from werkzeug.security import generate_password_hash, check_password_hash
-import jwt
 from functools import wraps
+from bson.objectid import ObjectId
+from pymongo import MongoClient, DESCENDING
+import jwt
+import hashlib
+import atexit
+import base64
+from werkzeug.security import generate_password_hash, check_password_hash
 import requests
-from flask_socketio import SocketIO, emit
+import googleapiclient.http
 
 from automation.shorts_main import generate_youtube_short
 from automation.youtube_upload import upload_video
@@ -31,11 +34,13 @@ import storage_helper  # Import our custom storage helper
 from dotenv import load_dotenv
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from logging_config import get_app_logger, configure_root_logger
+
+# Configure root logger
+configure_root_logger()
+
+# Get application logger
+logger = get_app_logger()
 
 # Load environment variables
 load_dotenv()
@@ -62,9 +67,6 @@ CORS(app,
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
      expose_headers=["Content-Type", "Authorization"],
      max_age=600)
-
-# Initialize Flask-SocketIO with gevent
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 # Secret key configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
@@ -103,23 +105,9 @@ def cleanup_on_exit():
 atexit.register(cleanup_on_exit)
 
 # Health check endpoint for socket.io availability check
-@app.route('/api/health', methods=['GET', 'HEAD', 'OPTIONS'])
+@app.route('/api/health', methods=['GET', 'HEAD'])
 def health_check():
-    # Log that the health check was accessed for debugging
-    logger.info("Health check endpoint accessed")
-
-    # Handle OPTIONS request for CORS preflight
-    if request.method == 'OPTIONS':
-        response = make_response()
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-access-token')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS')
-        return response
-
-    # For GET/HEAD requests
-    response = jsonify({"status": "ok"})
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response, 200
+    return jsonify({'status': 'ok'}), 200
 
 # Helper to encode state parameter for OAuth (simple base64 encoding for user_id)
 def encode_state_param(user_id):
@@ -140,31 +128,6 @@ def decode_state_param(state):
     except Exception as e:
         logger.error(f"Error decoding state parameter: {e}")
         raise
-
-# Socket.IO events
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected')
-
-@socketio.on('subscribe_progress')
-def handle_subscribe_progress(data):
-    video_id = data.get('videoId')
-    if video_id:
-        print(f'Client subscribed to progress updates for video {video_id}')
-
-@socketio.on('unsubscribe_progress')
-def handle_unsubscribe_progress(data):
-    video_id = data.get('videoId')
-    if video_id:
-        print(f'Client unsubscribed from progress updates for video {video_id}')
-
-# Function to emit progress update to clients
-def emit_progress_update(video_id, progress):
-    socketio.emit(f'progress_{video_id}', {'progress': progress})
 
 # Authentication Decorator
 def token_required(f):
@@ -346,9 +309,6 @@ def safe_update_progress(video_id, new_progress, status=None):
             {'_id': ObjectId(video_id)},
             {'$set': update_fields}
         )
-
-        # Emit progress update via Socket.IO
-        emit_progress_update(video_id, new_progress)
 
         return True
     except Exception as e:
@@ -823,17 +783,45 @@ def download_video(current_user, video_id):
             return jsonify({"status": "error", "message": "File not found"}), 404
 
         # Create a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+        # Create directory if it doesn't exist
+        storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{user_id}')
+        os.makedirs(storage_dir, exist_ok=True)
+
+        # Create temp file in the specified directory
+        temp_path = os.path.join(storage_dir, f'{str(video_id)}.mp4')
+        with open(temp_path, 'wb') as temp_file:
+            temp_path = temp_file.name
+
             # Download from Cloud Storage
             gcs_path = video.get('path')
             if not gcs_path or not gcs_path.startswith('gs://'):
                 return jsonify({"status": "error", "message": "Invalid file path"}), 404
 
             # Extract bucket and blob name from gs:// path
-            _, bucket_name, blob_name = gcs_path.split('/', 2)
-            cloud_storage.download_file(blob_name, temp_file.name, bucket_name)
+            parts = gcs_path.replace('gs://', '').split('/', 1)
+            if len(parts) != 2:
+                return jsonify({"status": "error", "message": "Invalid GCS path format"}), 500
 
-            return send_file(temp_file.name, as_attachment=True)
+            bucket_name = parts[0]
+            blob_name = parts[1]
+
+            # Check if the bucket name is duplicated in the blob_name
+            if blob_name.startswith(bucket_name + '/'):
+                # Remove the duplicated bucket name from the blob path
+                blob_name = blob_name[len(bucket_name)+1:]
+                logger.info(f"Removed duplicated bucket name from path. Using blob path: {blob_name}")
+
+            try:
+                cloud_storage.download_file(blob_name, temp_path, bucket_name)
+                logger.info(f"Successfully downloaded file from: {gcs_path}")
+            except Exception as download_err:
+                logger.error(f"Download error for file at {gcs_path}: {download_err}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f"Error downloading file: {download_err}"
+                }), 500
+
+            return send_file(temp_path, as_attachment=True, download_name=video.get('filename', 'video.mp4'))
 
     except Exception as e:
         logger.error(f"Error downloading video: {e}")
@@ -1072,8 +1060,14 @@ def upload_video_to_youtube(current_user, video_id):
 
         # Download the video to a temporary file
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
-                local_path = temp_file.name
+            # Create directory if it doesn't exist
+            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{user_id}')
+            os.makedirs(storage_dir, exist_ok=True)
+
+            # Create temp file in the specified directory
+            temp_path = os.path.join(storage_dir, f'{str(video_id)}.mp4')
+            with open(temp_path, 'wb') as temp_file:
+                    local_path = temp_file.name
 
             # If the path is a GCS path
             if video_path.startswith('gs://'):
@@ -1260,7 +1254,15 @@ def serve_gallery_file_with_token(filename):
             }), 404
 
         # Extract bucket and blob name from gs:// path
-        _, bucket_name, blob_name = gcs_path.split('/', 2)
+        parts = gcs_path.replace('gs://', '').split('/', 1)
+        bucket_name = parts[0]
+        blob_name = parts[1]
+
+        # Check if the bucket name is duplicated in the blob_name
+        if blob_name.startswith(bucket_name + '/'):
+            # Remove the duplicated bucket name from the blob path
+            blob_name = blob_name[len(bucket_name)+1:]
+            logger.info(f"Removed duplicated bucket name from path. Using blob path: {blob_name}")
 
         try:
             cloud_storage.download_file(blob_name, temp_path, bucket_name)
@@ -1544,6 +1546,185 @@ def youtube_auth_start_compat(current_user):
 def youtube_auth_callback_compat():
     return youtube_auth_callback_new()
 
+# Upload to YouTube endpoint
+@app.route('/api/upload-to-youtube/<video_id>', methods=['POST'])
+@token_required
+def upload_to_youtube(current_user, video_id):
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No metadata provided"}), 400
+
+        # Validate required fields
+        required_fields = ['title', 'description', 'privacyStatus']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({
+                "status": "error",
+                "message": f"Missing required fields: {', '.join(missing_fields)}"
+            }), 400
+
+        # Find the video
+        video = videos_collection.find_one({'_id': ObjectId(video_id)})
+        if not video:
+            return jsonify({"status": "error", "message": "Video not found"}), 404
+
+        # Check if the video belongs to the current user
+        if video.get('user_id') != str(current_user['_id']):
+            return jsonify({"status": "error", "message": "You do not have permission to upload this video"}), 403
+
+        # Get the video path
+        video_path = video.get('path')
+        if not video_path:
+            return jsonify({"status": "error", "message": "Video has no file path"}), 400
+
+        # Get authenticated YouTube service
+        user_id = str(current_user['_id'])
+        youtube = get_authenticated_service(user_id)
+
+        if not youtube:
+            return jsonify({
+                "status": "error",
+                "message": "YouTube authentication required",
+                "require_auth": True
+            }), 401
+
+        # Download the video to a temporary file
+        try:
+            # Create directory if it doesn't exist
+            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{user_id}')
+            os.makedirs(storage_dir, exist_ok=True)
+
+            # Create temp file in the specified directory
+            temp_path = os.path.join(storage_dir, f'{str(video_id)}.mp4')
+            with open(temp_path, 'wb') as temp_file:
+                    local_path = temp_file.name
+
+            # If the path is a GCS path
+            if video_path.startswith('gs://'):
+                # Extract bucket and blob name from gs:// path
+                parts = video_path.replace('gs://', '').split('/', 1)
+                if len(parts) != 2:
+                    return jsonify({"status": "error", "message": "Invalid GCS path format"}), 500
+
+                bucket_name = parts[0]
+                blob_name = parts[1]
+
+                # Check if the bucket name is duplicated in the blob_name
+                if blob_name.startswith(bucket_name + '/'):
+                    # Remove the duplicated bucket name from the blob path
+                    blob_name = blob_name[len(bucket_name)+1:]
+                    logger.info(f"Removed duplicated bucket name from path. Using blob path: {blob_name}")
+
+                logger.info(f"Downloading video from GCS: gs://{bucket_name}/{blob_name}")
+
+                # Download from GCS
+                cloud_storage.download_file(blob_name, local_path, bucket_name)
+
+                if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                    return jsonify({"status": "error", "message": "Failed to download video from Cloud Storage"}), 500
+
+                logger.info(f"Successfully downloaded video: {os.path.getsize(local_path)} bytes")
+            else:
+                # Local file
+                local_path = video_path
+                if not os.path.exists(local_path):
+                    return jsonify({"status": "error", "message": "Video file not found"}), 404
+
+            # Get video metadata
+            title = data.get('title', f"Video - {video.get('filename', '')}")
+            description = data.get('description', "Uploaded via Lazy Creator")
+            tags = data.get('tags', [])
+            privacy_status = data.get('privacyStatus', 'private')
+            channel_id = data.get('channelId')
+            category_id = data.get('categoryId', '22')  # Default to "People & Blogs"
+
+            # Prepare the upload
+            body = {
+                'snippet': {
+                    'title': title,
+                    'description': description,
+                    'tags': tags,
+                    'categoryId': category_id
+                },
+                'status': {
+                    'privacyStatus': privacy_status,
+                    'selfDeclaredMadeForKids': False
+                }
+            }
+
+            # Upload the video
+            logger.info(f"Starting YouTube upload for video {video_id}")
+
+            # Insert the video
+            request_upload = youtube.videos().insert(
+                part=','.join(body.keys()),
+                body=body,
+                media_body=googleapiclient.http.MediaFileUpload(
+                    local_path,
+                    mimetype='video/mp4',
+                    resumable=True,
+                    chunksize=1024*1024*5  # 5MB chunks for better reliability
+                )
+            )
+
+            # Execute the upload with progress tracking
+            response = None
+            progress = 0
+            while response is None:
+                status, response = request_upload.next_chunk()
+                if status:
+                    new_progress = int(status.progress() * 100)
+                    if new_progress != progress:
+                        progress = new_progress
+                        logger.info(f"YouTube upload progress: {progress}%")
+
+            # Get the YouTube video ID
+            youtube_id = response['id']
+
+            # Update the video record in the database
+            videos_collection.update_one(
+                {'_id': ObjectId(video_id)},
+                {'$set': {
+                    'uploaded_to_yt': True,
+                    'youtube_id': youtube_id,
+                    'youtube_title': title,
+                    'youtube_description': description,
+                    'youtube_tags': tags,
+                    'youtube_privacy': privacy_status,
+                    'youtube_channel_id': channel_id,
+                    'uploaded_at': datetime.utcnow()
+                }}
+            )
+
+            # Return success
+            return jsonify({
+                "status": "success",
+                "message": "Video uploaded successfully",
+                "youtube_id": youtube_id,
+                "watch_url": f"https://www.youtube.com/watch?v={youtube_id}"
+            })
+
+        finally:
+            # Clean up the temporary file if it exists
+            if 'local_path' in locals() and os.path.exists(local_path) and local_path.startswith(tempfile.gettempdir()):
+                try:
+                    os.unlink(local_path)
+                    logger.info(f"Cleaned up temporary file: {local_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary file: {e}")
+
+    except Exception as e:
+        logger.error(f"Error uploading to YouTube: {e}")
+        # Check if it's an authentication error
+        if "unauthorized" in str(e).lower() or "authentication" in str(e).lower():
+            return jsonify({
+                "status": "error",
+                "message": "YouTube authentication expired. Please reconnect your YouTube account.",
+                "require_auth": True
+            }), 401
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # Add a global after_request handler to ensure CORS headers are set
 @app.after_request
 def add_cors_headers(response):
@@ -1648,17 +1829,4 @@ def get_processing_videos(current_user):
         }), 500
 
 if __name__ == '__main__':
-    try:
-        # Standard run method without the problematic parameter
-        socketio.run(app, host='0.0.0.0', port=4000, debug=True)
-    except KeyboardInterrupt:
-        print("Server shutting down...")
-    finally:
-        # Set shutdown flag to signal threads to clean up
-        shutdown_flag.set()
-        print("Waiting for threads to complete...")
-        # Wait for active threads to finish (with timeout)
-        for thread in active_threads:
-            if thread.is_alive():
-                thread.join(timeout=5.0)
-        print("Cleanup complete")
+    app.run(host='0.0.0.0', port=4000, debug=True)

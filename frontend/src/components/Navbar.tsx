@@ -426,7 +426,7 @@ const Navbar = ({ username }: NavbarProps) => {
       {/* Mobile Navigation Menu with improved animation */}
       <div
         ref={mobileMenuRef}
-        className={`md:hidden fixed top-16 left-0 right-0 bg-black/20 backdrop-blur-sm shadow-lg border-b border-border/30 transform transition-all duration-300 ease-in-out ${
+        className={`md:hidden fixed top-16 left-0 right-0 bg-black/85 backdrop-blur-sm shadow-lg border-b border-border/30 transform transition-all duration-300 ease-in-out ${
           isMenuOpen
             ? "translate-y-0 opacity-100"
             : "translate-y-[-10px] opacity-0 pointer-events-none"
