@@ -28,6 +28,7 @@ interface VideoCardProps {
   onConnectYouTube: () => void;
   onOpenYouTube: (youtubeId: string) => void;
   onDelete: (videoId: string) => void;
+  isDownloading?: boolean;
 }
 
 const VideoCard: React.FC<VideoCardProps> = ({
@@ -39,10 +40,12 @@ const VideoCard: React.FC<VideoCardProps> = ({
   onConnectYouTube,
   onOpenYouTube,
   onDelete,
+  isDownloading,
 }) => {
   const cardWidthClass = "w-full";
   const cardClass = "aspect-[9/16] rounded-xl overflow-hidden";
   const [videoUrl, setVideoUrl] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
 
   // Generate secure URL with auth token
   useEffect(() => {
@@ -57,6 +60,15 @@ const VideoCard: React.FC<VideoCardProps> = ({
       setVideoUrl(`${getAPIBaseURL()}/api/gallery/${video.filename}`);
     }
   }, [video.filename]);
+
+  const handleVideoLoad = () => {
+    setIsLoading(false);
+  };
+
+  const handleVideoError = () => {
+    setIsLoading(false);
+    // Optionally show an error state here
+  };
 
   return (
     <div className={cardWidthClass}>
@@ -82,7 +94,39 @@ const VideoCard: React.FC<VideoCardProps> = ({
           src={videoUrl}
           className="w-full h-full object-cover"
           preload="metadata"
+          onLoadedData={handleVideoLoad}
+          onError={handleVideoError}
         />
+
+        {/* Initial Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="flex flex-col items-center gap-3">
+              <div className="relative w-12 h-12">
+                <div className="absolute inset-0 rounded-full border-4 border-secondary animate-ping opacity-20"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-t-primary border-secondary animate-spin"></div>
+              </div>
+              <p className="text-white/90 text-sm animate-pulse">
+                Loading video...
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Download Loading Overlay */}
+        {isDownloading && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="flex flex-col items-center gap-3">
+              <div className="relative w-12 h-12">
+                <div className="absolute inset-0 rounded-full border-4 border-secondary animate-ping opacity-20"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-t-primary border-secondary animate-spin"></div>
+              </div>
+              <p className="text-white/90 text-sm animate-pulse">
+                Downloading...
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* YouTube badge if uploaded */}
         {video.uploaded_to_yt && (

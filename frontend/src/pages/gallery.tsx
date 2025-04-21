@@ -34,6 +34,9 @@ function GalleryPage() {
   const [demoVideos, setDemoVideos] = useState<DemoVideo[]>([]);
   const [trendingVideos, setTrendingVideos] = useState<DemoVideo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingVideoId, setDownloadingVideoId] = useState<string | null>(
+    null
+  );
   const [uploading, setUploading] = useState<string | null>(null);
   const [showUploadForm, setShowUploadForm] = useState<string | null>(null);
   const [uploadData, setUploadData] = useState<UploadData>({
@@ -249,7 +252,7 @@ function GalleryPage() {
 
   const handleDownload = async (videoId: string) => {
     try {
-      // Use api instance for consistent auth
+      setDownloadingVideoId(videoId); // Set the downloading video ID
       const response = await api.get(`/api/download/${videoId}`, {
         responseType: "blob",
       });
@@ -269,9 +272,11 @@ function GalleryPage() {
       link.remove();
 
       toast.success("Download started!");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error downloading video:", error);
       toast.error("Failed to download video");
+    } finally {
+      setDownloadingVideoId(null); // Clear the downloading state
     }
   };
 
@@ -976,7 +981,7 @@ function GalleryPage() {
     }
   };
 
-  if (loading)
+  if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
@@ -994,6 +999,7 @@ function GalleryPage() {
         <Footer />
       </div>
     );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-background/95">
@@ -1036,6 +1042,7 @@ function GalleryPage() {
               onOpenYouTube={handleOpenYouTube}
               onClearSearch={() => setSearchQuery("")}
               isAuthenticated={isAuthenticated}
+              downloadingVideoId={downloadingVideoId}
             />
           )}
 

@@ -29,6 +29,7 @@ interface MyVideosSectionProps {
   onDelete: (videoId: string) => void;
   onClearSearch: () => void;
   isAuthenticated: boolean;
+  downloadingVideoId?: string | null;
 }
 
 const MyVideosSection: React.FC<MyVideosSectionProps> = ({
@@ -45,6 +46,7 @@ const MyVideosSection: React.FC<MyVideosSectionProps> = ({
   onDelete,
   onClearSearch,
   isAuthenticated,
+  downloadingVideoId,
 }) => {
   // Filter videos based on search query
   const filteredVideos = videos.filter((video) =>
@@ -121,6 +123,7 @@ const MyVideosSection: React.FC<MyVideosSectionProps> = ({
                   onConnectYouTube={onConnectYouTube}
                   onOpenYouTube={onOpenYouTube}
                   onDelete={onDelete}
+                  isDownloading={downloadingVideoId === video.id}
                 />
               ))
             )}
