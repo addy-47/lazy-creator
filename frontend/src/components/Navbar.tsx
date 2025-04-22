@@ -369,9 +369,9 @@ const Navbar = ({ username }: NavbarProps) => {
                       <span className="text-sm font-medium">
                         {displayUsername}
                       </span>
+                      {/* Username Sphere - Using ConnectionSphere component */}
+                      <ConnectionSphere isConnected={isYouTubeConnected} />
                     </button>
-                    {/* YouTube Connection Sphere */}
-                    <ConnectionSphere isConnected={isYouTubeConnected} />
                   </div>
                   <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">
                     {/* Connection status indicator in dropdown */}

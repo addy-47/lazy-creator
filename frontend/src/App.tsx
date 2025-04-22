@@ -15,6 +15,7 @@ import Create from "./pages/Create";
 import Auth from "./pages/Auth";
 import Learn from "./pages/learn";
 import Gallery from "./pages/gallery";
+import Processing from "./pages/Processing";
 import YouTubeAuthSuccess from "./pages/YouTubeAuthSuccess";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOFService";
@@ -84,6 +85,14 @@ const App = () => {
                     </RouteTransition>
                   }
                   path="/gallery"
+                />
+                <Route
+                  element={
+                    <RouteTransition>
+                      <Processing />
+                    </RouteTransition>
+                  }
+                  path="/processing"
                 />
                 <Route
                   element={

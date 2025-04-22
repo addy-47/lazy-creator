@@ -98,7 +98,7 @@ const Hero = ({ username }: HeroProps) => {
                 textShadow: "0 0 30px rgba(224, 17, 95, 0.3)",
               }}
             >
-              <span className="text-white">
+              <span className="dark:text-white text-gray-800">
                 Transform Your Content Creation
               </span>
               <span className="block mt-2 text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
@@ -107,7 +107,7 @@ const Hero = ({ username }: HeroProps) => {
             </h1>
 
             <p
-              className={`max-w-xl text-base text-gray-300 md:text-lg transition-all duration-1000 delay-500 ${
+              className={`max-w-xl text-base dark:text-gray-300 text-gray-700 md:text-lg transition-all duration-1000 delay-500 ${
                 isVisible
                   ? "opacity-100 translate-y-0"
                   : "opacity-0 translate-y-8"
