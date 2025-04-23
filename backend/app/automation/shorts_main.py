@@ -282,6 +282,10 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         safe_topic = re.sub(r'[^a-zA-Z0-9]', '_', topic)[:30]
         output_filename = f"shorts_{safe_topic}_{timestamp}.mp4"
 
+        # Create temporary directory for processing
+        temp_dir = tempfile.mkdtemp()
+        logger.info(f"Created temporary directory: {temp_dir}")
+
         # Create CustomShortsCreator instance
         creator = CustomShortsCreator(output_dir=temp_dir)
 
@@ -447,10 +451,24 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
             return video_path, content_package
         else:
             logger.error(f"Video generation failed or output file not found")
+            # Clean up temp directory
+            if os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                    logger.info(f"Cleaned up temporary directory: {temp_dir}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up temporary directory: {cleanup_error}")
             return None, content_package
 
     except Exception as e:
         logger.error(f"Error generating YouTube short: {e}")
+        # Clean up temp directory if it exists
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+                logger.info(f"Cleaned up temporary directory after error: {temp_dir}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up temporary directory after error: {cleanup_error}")
         return None, None
 
 
