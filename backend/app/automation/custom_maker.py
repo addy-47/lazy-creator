@@ -197,6 +197,7 @@ class CustomShortsCreator:
             # Create a progress tracker function to pass to the creators
             def track_rendering_progress(elapsed_seconds):
                 nonlocal rendering_last_update
+                nonlocal last_reported_progress  # Add this reference to the outer scope variable
                 current_time = time.time()
                 
                 # Update progress more frequently (every 3 seconds) for a smoother experience

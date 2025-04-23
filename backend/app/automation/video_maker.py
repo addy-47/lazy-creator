@@ -893,7 +893,16 @@ class YTShortsCreator_V:
                     current_time = time.time()
                     if current_time - last_progress_check >= 5:
                         last_progress_check = current_time
-                        return progress_callback()
+                        try:
+                            # Try calling without arguments first (for compatibility with video_progress_tracker)
+                            return progress_callback()
+                        except TypeError:
+                            # If that fails, try calling with default progress values
+                            try:
+                                return progress_callback(75, "Processing video")
+                            except Exception as e:
+                                logger.error(f"Error calling progress callback: {e}")
+                                return False
                     return False
             else:
                 # No-op if no callback provided
