@@ -426,7 +426,7 @@ const Navbar = ({ username }: NavbarProps) => {
       {/* Mobile Navigation Menu with improved animation */}
       <div
         ref={mobileMenuRef}
-        className={`md:hidden fixed top-16 left-0 right-0 bg-black/85 backdrop-blur-sm shadow-lg border-b border-border/30 transform transition-all duration-300 ease-in-out ${
+        className={`md:hidden fixed top-16 left-0 right-0 bg-[#FAF9F6]/85 dark:bg-black/85 backdrop-blur-sm shadow-lg border-b border-border/30 transform transition-all duration-300 ease-in-out ${
           isMenuOpen
             ? "translate-y-0 opacity-100"
             : "translate-y-[-10px] opacity-0 pointer-events-none"
@@ -443,7 +443,7 @@ const Navbar = ({ username }: NavbarProps) => {
                   `px-4 py-2 rounded-lg ${
                     isActive
                       ? "font-medium text-[#E0115F] dark:text-[#E0115F] bg-[#E0115F]/5 dark:bg-[#E0115F]/10"
-                      : "hover:bg-gray-100/10 dark:hover:bg-gray-800/20"
+                      : "hover:bg-[#E0115F]/5 dark:hover:bg-gray-800/20"
                   }`
                 }
               >
