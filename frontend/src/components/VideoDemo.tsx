@@ -540,12 +540,29 @@ const VideoDemo = () => {
 
       ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
       ctx.font = "bold 20px Inter";
-      const timeLeft = Math.ceil(30 - progress * 30);
-      ctx.fillText(`${timeLeft}s`, spinnerCenterX - 15, spinnerCenterY + 7);
+      const timeLeft = Math.ceil(300 - progress * 300);
+      
+      const minutes = Math.floor(timeLeft / 60);
+      const seconds = timeLeft % 60;
+      const timeDisplay = timeLeft > 0 
+        ? `${minutes}:${seconds.toString().padStart(2, '0')}`
+        : "";
+      
+      if (timeLeft > 0) {
+        ctx.fillText(timeDisplay, spinnerCenterX - 25, spinnerCenterY + 7);
+      }
 
       ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
       ctx.font = "bold 18px Inter";
-      ctx.fillText("Generating your Short...", width * 0.5 - 100, height * 0.5);
+      
+      if (timeLeft <= 0) {
+        ctx.fillText("Still working on your Short...", width * 0.5 - 120, height * 0.5);
+        ctx.font = "14px Inter";
+        ctx.fillText("This is taking longer than expected.", width * 0.5 - 110, height * 0.55);
+        ctx.fillText("Thanks for your patience!", width * 0.5 - 80, height * 0.6);
+      } else {
+        ctx.fillText("Generating your Short...", width * 0.5 - 100, height * 0.5);
+      }
 
       ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
       ctx.beginPath();
@@ -636,6 +653,9 @@ const VideoDemo = () => {
       ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
       ctx.font = "bold 18px Inter";
       ctx.fillText("Your Short is Ready!", width * 0.5 - 80, height * 0.7);
+      
+      ctx.font = "14px Inter";
+      ctx.fillText("Creation completed successfully!", width * 0.5 - 100, height * 0.65);
 
       const downloadGradient = ctx.createLinearGradient(
         width * 0.3,
