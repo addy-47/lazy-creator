@@ -41,26 +41,11 @@ export const StepCard = React.forwardRef<HTMLDivElement, StepCardProps>(
         {...props}
       >
         <div className="p-6 md:p-8">
-          <div className="flex items-start gap-4 mb-6">
-            <div
-              className={cn(
-                "flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-lg font-semibold",
-                isCompleted
-                  ? "bg-[#E0115F] text-white"
-                  : "bg-[#E0115F]/10 text-[#E0115F]",
-                isActive &&
-                  !isCompleted &&
-                  "ring-2 ring-[#E0115F] ring-opacity-50"
-              )}
-            >
-              {isCompleted ? "✓" : step}
-            </div>
-            <div>
-              <h3 className="text-xl font-medium mb-1">{title}</h3>
-              {description && (
-                <p className="text-sm text-muted-foreground">{description}</p>
-              )}
-            </div>
+          <div className="space-y-2 mb-6">
+            <h3 className="text-xl font-medium">{title}</h3>
+            {description && (
+              <p className="text-sm text-muted-foreground">{description}</p>
+            )}
           </div>
           {isActive ? (
             <FocusTrap active={isActive}>

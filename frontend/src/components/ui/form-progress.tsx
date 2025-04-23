@@ -1,6 +1,5 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { KeyboardShortcuts } from "./keyboard-shortcuts";
 
 interface FormProgressProps {
   steps: ReadonlyArray<{ title: string; isCompleted: boolean }>;
@@ -19,8 +18,8 @@ export const FormProgress = React.forwardRef<HTMLDivElement, FormProgressProps>(
         <div className="flex items-center mb-2">
           <div className="flex-1 flex justify-between items-center px-1">
             {steps.map((step, i) => (
-              <div 
-                key={i} 
+              <div
+                key={i}
                 className={cn(
                   "flex flex-col items-center cursor-pointer transition-all",
                   onStepClick ? "hover:scale-105" : ""
@@ -30,7 +29,7 @@ export const FormProgress = React.forwardRef<HTMLDivElement, FormProgressProps>(
                 tabIndex={0}
                 aria-label={`Go to step ${i + 1}: ${step.title}`}
               >
-                <div 
+                <div
                   className={cn(
                     "flex items-center justify-center w-8 h-8 rounded-full mb-1 border-2 transition-all",
                     currentStep === i + 1
@@ -39,13 +38,15 @@ export const FormProgress = React.forwardRef<HTMLDivElement, FormProgressProps>(
                     step.isCompleted && "border-[#E0115F]"
                   )}
                 >
-                  <span className={cn(
-                    "text-sm font-medium",
-                    currentStep === i + 1
-                      ? "text-[#E0115F]"
-                      : "text-muted-foreground",
-                    step.isCompleted && "text-[#E0115F]"
-                  )}>
+                  <span
+                    className={cn(
+                      "text-sm font-medium",
+                      currentStep === i + 1
+                        ? "text-[#E0115F]"
+                        : "text-muted-foreground",
+                      step.isCompleted && "text-[#E0115F]"
+                    )}
+                  >
                     {i + 1}
                   </span>
                 </div>
@@ -63,7 +64,6 @@ export const FormProgress = React.forwardRef<HTMLDivElement, FormProgressProps>(
               </div>
             ))}
           </div>
-          <KeyboardShortcuts className="ml-2" />
         </div>
         <div className="relative h-1.5 w-full bg-muted rounded-full overflow-hidden">
           <div
