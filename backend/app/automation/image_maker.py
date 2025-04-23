@@ -639,10 +639,16 @@ class YTShortsCreator_I:
         elif len(text.strip()) < 5:
             # For very short texts like "Check it out!", expand it slightly to ensure TTS works well
             text = text.strip() + "."  # Add period if missing
+            
+        logger.info(f"Creating TTS audio for: \"{text[:50]}{'...' if len(text) > 50 else ''}\" (length: {len(text)})")
+        logger.info(f"Output file: {filename}")
+        if voice_style and voice_style != "none":
+            logger.info(f"Voice style: {voice_style}")
 
-        # Try to use Google Cloud TTS if available
+        # Try Google Cloud TTS first if available
         if self.google_tts:
             try:
+                logger.info("Attempting to use Google Cloud TTS")
                 voice = os.getenv("GOOGLE_VOICE", "en-US-Neural2-D")
                 # Map voice styles for Google Cloud TTS
                 google_styles = {
@@ -654,13 +660,23 @@ class YTShortsCreator_I:
                 }
                 style = google_styles.get(voice_style, None)
 
-                return self.google_tts.generate_speech(text, output_filename=filename, voice_style=style)
+                audio_path = self.google_tts.generate_speech(
+                    text,
+                    output_filename=filename,
+                    voice_style=style
+                )
+                logger.info(f"Successfully generated audio using Google Cloud TTS: {audio_path}")
+                return audio_path
             except Exception as e:
-                logger.error(f"Google Cloud TTS failed: {e}, falling back to Azure TTS or gTTS")
+                logger.error(f"Google Cloud TTS failed: {str(e)}")
+                logger.error(f"Falling back to Azure TTS or gTTS")
+                import traceback
+                logger.error(f"Google TTS error traceback: {traceback.format_exc()}")
 
-        # Try to use Azure TTS if available
+        # Try Azure TTS next if available
         if self.azure_tts:
             try:
+                logger.info("Attempting to use Azure TTS")
                 voice = os.getenv("AZURE_VOICE", "en-US-JennyNeural")
                 # Map voice styles for Azure
                 azure_styles = {
@@ -672,19 +688,26 @@ class YTShortsCreator_I:
                 }
                 style = azure_styles.get(voice_style, None)
 
-                return self.azure_tts.generate_speech(text, output_filename=filename)
+                audio_path = self.azure_tts.generate_speech(text, output_filename=filename)
+                logger.info(f"Successfully generated audio using Azure TTS: {audio_path}")
+                return audio_path
             except Exception as e:
-                logger.error(f"Azure TTS failed: {e}, falling back to gTTS")
+                logger.error(f"Azure TTS failed: {str(e)}")
+                logger.error(f"Falling back to gTTS")
+                import traceback
+                logger.error(f"Azure TTS error traceback: {traceback.format_exc()}")
 
         # Fall back to gTTS with multiple retries
+        logger.info("Using gTTS fallback")
         retry_count = 0
         max_retries = 3
 
         while retry_count < max_retries:
             try:
+                logger.info(f"gTTS attempt {retry_count+1}/{max_retries}")
                 tts = gTTS(text=text, lang='en', slow=False)
                 tts.save(filename)
-                logger.info(f"Successfully created TTS audio: {filename}")
+                logger.info(f"Successfully created TTS audio with gTTS: {filename}")
                 return filename
             except requests.exceptions.RequestException as e:
                 logger.error(f"Network error in gTTS (attempt {retry_count+1}/{max_retries}): {e}")
@@ -722,26 +745,28 @@ class YTShortsCreator_I:
     @measure_time
     def create_youtube_short(self, title, script_sections, background_query="abstract background",
                         output_filename=None, add_captions=True, style="photorealistic", voice_style=None, max_duration=25,
-                        background_queries=None, blur_background=False, edge_blur=False, custom_background_path=None):
+                        background_queries=None, blur_background=False, edge_blur=False, custom_background_path=None,
+                        progress_callback=None):
         """
-        Create a YouTube short video with AI-generated image backgrounds
+        Create a YouTube short with image backgrounds.
 
         Args:
-            title (str): Title for the short
-            script_sections (list): List of dictionaries with text and duration
-            background_query (str): Query to search for background if needed
-            output_filename (str): Filename for the output
-            add_captions (bool): Whether to add captions
-            style (str): Visual style to use for image generation
-            voice_style (str): Style for voiceover
-            max_duration (int): Maximum duration of the short
-            background_queries (list): Specific queries for each section
-            blur_background (bool): Whether to blur the background
-            edge_blur (bool): Whether to apply edge blur effect
-            custom_background_path (str): Path to custom background image if provided
+            title: Title for the video
+            script_sections: List of script sections
+            background_query: Query for background images
+            output_filename: Name of the output file
+            add_captions: Whether to add captions
+            style: Style for image generation
+            voice_style: Voice style to use
+            max_duration: Maximum duration in seconds
+            background_queries: Specific queries for each section
+            blur_background: Whether to apply blur
+            edge_blur: Whether to apply edge blur
+            custom_background_path: Path to custom background image
+            progress_callback: Optional callback function to track rendering progress
 
         Returns:
-            str: Path to the output video file
+            Path to the output video file
         """
         try:
             # Set output filename if not provided
@@ -762,6 +787,22 @@ class YTShortsCreator_I:
 
             # Start timing the process
             start_time = time.time()
+            
+            # Setup progress reporting if callback is provided
+            last_progress_check = time.time()
+            if progress_callback and callable(progress_callback):
+                # Call the progress callback every 5 seconds if enabled
+                def check_progress():
+                    nonlocal last_progress_check
+                    current_time = time.time()
+                    if current_time - last_progress_check >= 5:
+                        last_progress_check = current_time
+                        return progress_callback()
+                    return False
+            else:
+                # No-op if no callback provided
+                def check_progress():
+                    return False
 
             # 1. Generate TTS audio and cards for each script section
             video_clips = []
@@ -769,36 +810,44 @@ class YTShortsCreator_I:
             card_audios = []
             total_duration = 0
 
-            # Generate audio for each card
-            for i, card in enumerate(script_sections):
-                # Support both dictionary format or plain text
-                if isinstance(card, dict):
-                    text = card.get('text', '')
-                    duration = card.get('duration', 5)
-                    card_voice_style = card.get('voice_style', voice_style)
-                else:
-                    text = str(card)
-                    duration = 5
-                    card_voice_style = voice_style
+            for i, section in enumerate(script_sections):
+                # Check for progress abort
+                if check_progress():
+                    logger.info("Progress callback requested abort")
+                    return None
+                    
+                try:
+                    # Support both dictionary format or plain text
+                    if isinstance(section, dict):
+                        text = section.get('text', '')
+                        duration = section.get('duration', 5)
+                        card_voice_style = section.get('voice_style', voice_style)
+                    else:
+                        text = str(section)
+                        duration = 5
+                        card_voice_style = voice_style
 
-                # Generate TTS audio
-                audio_path = self._create_tts_audio(text, voice_style=card_voice_style)
+                    # Generate TTS audio
+                    audio_path = self._create_tts_audio(text, voice_style=card_voice_style)
 
-                if audio_path:
-                    # Check actual audio duration
-                    try:
-                        audio_clip = AudioFileClip(audio_path)
-                        audio_duration = audio_clip.duration
-                        # Ensure minimum duration of 3 seconds and at least the audio duration
-                        duration = max(duration, audio_duration + 0.5, 3)
-                        audio_clip.close()
-                    except Exception as e:
-                        logger.error(f"Error checking audio duration: {e}")
+                    if audio_path:
+                        # Check actual audio duration
+                        try:
+                            audio_clip = AudioFileClip(audio_path)
+                            audio_duration = audio_clip.duration
+                            # Ensure minimum duration of 3 seconds and at least the audio duration
+                            duration = max(duration, audio_duration + 0.5, 3)
+                            audio_clip.close()
+                        except Exception as e:
+                            logger.error(f"Error checking audio duration: {e}")
 
-                # Keep track of total duration
-                total_duration += duration
-                card_durations.append(duration)
-                card_audios.append(audio_path)
+                    # Keep track of total duration
+                    total_duration += duration
+                    card_durations.append(duration)
+                    card_audios.append(audio_path)
+                except Exception as e:
+                    logger.error(f"Error processing section {i+1}: {e}")
+                    return None
 
             # Ensure each section gets at least 3 seconds or scale down if total exceeds max_duration
             if total_duration > max_duration:
@@ -920,59 +969,68 @@ class YTShortsCreator_I:
 
             # 3. Create video clips for each section using the generated/fetched images
             for i, (bg_image, audio_path, duration) in enumerate(zip(background_image_paths, card_audios, card_durations)):
-                # Create clip with text overlay if needed
-                if bg_image:
-                    # Get text for this card
-                    text = script_sections[i].get('text', '') if isinstance(script_sections[i], dict) else str(script_sections[i])
+                # Check for progress abort
+                if check_progress():
+                    logger.info("Progress callback requested abort")
+                    return None
+                
+                try:
+                    # Create clip with text overlay if needed
+                    if bg_image:
+                        # Get text for this card
+                        text = script_sections[i].get('text', '') if isinstance(script_sections[i], dict) else str(script_sections[i])
 
-                    # Create a still image clip with text overlay if captions enabled
-                    if add_captions:
-                        # Create still image clip with text
-                        clip = self._create_still_image_clip(
-                            bg_image,
-                            duration=duration,
-                            text=text,
-                            font_size=60,
-                            with_zoom=True
-                        )
-                    else:
-                        # Create still image clip without text
-                        clip = self._create_still_image_clip(
-                            bg_image,
-                            duration=duration,
-                            with_zoom=True
-                        )
+                        # Create a still image clip with text overlay if captions enabled
+                        if add_captions:
+                            # Create still image clip with text
+                            clip = self._create_still_image_clip(
+                                bg_image,
+                                duration=duration,
+                                text=text,
+                                font_size=60,
+                                with_zoom=True
+                            )
+                        else:
+                            # Create still image clip without text
+                            clip = self._create_still_image_clip(
+                                bg_image,
+                                duration=duration,
+                                with_zoom=True
+                            )
 
-                    # Apply blur effects if requested
-                    if blur_background:
-                        try:
-                            clip = self.v_creator.custom_blur(clip, radius=15)
-                            logger.info(f"Applied blur effect to clip {i+1}")
-                        except Exception as e:
-                            logger.error(f"Error applying blur effect: {e}")
-                    elif edge_blur:
-                        try:
-                            clip = self.v_creator.custom_edge_blur(clip)
-                            logger.info(f"Applied edge blur effect to clip {i+1}")
-                        except Exception as e:
-                            logger.error(f"Error applying edge blur effect: {e}")
+                        # Apply blur effects if requested
+                        if blur_background:
+                            try:
+                                clip = self.v_creator.custom_blur(clip, radius=15)
+                                logger.info(f"Applied blur effect to clip {i+1}")
+                            except Exception as e:
+                                logger.error(f"Error applying blur effect: {e}")
+                        elif edge_blur:
+                            try:
+                                clip = self.v_creator.custom_edge_blur(clip)
+                                logger.info(f"Applied edge blur effect to clip {i+1}")
+                            except Exception as e:
+                                logger.error(f"Error applying edge blur effect: {e}")
 
-                    # Add audio to the clip if available
-                    if audio_path and os.path.exists(audio_path):
-                        try:
-                            audio = AudioFileClip(audio_path)
+                        # Add audio to the clip if available
+                        if audio_path and os.path.exists(audio_path):
+                            try:
+                                audio = AudioFileClip(audio_path)
 
-                            # Ensure audio doesn't extend beyond clip duration
-                            if audio.duration > duration:
-                                audio = audio.subclip(0, duration)
+                                # Ensure audio doesn't extend beyond clip duration
+                                if audio.duration > duration:
+                                    audio = audio.subclip(0, duration)
 
-                            # Add audio to the clip
-                            clip = clip.set_audio(audio)
-                            logger.info(f"Added audio to clip {i+1}")
-                        except Exception as e:
-                            logger.error(f"Error adding audio to clip: {e}")
+                                # Add audio to the clip
+                                clip = clip.set_audio(audio)
+                                logger.info(f"Added audio to clip {i+1}")
+                            except Exception as e:
+                                logger.error(f"Error adding audio to clip: {e}")
 
-                    video_clips.append(clip)
+                        video_clips.append(clip)
+                except Exception as e:
+                    logger.error(f"Error processing section {i+1}: {e}")
+                    return None
 
             # 4. Concatenate all clips
             if video_clips:
@@ -995,6 +1053,17 @@ class YTShortsCreator_I:
 
                 # Export the final video
                 logger.info(f"Writing video to {output_path}")
+                
+                # Set up progress tracking
+                total_frames = int(final_clip.duration * self.fps)
+                
+                def write_progress(current_frame):
+                    # Call progress callback to check for abort
+                    if check_progress():
+                        # Returning True from a moviepy progress function aborts rendering
+                        return True
+                    return None  # Continue rendering
+                
                 final_clip.write_videofile(
                     output_path,
                     fps=self.fps,
@@ -1003,7 +1072,10 @@ class YTShortsCreator_I:
                     temp_audiofile=os.path.join(self.temp_dir, "temp_audio.m4a"),
                     remove_temp=True,
                     threads=8,  # Increase threads for parallel rendering
-                    preset='faster'  # Use faster preset for quicker rendering
+                    preset='faster',  # Use faster preset for quicker rendering
+                    progress_bar=False,  # Disable MoviePy's default progress bar
+                    logger=None,        # Disable MoviePy's default logger
+                    callback=write_progress  # Use our custom progress function
                 )
 
                 # Clean up

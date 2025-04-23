@@ -31,6 +31,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from app.storage import cloud_storage
 # Import our storage helper
 from app.storage_helper import get_storage_client, reset_client
+import time # for progress tracking
 
 load_dotenv()
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
@@ -266,8 +267,10 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
                 logger.info(f"Progress: {progress}%, {message}")
 
         # Log the input parameters for debugging
-        logger.info(f"generate_youtube_short called with: topic={topic}, max_duration={max_duration}, "
-                   f"background_type={background_type}, background_source={background_source}, background_path={background_path}, style={style}")
+        logger.info(f"=== STARTING VIDEO GENERATION ===")
+        logger.info(f"Parameters: topic='{topic}', max_duration={max_duration}, "
+                   f"background_type='{background_type}', background_source='{background_source}', "
+                   f"background_path={background_path}, style='{style}'")
 
         # Initialize progress
         update_progress(5, "Starting video generation")
@@ -281,16 +284,19 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_topic = re.sub(r'[^a-zA-Z0-9]', '_', topic)[:30]
         output_filename = f"shorts_{safe_topic}_{timestamp}.mp4"
+        logger.info(f"Output filename: {output_filename}")
 
         # Create temporary directory for processing
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Created temporary directory: {temp_dir}")
 
         # Create CustomShortsCreator instance
+        logger.info(f"Initializing CustomShortsCreator with output_dir={temp_dir}")
         creator = CustomShortsCreator(output_dir=temp_dir)
 
         # Handle latest AI news topic
         if topic == "latest_ai_news":
+            logger.info("Retrieving latest AI news topic")
             topic = get_latest_ai_news()
             logger.info(f"Using latest AI news topic: {topic}")
 
@@ -302,30 +308,37 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
             return None, None
 
         # Use the comprehensive content generator to get a complete package
-        logger.info(f"Generating comprehensive content for topic: {topic}")
+        logger.info(f"Generating comprehensive content for topic: '{topic}'")
         content_package = generate_comprehensive_content(topic, max_duration=max_duration)
+        logger.info(f"Content package generated with title: '{content_package['title']}'")
 
         update_progress(20, "Content created, processing script")
 
         # Get the script from the content package
         script = content_package['script']
         logger.info(f"Generated script with {len(script.split())} words")
+        logger.info(f"Script: {script[:200]}..." if len(script) > 200 else f"Script: {script}")
 
         # Parse script into cards
+        logger.info("Parsing script into sections")
         script_cards = parse_script_to_cards(script)
-
-        logger.info(f"Script parsed into {len(script_cards)} sections")
+        logger.info(f"Initial script parsed into {len(script_cards)} sections")
 
         # Calculate optimal number of backgrounds/sections based on duration
         # We want roughly 1 background per 5 seconds, always include intro and outro
         optimal_bg_count = max(3, int(max_duration / 5))  # Minimum of 3 (intro, middle, outro)
+        logger.info(f"Calculated optimal background count: {optimal_bg_count} for {max_duration}s duration")
 
         update_progress(30, f"Planning video with {optimal_bg_count} sections")
 
         # Ensure we have exact number of sections to match backgrounds
-        # Always have intro (first) and outro (last) sections, adjust middle sections to match bg count
         if len(script_cards) != optimal_bg_count:
             logger.info(f"Adjusting script sections from {len(script_cards)} to {optimal_bg_count} to match backgrounds")
+            
+            # Log original sections for debugging
+            logger.info("Original script sections:")
+            for i, card in enumerate(script_cards):
+                logger.info(f"  Section {i+1}: {card['text'][:50]}... (duration: {card['duration']}s)")
 
             # Always keep the first section as intro
             intro_section = script_cards[0]
@@ -415,6 +428,11 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
             final_script_cards = [intro_section] + middle_sections + [outro_section]
             script_cards = final_script_cards
 
+            # Log adjusted sections
+            logger.info("Adjusted script sections:")
+            for i, card in enumerate(script_cards):
+                logger.info(f"  Section {i+1}: {card['text'][:50]}... (duration: {card['duration']}s)")
+
         logger.info(f"Final script has {len(script_cards)} sections to match {optimal_bg_count} backgrounds")
         for i, card in enumerate(script_cards):
             logger.info(f"Section {i+1}: {card['text'][:30]}... (duration: {card['duration']}s)")
@@ -432,6 +450,39 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
 
         # Create the short
         update_progress(50, "Starting video rendering")
+        
+        # Define a specialized progress tracker for the rendering process
+        # This will be called periodically during the rendering process
+        last_reported_progress = 50
+        
+        def rendering_progress_tracker():
+            nonlocal last_reported_progress
+            # Increment progress from 55-85 during the rendering process
+            elapsed_seconds = time.time() - rendering_start_time
+            # Don't allow progress to decrease
+            new_progress = max(last_reported_progress, int(50 + (elapsed_seconds / 60) * 7))  # Roughly 7% per minute
+            
+            # Cap at 85% (final step brings to 90%)
+            if new_progress > 85:
+                new_progress = 85
+                
+            # Only update if changed
+            if new_progress > last_reported_progress:
+                last_reported_progress = new_progress
+                phase_message = "Rendering video sections" if background_type == "video" else "Compositing image sequence"
+                update_progress(new_progress, phase_message)
+                logger.info(f"Rendering in progress - elapsed time: {elapsed_seconds:.1f}s")
+                
+            # Never request abort from this callback
+            return False
+            
+        # Track start time for progress calculation
+        rendering_start_time = time.time()
+        logger.info(f"Starting video rendering at {datetime.datetime.now().strftime('%H:%M:%S')}")
+        
+        # Strict duration enforcement - log the max_duration
+        logger.info(f"Enforcing strict max_duration of {max_duration} seconds")
+        
         video_path = creator.create_youtube_short(
             title=video_title,
             script_sections=script_cards,
@@ -440,17 +491,33 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
             background_type=background_type,
             background_source=background_source,
             custom_background_path=background_path,
-            style=style
+            style=style,
+            progress_callback=rendering_progress_tracker
         )
 
+        rendering_time = time.time() - rendering_start_time
+        logger.info(f"Video rendering completed in {rendering_time:.1f} seconds")
         update_progress(90, "Video rendering complete, finalizing")
 
         # Return the local video path (don't upload to cloud here - let main.py handle it)
         if video_path and os.path.exists(video_path):
+            # Get actual video duration for verification
+            try:
+                from moviepy.editor import VideoFileClip
+                with VideoFileClip(video_path) as clip:
+                    actual_duration = clip.duration
+                    logger.info(f"Generated video duration: {actual_duration:.2f}s (target: {max_duration}s)")
+                    if abs(actual_duration - max_duration) > 2:  # Allow 2 second tolerance
+                        logger.warning(f"Video duration ({actual_duration:.2f}s) differs significantly from target ({max_duration}s)")
+            except Exception as e:
+                logger.error(f"Could not verify video duration: {e}")
+                
             logger.info(f"Video generated successfully at: {video_path}")
+            logger.info(f"=== VIDEO GENERATION COMPLETED ===")
             return video_path, content_package
         else:
             logger.error(f"Video generation failed or output file not found")
+            logger.info(f"=== VIDEO GENERATION FAILED ===")
             # Clean up temp directory
             if os.path.exists(temp_dir):
                 try:
@@ -462,6 +529,9 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
 
     except Exception as e:
         logger.error(f"Error generating YouTube short: {e}")
+        logger.info(f"=== VIDEO GENERATION FAILED WITH ERROR ===")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # Clean up temp directory if it exists
         if 'temp_dir' in locals() and os.path.exists(temp_dir):
             try:

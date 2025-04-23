@@ -841,7 +841,8 @@ class YTShortsCreator_V:
     @measure_time
     def create_youtube_short(self, title, script_sections, background_query="abstract background",
                             output_filename=None, add_captions=False, style="video", voice_style=None, max_duration=25,
-                            background_queries=None, blur_background=False, edge_blur=False, custom_background_path=None):
+                            background_queries=None, blur_background=False, edge_blur=False, custom_background_path=None,
+                            progress_callback=None):
         """
         Create a YouTube short video with narrated script and background video
 
@@ -858,6 +859,7 @@ class YTShortsCreator_V:
             blur_background: Whether to blur the background
             edge_blur: Whether to apply edge blur effect
             custom_background_path: Path to custom background file
+            progress_callback: Optional callback function to track rendering progress
 
         Returns:
             Path to the created video
@@ -881,6 +883,22 @@ class YTShortsCreator_V:
         try:
             # Time tracking
             start_time = time.time()
+            
+            # Setup progress reporting if callback is provided
+            last_progress_check = time.time()
+            if progress_callback and callable(progress_callback):
+                # Call the progress callback every 5 seconds if enabled
+                def check_progress():
+                    nonlocal last_progress_check
+                    current_time = time.time()
+                    if current_time - last_progress_check >= 5:
+                        last_progress_check = current_time
+                        return progress_callback()
+                    return False
+            else:
+                # No-op if no callback provided
+                def check_progress():
+                    return False
 
             # Process background videos - limit the count based on duration
             background_clips = []
@@ -960,6 +978,11 @@ class YTShortsCreator_V:
             # Process backgrounds - resize, blur if needed
             processed_bg_clips = []
             for i, bg_clip in enumerate(background_clips):
+                # Check progress and abort if requested
+                if check_progress():
+                    logger.info("Progress callback requested abort")
+                    return None
+                    
                 if bg_clip is not None:
                     try:
                         # Process each background clip (resize, apply effects)
@@ -985,9 +1008,15 @@ class YTShortsCreator_V:
             audio_files = []
             voice = voice_style
 
+            # Use batched audio generation if possible to reduce API calls
             for i, section in enumerate(script_sections):
-                # Generate audio file for this section
+                # Check progress and abort if requested
+                if check_progress():
+                    logger.info("Progress callback requested abort")
+                    return None
+                    
                 try:
+                    # Generate audio file for this section
                     audio_path = self._generate_audio(section, voice_style=voice)
                     audio_files.append(audio_path)
                 except Exception as e:
@@ -1011,10 +1040,15 @@ class YTShortsCreator_V:
             # Create final video
             section_clips = []
 
-            for i, (section, audio_path, bg_clip) in enumerate(zip(script_sections, audio_files, background_clips)):
+            for i, (section, audio_file, bg_clip) in enumerate(zip(script_sections, audio_files, background_clips)):
+                # Check progress and abort if requested
+                if check_progress():
+                    logger.info("Progress callback requested abort")
+                    return None
+                    
                 try:
                     # Load audio with extra safety check
-                    audio_clip = AudioFileClip(audio_path)
+                    audio_clip = AudioFileClip(audio_file)
                     section_duration = audio_clip.duration  # Use actual audio duration
 
                     # Ensure background clip is long enough
@@ -1122,7 +1156,7 @@ class YTShortsCreator_V:
 
                     try:
                         # Try to add audio if possible
-                        audio_clip = AudioFileClip(audio_path)
+                        audio_clip = AudioFileClip(audio_file)
                         black_bg = black_bg.set_audio(audio_clip)
                     except Exception as audio_err:
                         logger.error(f"Error adding audio to fallback clip: {audio_err}")
@@ -1204,7 +1238,7 @@ class YTShortsCreator_V:
                     output_filename,
                     temp_dir=self.temp_dir,
                     fps=self.fps,
-                    preset="veryfast"
+                    preset="ultrafast"  # Changed from veryfast to ultrafast for faster rendering
                 )
             except Exception as parallel_error:
                 logger.warning(f"Parallel renderer failed: {parallel_error}. Using standard rendering.")
@@ -1216,6 +1250,16 @@ class YTShortsCreator_V:
                     final_clip = concatenate_videoclips(validated_section_clips)
 
                     # Write final video with reduced memory settings
+                    # Set up a progress_function that reports every 5% of frames
+                    total_frames = int(final_clip.duration * self.fps)
+                    
+                    def write_progress(current_frame):
+                        # Call progress callback to check for abort
+                        if check_progress():
+                            # Returning True from a moviepy progress function aborts rendering
+                            return True
+                        return None  # Continue rendering
+
                     final_clip.write_videofile(
                         output_filename,
                         fps=self.fps,
@@ -1229,7 +1273,10 @@ class YTShortsCreator_V:
                             "-crf", "25",           # Reduced quality slightly to save memory
                             "-maxrate", "2M",       # Reduced bitrate to save memory
                             "-bufsize", "4M"        # Reduced buffer size
-                        ]
+                        ],
+                        progress_bar=False,  # Disable MoviePy's default progress bar
+                        logger=None,        # Disable MoviePy's default logger
+                        callback=write_progress  # Use our custom progress function
                     )
                 finally:
                     # Clean up all clips
@@ -1313,7 +1360,7 @@ class YTShortsCreator_V:
             voice_style: Voice style to use
 
         Returns:
-            Path to the generated audio file
+            Path to the generated audio file or None if all methods fail
         """
         # Handle both string and dictionary section formats
         text = section
@@ -1322,42 +1369,102 @@ class YTShortsCreator_V:
             # Allow per-section voice style override
             voice_style = section.get('voice_style', voice_style)
 
+        # Create a unique filename based on content hash and voice style
+        # This enables caching for repeated sections
+        section_hash = str(hash(text + str(voice_style)))[:12]
+        section_audio_file = os.path.join(self.temp_dir, f"section_{section_hash}.mp3")
+        
+        # Check if we already have this audio cached
+        if os.path.exists(section_audio_file):
+            logger.info(f"Using cached audio for section: {text[:20]}...")
+            return section_audio_file
+
+        logger.info(f"Generating audio for text: \"{text[:50]}{'...' if len(text) > 50 else ''}\" (length: {len(text)})")
+        if voice_style:
+            logger.info(f"Voice style requested: {voice_style}")
+            
         # Create a unique filename based on content hash and timestamp
-        section_hash = str(hash(text))[:8]
         timestamp = int(time.time())
         section_audio_file = os.path.join(self.temp_dir, f"section_{section_hash}_{timestamp}.mp3")
+        logger.info(f"Output file: {section_audio_file}")
 
         # Try Google Cloud TTS first if available
         if self.google_tts:
             try:
+                logger.info("Attempting to use Google Cloud TTS")
                 audio_path = self.google_tts.generate_speech(
                     text,
                     output_filename=section_audio_file,
                     voice_style=voice_style
                 )
+                logger.info(f"Successfully generated audio using Google Cloud TTS: {audio_path}")
                 return audio_path
             except Exception as e:
-                logger.error(f"Google Cloud TTS error: {e}. Falling back to next service.")
+                logger.error(f"Google Cloud TTS failed: {str(e)}")
+                logger.error(f"Falling back to Azure TTS or gTTS")
+                import traceback
+                logger.error(f"Google TTS error traceback: {traceback.format_exc()}")
 
         # Try Azure TTS next if available
         if self.azure_tts:
             try:
+                logger.info("Attempting to use Azure TTS")
                 audio_path = self.azure_tts.generate_speech(
                     text,
                     output_filename=section_audio_file,
                     voice_style=voice_style
                 )
+                logger.info(f"Successfully generated audio using Azure TTS: {audio_path}")
                 return audio_path
             except Exception as e:
-                logger.error(f"Azure TTS error: {e}. Falling back to gTTS.")
+                logger.error(f"Azure TTS failed: {str(e)}")
+                logger.error(f"Falling back to gTTS")
+                import traceback
+                logger.error(f"Azure TTS error traceback: {traceback.format_exc()}")
 
         # Fall back to gTTS (Google's free TTS)
+        logger.info("Using gTTS fallback")
+        retry_count = 0
+        max_retries = 3
+        
+        while retry_count < max_retries:
+            try:
+                logger.info(f"gTTS attempt {retry_count+1}/{max_retries}")
+                tts = gTTS(text=text, lang='en', slow=False)
+                tts.save(section_audio_file)
+                logger.info(f"Successfully created TTS audio with gTTS: {section_audio_file}")
+                return section_audio_file
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Network error in gTTS (attempt {retry_count+1}/{max_retries}): {e}")
+                time.sleep(2)
+                retry_count += 1
+            except Exception as e:
+                logger.error(f"gTTS error (attempt {retry_count+1}/{max_retries}): {e}")
+                time.sleep(2)
+                retry_count += 1
+                
+        # If all TTS methods fail, create a silent audio clip
         try:
-            tts = gTTS(text=text, lang='en', slow=False)
-            tts.save(section_audio_file)
+            logger.warning("All TTS methods failed. Creating silent audio clip.")
+            # Calculate duration based on text length (approx. speaking time)
+            words = text.split()
+            # Average speaking rate is about 150 words per minute or 2.5 words per second
+            duration = max(3, len(words) / 2.5)  # Minimum 3 seconds
+
+            # Create a silent audio clip
+            from moviepy.audio.AudioClip import AudioClip
+            import numpy as np
+
+            def make_frame(t):
+                return np.zeros(2)  # Stereo silence
+
+            silent_clip = AudioClip(make_frame=make_frame, duration=duration)
+            silent_clip.write_audiofile(section_audio_file, fps=44100, nbytes=2, codec='libmp3lame')
+
+            logger.info(f"Created silent audio clip as fallback: {section_audio_file}")
             return section_audio_file
         except Exception as e:
-            logger.error(f"gTTS error: {e}. Could not generate audio.")
+            logger.error(f"Failed to create even silent audio: {e}")
             raise
 
 

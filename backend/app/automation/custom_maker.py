@@ -54,6 +54,9 @@ class CustomShortsCreator:
         # Video settings
         self.resolution = (1080, 1920)  # Portrait mode for shorts (width, height)
         self.fps = fps
+        
+        # Create background cache to avoid reprocessing identical backgrounds
+        self.background_cache = {}
 
     @measure_time
     def create_youtube_short(self,
@@ -70,7 +73,8 @@ class CustomShortsCreator:
                             edge_blur=False,
                             background_type="video",  # "video" or "image"
                             background_source="provided",  # "provided", "custom", or "unsplash"
-                            custom_background_path=None):
+                            custom_background_path=None,
+                            progress_callback=None):
         """
         Create a YouTube short using custom backgrounds
 
@@ -89,6 +93,7 @@ class CustomShortsCreator:
             background_type (str): Type of background - "video" or "image"
             background_source (str): Source of background - "provided", "custom", or "unsplash"
             custom_background_path (str): Path to custom background file
+            progress_callback (callable): Optional callback for reporting progress
 
         Returns:
             str: Path to the output video
@@ -96,6 +101,34 @@ class CustomShortsCreator:
         try:
             logger.info(f"Creating custom YouTube short with background_type={background_type}, "
                       f"background_source={background_source}")
+
+            # Enforce strict maximum duration
+            logger.info(f"Enforcing maximum duration of {max_duration} seconds")
+            
+            # Calculate total duration of all sections
+            total_duration = sum(section.get('duration', 5) for section in script_sections)
+            logger.info(f"Initial total duration: {total_duration:.2f}s")
+            
+            # If total duration exceeds max_duration, scale all sections proportionally
+            if total_duration > max_duration:
+                logger.info(f"Total duration ({total_duration:.2f}s) exceeds max_duration ({max_duration}s), scaling sections")
+                scale_factor = max_duration / total_duration
+                for section in script_sections:
+                    original_duration = section.get('duration', 5)
+                    section['duration'] = original_duration * scale_factor
+                
+                # Verify scaling worked correctly
+                new_total = sum(section.get('duration', 5) for section in script_sections)
+                logger.info(f"After scaling: new total duration = {new_total:.2f}s (scale factor: {scale_factor:.3f})")
+
+            # Set up a default progress callback if none provided
+            if progress_callback is None:
+                def update_progress(progress, message=""):
+                    logger.info(f"Progress: {progress}%, {message}")
+                progress_callback = update_progress
+                
+            # Initial progress report
+            progress_callback(52, "Setting up rendering environment")
 
             # Check if processing should be aborted
             if should_abort_processing():
@@ -141,10 +174,12 @@ class CustomShortsCreator:
                 if background_type == "video":
                     # For video custom backgrounds, create a preprocessed version
                     logger.info(f"Using custom video background from: {custom_background_path}")
+                    progress_callback(54, "Processing custom video background")
                     # Just use the custom path directly - preprocessing happens in the video_creator
                 else:
                     # For image custom backgrounds, we need to ensure it's properly formatted
                     logger.info(f"Using custom image background from: {custom_background_path}")
+                    progress_callback(54, "Processing custom image background")
                     # Just use the custom path directly - preprocessing happens in the image_creator
 
             # Check if processing should be aborted
@@ -152,10 +187,47 @@ class CustomShortsCreator:
                 logger.info("Shutdown requested, aborting YouTube short creation before rendering")
                 return None
 
+            # Track the start time for periodic progress updates
+            rendering_start_time = time.time()
+            rendering_last_update = rendering_start_time
+            
+            # Estimated time distribution: 15% audio generation, 25% background processing, 60% video rendering
+            
+            # Create a progress tracker function to pass to the creators
+            def track_rendering_progress(elapsed_seconds):
+                nonlocal rendering_last_update
+                current_time = time.time()
+                
+                # Update progress every 10 seconds to avoid too many updates
+                if current_time - rendering_last_update >= 10:
+                    # Calculate estimated progress based on elapsed time
+                    # Use a curve that starts fast and slows down to create realistic progress feeling
+                    # Limit to 88% as final step will bring to 90%
+                    estimated_total_seconds = 600  # Estimate 10 minutes total for rendering
+                    progress_pct = min(88, 55 + (elapsed_seconds / estimated_total_seconds) * 33)
+                    
+                    if background_type == "video":
+                        phase = "Rendering video sections"
+                    else:
+                        phase = "Compositing image sequence"
+                        
+                    progress_callback(int(progress_pct), phase)
+                    rendering_last_update = current_time
+                
+            # Report progress at start of rendering
+            progress_callback(55, "Beginning media rendering")
+
             # Create the appropriate creator based on background type
             if background_type == "image":
                 logger.info("Creating YouTube Short with image background")
-
+                
+                # Time-based progress tracking
+                start_time = time.time()
+                def image_progress_tracker():
+                    elapsed = time.time() - start_time
+                    track_rendering_progress(elapsed)
+                    return False  # Return False to continue rendering
+                
                 # For images with fallback to Unsplash when HuggingFace fails
                 video_path = self.image_creator.create_youtube_short(
                     title=title,
@@ -165,15 +237,23 @@ class CustomShortsCreator:
                     add_captions=add_captions,
                     style=style,
                     voice_style=voice_style,
-                    max_duration=max_duration,
+                    max_duration=max_duration,  # Pass max_duration to enforce limit
                     background_queries=background_queries,
                     blur_background=blur_background,
                     edge_blur=edge_blur,
-                    custom_background_path=custom_background_path if background_source == "custom" else None
+                    custom_background_path=custom_background_path if background_source == "custom" else None,
+                    progress_callback=image_progress_tracker
                 )
             else:
                 logger.info("Creating YouTube Short with video background")
-
+                
+                # Time-based progress tracking
+                start_time = time.time()
+                def video_progress_tracker():
+                    elapsed = time.time() - start_time
+                    track_rendering_progress(elapsed)
+                    return False  # Return False to continue rendering
+                
                 video_path = self.video_creator.create_youtube_short(
                     title=title,
                     script_sections=script_sections,
@@ -182,13 +262,27 @@ class CustomShortsCreator:
                     add_captions=add_captions,
                     style="video",  # Style is always "video" for video creator
                     voice_style=voice_style,
-                    max_duration=max_duration,
+                    max_duration=max_duration,  # Pass max_duration to enforce limit
                     background_queries=background_queries,
                     blur_background=blur_background,
                     edge_blur=edge_blur,
-                    custom_background_path=custom_background_path if background_source == "custom" else None
+                    custom_background_path=custom_background_path if background_source == "custom" else None,
+                    progress_callback=video_progress_tracker
                 )
 
+            if video_path:
+                progress_callback(89, "Video rendering complete")
+                
+                # Verify final duration
+                try:
+                    with VideoFileClip(video_path) as clip:
+                        actual_duration = clip.duration
+                        logger.info(f"Final video duration: {actual_duration:.2f}s (target: {max_duration}s)")
+                        if abs(actual_duration - max_duration) > 1:  # Allow 1 second tolerance
+                            logger.warning(f"Warning: Final duration ({actual_duration:.2f}s) differs from max_duration ({max_duration}s)")
+                except Exception as e:
+                    logger.error(f"Could not verify final video duration: {e}")
+                
             logger.info(f"YouTube Short created successfully: {video_path}")
             return video_path
 

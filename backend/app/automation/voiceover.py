@@ -20,17 +20,64 @@ class GoogleVoiceover:
         import json
         from google.cloud import texttospeech
 
+        logger.info(f"Initializing Google TTS with voice: {voice}")
+        
+        # Get API key from environment variables
         self.api_key = os.getenv("GOOGLE_API_KEY")
+        
         # Set the environment variable for Google Cloud credentials
         credentials_path = os.getenv("GOOGLE_CREDENTIALS_JSON")
-        if credentials_path and os.path.exists(credentials_path):
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
-            self.client = texttospeech.TextToSpeechClient()
-        elif self.api_key:
-            # If using API key authentication
-            self.client = texttospeech.TextToSpeechClient.from_service_account_json(self.api_key)
-        else:
-            raise ValueError("Google Cloud credentials not found. Set GOOGLE_CREDENTIALS_JSON or GOOGLE_API_KEY environment variables.")
+        
+        # Track credential method for debugging
+        self.credentials_method = "unknown"
+        
+        try:
+            if credentials_path and os.path.exists(credentials_path):
+                logger.info(f"Using Google Cloud credentials from file: {credentials_path}")
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+                self.client = texttospeech.TextToSpeechClient()
+                self.credentials_method = "credentials_file"
+            elif self.api_key:
+                # If using API key authentication
+                logger.info("Using Google Cloud API key authentication")
+                if os.path.exists(self.api_key):  # If API key is a file path
+                    self.client = texttospeech.TextToSpeechClient.from_service_account_json(self.api_key)
+                    self.credentials_method = "service_account_json"
+                else:
+                    # If API key is the actual key string (JSON content)
+                    try:
+                        # Check if it's valid JSON
+                        json_obj = json.loads(self.api_key)
+                        # Write to temporary file and use that
+                        import tempfile
+                        temp_cred_file = tempfile.NamedTemporaryFile(delete=False, suffix='.json')
+                        with open(temp_cred_file.name, 'w') as f:
+                            json.dump(json_obj, f)
+                        logger.info(f"Created temporary credentials file from JSON string")
+                        self.client = texttospeech.TextToSpeechClient.from_service_account_json(temp_cred_file.name)
+                        self.credentials_method = "json_string"
+                        os.unlink(temp_cred_file.name)  # Clean up temp file
+                    except json.JSONDecodeError:
+                        # Not JSON, must be API key string - try default auth
+                        logger.info("API key provided but not JSON format, using default auth")
+                        self.client = texttospeech.TextToSpeechClient()
+                        self.credentials_method = "default_auth_with_api_key"
+            else:
+                # Try default authentication
+                logger.info("No explicit credentials provided, attempting to use default authentication")
+                self.client = texttospeech.TextToSpeechClient()
+                self.credentials_method = "default_auth"
+                
+            # Verify credentials by making a simple list voices call
+            logger.info("Verifying Google Cloud TTS credentials")
+            response = self.client.list_voices(language_code="en-US")
+            logger.info(f"Successfully connected to Google Cloud TTS with {len(response.voices)} English voices available")
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize Google TTS client: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise ValueError(f"Google Cloud TTS initialization failed: {e}")
 
         # Parse the voice into language and name components
         parts = voice.split("-")
@@ -41,6 +88,8 @@ class GoogleVoiceover:
             # Default to US English if the format is unexpected
             self.language_code = "en-US"
             self.voice_name = voice
+            
+        logger.info(f"Using voice: {self.voice_name} with language code: {self.language_code}")
 
         # Create output directory if it doesn't exist
         self.output_dir = output_dir
@@ -78,6 +127,12 @@ class GoogleVoiceover:
 
         if not output_filename:
             output_filename = os.path.join(self.output_dir, f"google_tts_{hash(text)}.mp3")
+            
+        logger.info(f"Generating speech with Google TTS (credentials: {self.credentials_method})")
+        logger.info(f"Text: \"{text[:50]}...\" (length: {len(text)} chars)")
+        logger.info(f"Output file: {output_filename}")
+        if voice_style:
+            logger.info(f"Voice style: {voice_style}")
 
         # Implement retry logic
         max_retries = 3
@@ -88,6 +143,7 @@ class GoogleVoiceover:
             try:
                 # Break long text into smaller chunks if more than 5000 characters (Google's limit)
                 if len(text) > 5000:
+                    logger.info(f"Text exceeds 5000 char limit ({len(text)} chars), splitting into chunks")
                     # Split into sentences and process in chunks
                     sentences = re.split(r'(?<=[.!?])\s+', text)
                     chunks = []
