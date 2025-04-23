@@ -15,7 +15,6 @@ import {
   Video,
 } from "lucide-react";
 import { useRef, useEffect, useState } from "react";
-import { throttle, addPassiveEventListener } from "@/utils/scroll";
 
 const features = [
   {
@@ -101,29 +100,6 @@ const features = [
 const Features = () => {
   const [activeFeature, setActiveFeature] = useState(-1);
   const featuresRef = useRef<HTMLDivElement>(null);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-
-  // Track mouse position for subtle effects
-  useEffect(() => {
-    // Use throttled mouse tracking with RAF for better performance
-    const handleMouseMove = throttle((e: MouseEvent) => {
-      requestAnimationFrame(() => {
-        setMousePosition({
-          x: e.clientX / window.innerWidth - 0.5,
-          y: e.clientY / window.innerHeight - 0.5,
-        });
-      });
-    }, 100); // Only update every 100ms
-
-    // Use passive event listener
-    const removeListener = addPassiveEventListener(
-      window,
-      "mousemove",
-      handleMouseMove
-    );
-
-    return () => removeListener();
-  }, []);
 
   useEffect(() => {
     const options = {
@@ -216,29 +192,12 @@ const Features = () => {
       id="features"
       className="section py-24 dark:bg-[#0A0A0A] light:bg-gray-50 relative"
     >
-      {/* Background gradient patterns */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div
-          className="absolute top-0 left-0 w-full h-full opacity-10"
-          style={{
-            backgroundImage: `radial-gradient(circle at ${
-              50 + mousePosition.x * 20
-            }% ${
-              50 + mousePosition.y * 20
-            }%, rgba(224,17,95,0.2) 0%, rgba(128,0,0,0.1) 40%, transparent 70%)`,
-            backgroundSize: "100% 100%",
-            backgroundPosition: "center",
-            transition: "background-position 0.3s ease-out",
-          }}
-        ></div>
-      </div>
-
       <div className="container-wide relative z-10" ref={featuresRef}>
         <div className="max-w-3xl mb-16">
           <h2 className="font-semibold mb-4 text-4xl text-left text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Enterprise-Grade Automation
           </h2>
-          <p className="text-lg dark:text-gray-300 light:text-gray-600 text-left">
+          <p className="text-lg dark:text-gray-300 light:text-gray-800 text-left">
             Our platform provides sophisticated tools that transform the way you
             create and distribute YouTube Shorts
           </p>
@@ -273,7 +232,7 @@ const Features = () => {
                 <div className="relative z-10 h-full flex flex-col">
                   {/* Icon and title in a row */}
                   <div className="flex items-center mb-3">
-                    <h3 className="text-xl font-medium mr-3 text-white dark:text-white light:text-gray-800">
+                    <h3 className="text-xl font-medium mr-3 dark:text-white light:text-gray-800">
                       {feature.title}
                     </h3>
                     <div
@@ -284,12 +243,12 @@ const Features = () => {
                     </div>
                   </div>
 
-                  <p className="text-gray-300 dark:text-gray-300 light:text-gray-600 group-hover:opacity-0 transition-opacity duration-300">
+                  <p className="dark:text-gray-300 light:text-gray-700 group-hover:opacity-0 transition-opacity duration-300">
                     {feature.description}
                   </p>
 
                   {/* Hover content that appears */}
-                  <div className="absolute inset-0 pt-[4rem] px-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col text-gray-200 dark:text-gray-200 light:text-gray-700">
+                  <div className="absolute inset-0 pt-[4rem] px-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col dark:text-gray-200 light:text-gray-700">
                     {feature.hoverContent}
                   </div>
                 </div>
@@ -304,44 +263,44 @@ const Features = () => {
         {/* Comparison Table Section */}
         <div className="mt-32 mb-12">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold md:text-4xl text-white dark:text-white light:text-gray-800">
+            <h2 className="text-3xl font-bold md:text-4xl dark:text-white light:text-gray-800">
               Why Choose{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
                 LazyCreator
               </span>
             </h2>
-            <p className="mt-4 text-lg max-w-xl mx-auto text-gray-300 dark:text-gray-300 light:text-gray-600">
+            <p className="mt-4 text-lg max-w-xl mx-auto dark:text-gray-300 light:text-gray-700">
               See how we stack up against the competition
             </p>
           </div>
 
-          <div className="overflow-x-auto glass-card-ruby p-6 shadow-lg bg-black/50 dark:bg-black/50 light:bg-white border dark:border-[#722F37]/30 light:border-[#722F37]/20 rounded-xl">
+          <div className="overflow-x-auto glass-card-ruby p-6 shadow-lg dark:bg-black/50 light:bg-white/90 border dark:border-[#722F37]/30 light:border-[#722F37]/20 rounded-xl">
             <table className="w-full min-w-[750px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#722F37]/40 dark:border-[#722F37]/40 light:border-[#722F37]/30">
-                  <th className="py-4 px-4 font-medium text-gray-200 dark:text-gray-200 light:text-gray-700">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800">
                     Feature
                   </th>
                   <th className="py-4 px-4 font-medium text-[#E0115F] text-center">
                     LazyCreator
                   </th>
-                  <th className="py-4 px-4 font-medium text-gray-200 dark:text-gray-200 light:text-gray-700 text-center">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800 text-center">
                     InVideo
                   </th>
-                  <th className="py-4 px-4 font-medium text-gray-200 dark:text-gray-200 light:text-gray-700 text-center">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800 text-center">
                     Pictory
                   </th>
-                  <th className="py-4 px-4 font-medium text-gray-200 dark:text-gray-200 light:text-gray-700 text-center">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800 text-center">
                     Synthesia
                   </th>
-                  <th className="py-4 px-4 font-medium text-gray-200 dark:text-gray-200 light:text-gray-700 text-center">
+                  <th className="py-4 px-4 font-medium dark:text-gray-200 light:text-gray-800 text-center">
                     Wisecut
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">
-                  <td className="py-4 px-4 font-medium text-gray-100 dark:text-gray-100 light:text-gray-800">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     Content Creation
                   </td>
                   <td className="py-4 px-4 text-center">
@@ -361,7 +320,7 @@ const Features = () => {
                   </td>
                 </tr>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">
-                  <td className="py-4 px-4 font-medium text-gray-100 dark:text-gray-100 light:text-gray-800">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     Media Flexibility
                   </td>
                   <td className="py-4 px-4 text-center">
@@ -381,7 +340,7 @@ const Features = () => {
                   </td>
                 </tr>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">
-                  <td className="py-4 px-4 font-medium text-gray-100 dark:text-gray-100 light:text-gray-800">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     AI Thumbnail Generation
                   </td>
                   <td className="py-4 px-4 text-center">
@@ -401,7 +360,7 @@ const Features = () => {
                   </td>
                 </tr>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">
-                  <td className="py-4 px-4 font-medium text-gray-100 dark:text-gray-100 light:text-gray-800">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     AI Metadata Generation
                   </td>
                   <td className="py-4 px-4 text-center">
@@ -421,7 +380,7 @@ const Features = () => {
                   </td>
                 </tr>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">
-                  <td className="py-4 px-4 font-medium text-gray-100 dark:text-gray-100 light:text-gray-800">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     Direct YouTube Upload
                   </td>
                   <td className="py-4 px-4 text-center">
@@ -441,7 +400,7 @@ const Features = () => {
                   </td>
                 </tr>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">
-                  <td className="py-4 px-4 font-medium text-gray-100 dark:text-gray-100 light:text-gray-800">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     Time to Create Short
                   </td>
                   <td className="py-4 px-4 text-center">
@@ -461,7 +420,7 @@ const Features = () => {
                   </td>
                 </tr>
                 <tr className="border-b border-[#722F37]/30 dark:border-[#722F37]/30 light:border-[#722F37]/20">
-                  <td className="py-4 px-4 font-medium text-gray-100 dark:text-gray-100 light:text-gray-800">
+                  <td className="py-4 px-4 font-medium dark:text-gray-100 light:text-gray-800">
                     Learning Curve
                   </td>
                   <td className="py-4 px-4 text-center">
