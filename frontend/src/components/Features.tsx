@@ -225,7 +225,7 @@ const Features = () => {
 
               {/* Main card content */}
               <div
-                className="relative bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-white shadow-xl rounded-2xl p-6 h-full z-10 overflow-hidden transition-all duration-300
+                className="relative bg-[#fdfbfb] dark:bg-[#0A0A0A] light:bg-white shadow-xl rounded-2xl p-6 h-full z-10 overflow-hidden transition-all duration-300
                 border border-[#722F37]/30 group-hover:translate-y-[-4px]"
               >
                 {/* Card content container */}

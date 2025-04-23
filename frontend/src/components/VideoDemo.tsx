@@ -87,19 +87,8 @@ const VideoDemo = () => {
 
     observer.observe(document.documentElement, { attributes: true });
 
-    // Use a slower frame rate to improve performance
-    let frameSkip = 0;
-    const FRAME_SKIP_RATE = 3; // Only process every 3rd frame
-
     const drawDemoFrame = () => {
       if (!ctx || !canvas) return;
-
-      // Implement frame skipping for better performance
-      frameSkip = (frameSkip + 1) % FRAME_SKIP_RATE;
-      if (frameSkip !== 0) {
-        animationFrame = requestAnimationFrame(drawDemoFrame);
-        return;
-      }
 
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -108,8 +97,8 @@ const VideoDemo = () => {
       const isDarkMode = document.documentElement.classList.contains("dark");
       themeRef.current = isDarkMode ? "dark" : "light";
 
-      // Set background color based on current theme - improved contrast for light mode
-      ctx.fillStyle = themeRef.current === "dark" ? "#111827" : "#ffffff";
+      // Set background color based on current theme
+      ctx.fillStyle = themeRef.current === "dark" ? "#111827" : "#f8fafc";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw demo interface
@@ -135,128 +124,45 @@ const VideoDemo = () => {
     canvas: HTMLCanvasElement,
     currentStep: number
   ) => {
-    const { width, height } = canvas;
-    
-    // Define app frame dimensions (centered in canvas)
-    const appWidth = width * 0.8;
-    const appHeight = height * 0.7;
-    const appX = (width - appWidth) / 2;
-    const appY = (height - appHeight) / 2;
-    
-    // Set up app frame with better contrast for light mode
-    ctx.save();
-    // App background with better contrast in light mode
-    ctx.fillStyle = themeRef.current === "dark" 
-      ? "rgba(30, 41, 59, 0.8)" 
-      : "rgba(240, 240, 246, 0.95)";
-    ctx.strokeStyle = themeRef.current === "dark" 
-      ? "rgba(255, 255, 255, 0.1)" 
-      : "rgba(0, 0, 0, 0.15)";
-    
-    // Draw app container
-    ctx.beginPath();
-    ctx.roundRect(appX, appY, appWidth, appHeight, 12);
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
+    const width = canvas.width;
+    const height = canvas.height;
 
-    // Draw app frame with glass effect using updated themeRef - improved contrast for light mode
-    const barHeight = height * 0.05;
-    
-    // App header with better contrast
-    ctx.fillStyle = themeRef.current === "dark" 
-      ? "rgba(30, 41, 59, 0.9)" 
-      : "rgba(230, 230, 240, 0.9)";
+    // Draw app frame with glass effect using updated themeRef
+    ctx.fillStyle =
+      themeRef.current === "dark"
+        ? "rgba(30, 41, 59, 0.8)"
+        : "rgba(255, 255, 255, 0.8)";
     ctx.beginPath();
-    ctx.roundRect(appX, appY, appWidth, barHeight, [12, 12, 0, 0]);
+    ctx.roundRect(width * 0.1, height * 0.1, width * 0.8, height * 0.8, 20);
     ctx.fill();
-    
-    // App controls/buttons with better contrast
-    ctx.fillStyle = themeRef.current === "dark" 
-      ? "rgba(255, 255, 255, 0.9)" 
-      : "rgba(50, 50, 50, 0.9)";
-    
-    // Window control dots
-    [0.2, 0.35, 0.5].forEach((pos) => {
-      ctx.beginPath();
-      ctx.arc(
-        appX + appWidth * pos,
-        appY + barHeight / 2,
-        barHeight * 0.25,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-    });
-    
-    // Adding a placeholder navigation bar with better contrast
-    const navHeight = height * 0.06;
-    ctx.fillStyle = themeRef.current === "dark" 
-      ? "rgba(40, 50, 70, 0.8)" 
-      : "rgba(245, 245, 250, 0.9)";
+
+    ctx.strokeStyle =
+      themeRef.current === "dark"
+        ? "rgba(255, 255, 255, 0.1)"
+        : "rgba(0, 0, 0, 0.1)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Add glassmorphism shine
+    const gradient = ctx.createLinearGradient(0, 0, 0, height * 0.1);
+    gradient.addColorStop(
+      0,
+      themeRef.current === "dark"
+        ? "rgba(255, 255, 255, 0.1)"
+        : "rgba(255, 255, 255, 0.7)"
+    );
+    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = gradient;
     ctx.beginPath();
     ctx.roundRect(
-      appX,
-      appY + barHeight,
-      appWidth,
-      navHeight,
-      0
+      width * 0.1,
+      height * 0.1,
+      width * 0.8,
+      height * 0.05,
+      [20, 20, 0, 0]
     );
     ctx.fill();
-    
-    // Create nav items with better contrast
-    const items = 5;
-    const itemWidth = appWidth / items;
-    
-    ctx.fillStyle = themeRef.current === "dark" 
-      ? "rgba(70, 90, 120, 0.7)" 
-      : "rgba(220, 220, 230, 0.8)";
-    for (let i = 0; i < items; i++) {
-      if (Math.random() > 0.5) continue; // Skip some items for variety
-      
-      ctx.beginPath();
-      ctx.roundRect(
-        appX + i * itemWidth + itemWidth * 0.1,
-        appY + barHeight + navHeight * 0.2,
-        itemWidth * 0.8,
-        navHeight * 0.6,
-        4
-      );
-      ctx.fill();
-    }
-    
-    // Content area with animated elements - using better contrast
-    const contentY = appY + barHeight + navHeight;
-    const contentHeight = appHeight - barHeight - navHeight;
-    
-    // Add dynamic content with better contrast
-    ctx.fillStyle = themeRef.current === "dark" 
-      ? "rgba(50, 65, 85, 0.6)" 
-      : "rgba(235, 235, 245, 0.7)";
-    
-    // Calculate a variety of shapes based on time step
-    const shapes = 6;
-    const shapePadding = contentHeight * 0.1;
-    const shapeHeight = (contentHeight - shapePadding * (shapes + 1)) / shapes;
-    
-    for (let i = 0; i < shapes; i++) {
-      const y = contentY + shapePadding + (shapeHeight + shapePadding) * i;
-      
-      // Make shapes dynamic based on time
-      const widthMultiplier = 0.5 + Math.sin(currentStep / 20 + i) * 0.3;
-      
-      ctx.beginPath();
-      ctx.roundRect(
-        appX + appWidth * 0.1,
-        y,
-        appWidth * 0.8 * widthMultiplier,
-        shapeHeight,
-        8
-      );
-      ctx.fill();
-    }
-    
+
     // Animation phase based on current step
     const phase = Math.floor(currentStep / 150) % 4;
     if (phase === 0) {
@@ -271,15 +177,6 @@ const VideoDemo = () => {
 
     // Add stick figure mascot based on the phase
     drawStickFigure(ctx, width, height, currentStep, phase);
-  };
-
-  // Update text color variables with better contrast for light mode
-  const getTextColor = () => {
-    return themeRef.current === "dark" ? "rgba(255, 255, 255, 0.9)" : "rgba(15, 23, 42, 0.9)";
-  };
-
-  const getSubtextColor = () => {
-    return themeRef.current === "dark" ? "rgba(209, 213, 219, 0.8)" : "rgba(71, 85, 105, 0.9)";
   };
 
   const drawStickFigure = (
@@ -302,47 +199,72 @@ const VideoDemo = () => {
       x = width * 0.15;
       y = height * (0.85 - Math.sin((step % 150) / 25) * 0.1);
     } else {
-      x = width * 0.15;
-      y = height * 0.85;
+      x = width * 0.8;
+      y = height * 0.5;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(((step % 150) / 150) * Math.PI * 2);
+      ctx.translate(-x, -y);
     }
 
-    // Draw stick figure with improved contrast
-    ctx.strokeStyle = themeRef.current === "dark" ? "#E0115F" : "#800000";
-    ctx.fillStyle = themeRef.current === "dark" ? "#E0115F" : "#800000";
-    ctx.lineWidth = 3;
+    // Updated color to match site theme (from blue to red)
+    const primaryColor = themeRef.current === "dark" ? "#E0115F" : "#800000";
 
-    // Draw head
+    // Draw stick figure head
+    ctx.fillStyle = primaryColor;
     ctx.beginPath();
-    ctx.arc(x, y - 30, 12, 0, Math.PI * 2);
+    ctx.arc(x, y - 15, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw body
+    // Draw stick figure body
+    ctx.strokeStyle = primaryColor;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(x, y - 18);
-    ctx.lineTo(x, y - 5);
+    ctx.moveTo(x, y - 7);
+    ctx.lineTo(x, y + 7);
     ctx.stroke();
 
     // Draw arms
-    ctx.beginPath();
-    ctx.moveTo(x, y - 15);
-    ctx.lineTo(x - 10, y - 5);
-    ctx.stroke();
+    if (phase === 0 || phase === 3) {
+      const waveAngle = Math.sin((step % 150) / 15) * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 3);
+      ctx.lineTo(
+        x + Math.cos(waveAngle) * 12,
+        y - 7 - Math.sin(waveAngle) * 12
+      );
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.moveTo(x, y - 15);
-    ctx.lineTo(x + 10, y - 5);
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y - 3);
+      ctx.lineTo(x - 8, y - 7);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x, y - 3);
+      ctx.lineTo(x + 8, y - 7);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(x, y - 3);
+      ctx.lineTo(x - 8, y - 7);
+      ctx.stroke();
+    }
 
     // Draw legs
     ctx.beginPath();
-    ctx.moveTo(x, y - 5);
-    ctx.lineTo(x - 8, y + 10);
+    ctx.moveTo(x, y + 7);
+    ctx.lineTo(x + 8, y + 15);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(x, y - 5);
-    ctx.lineTo(x + 8, y + 10);
+    ctx.moveTo(x, y + 7);
+    ctx.lineTo(x - 8, y + 15);
     ctx.stroke();
+
+    if (phase === 3) {
+      ctx.restore();
+    }
   };
 
   const drawPromptSelection = (
@@ -351,76 +273,57 @@ const VideoDemo = () => {
     height: number,
     step: number
   ) => {
-    const centerX = width * 0.5;
-    const centerY = height * 0.4;
-    const boxWidth = width * 0.6;
-    const boxHeight = height * 0.25;
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "bold 16px Inter";
+    ctx.fillText("Select a Prompt", width * 0.15, height * 0.2);
 
-    // Draw title with improved contrast
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = getTextColor();
-    ctx.textAlign = "center";
-    ctx.fillText("Select a Prompt", centerX, centerY - boxHeight * 0.6);
-
-    // Draw subtitle
-    ctx.font = "16px Arial";
-    ctx.fillStyle = getSubtextColor();
-    ctx.fillText(
-      "Choose from trending topics or create your own",
-      centerX,
-      centerY - boxHeight * 0.4
-    );
-
-    // Draw prompt suggestions
-    const promptOptions = [
-      "Day in the Life",
-      "Product Review",
-      "How-To Tutorial",
-      "Trending Challenge",
+    const promptColors = [
+      themeRef.current === "dark" ? "#3b82f6" : "#3b82f6",
+      themeRef.current === "dark" ? "#334155" : "#e2e8f0",
+      themeRef.current === "dark" ? "#334155" : "#e2e8f0",
+      themeRef.current === "dark" ? "#334155" : "#e2e8f0",
     ];
 
-    const boxPadding = 15;
-    const promptBoxHeight = 40;
-    const promptSpacing = 15;
-    const startY = centerY - promptBoxHeight * 1.5 - promptSpacing;
-
-    promptOptions.forEach((prompt, index) => {
-      const promptY = startY + (promptBoxHeight + promptSpacing) * index;
-
-      // Determine if this prompt is selected based on animation step
-      const isSelected = Math.floor((step % 150) / 30) === index;
-
-      // Draw the selection box
-      ctx.fillStyle = isSelected
-        ? themeRef.current === "dark"
-          ? "rgba(224, 17, 95, 0.8)"
-          : "rgba(224, 17, 95, 0.8)" // Same selected color in both modes
-        : themeRef.current === "dark"
-        ? "rgba(30, 41, 59, 0.8)"
-        : "rgba(241, 245, 249, 0.9)"; // Better contrast for light mode
-      
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = promptColors[i];
       ctx.beginPath();
       ctx.roundRect(
-        centerX - boxWidth * 0.25,
-        promptY,
-        boxWidth * 0.5,
-        promptBoxHeight,
-        10
+        width * (0.15 + i * 0.15),
+        height * 0.25,
+        width * 0.12,
+        height * 0.08,
+        20
       );
       ctx.fill();
 
-      // Draw prompt text
-      ctx.font = isSelected ? "bold 16px Arial" : "16px Arial";
-      ctx.fillStyle = isSelected
-        ? "#ffffff" // White text for selected item
-        : getTextColor(); // Regular text color
-      ctx.textAlign = "center";
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle =
+        i === 0
+          ? "#ffffff"
+          : themeRef.current === "dark"
+          ? "#e2e8f0"
+          : "#0f172a";
+      ctx.font = "12px Inter";
       ctx.fillText(
-        prompt,
-        centerX,
-        promptY + promptBoxHeight / 2 + 5
+        `Prompt ${i + 1}`,
+        width * (0.15 + i * 0.15) + 10,
+        height * 0.25 + 20
       );
-    });
+    }
+
+    const progress = Math.min(1, step / 100);
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "14px Inter";
+    ctx.fillText("Prompt Selected", width * 0.15, height * 0.4);
+
+    if (step > 100) {
+      ctx.fillStyle = "#22c55e";
+      ctx.font = "bold 14px Inter";
+      ctx.fillText("✓", width * 0.35, height * 0.4);
+    }
   };
 
   const drawDurationSlider = (
@@ -429,70 +332,59 @@ const VideoDemo = () => {
     height: number,
     step: number
   ) => {
-    const centerX = width * 0.5;
-    const centerY = height * 0.4;
-    const sliderWidth = width * 0.6;
-    const sliderHeight = 8;
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "bold 16px Inter";
+    ctx.fillText("Select Duration", width * 0.15, height * 0.2);
 
-    // Draw title with improved contrast
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = getTextColor();
-    ctx.textAlign = "center";
-    ctx.fillText("Set Duration", centerX, centerY - 60);
+    ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
+    ctx.beginPath();
+    ctx.roundRect(width * 0.15, height * 0.3, width * 0.7, height * 0.05, 10);
+    ctx.fill();
 
-    // Draw subtitle
-    ctx.font = "16px Arial";
-    ctx.fillStyle = getSubtextColor();
-    ctx.fillText(
-      "Choose the perfect length for your Short",
-      centerX,
-      centerY - 30
-    );
-
-    // Draw slider track
-    ctx.fillStyle = themeRef.current === "dark" ? "rgba(55, 65, 81, 0.8)" : "rgba(226, 232, 240, 0.9)";
+    const sliderProgress = Math.min(0.7, Math.max(0, (step / 150) * 0.7));
+    ctx.fillStyle = "#3b82f6";
     ctx.beginPath();
     ctx.roundRect(
-      centerX - sliderWidth / 2,
-      centerY,
-      sliderWidth,
-      sliderHeight,
-      4
+      width * 0.15,
+      height * 0.3,
+      width * sliderProgress,
+      height * 0.05,
+      10
     );
     ctx.fill();
 
-    // Calculate slider position based on animation step
-    const sliderPos =
-      centerX -
-      sliderWidth / 2 +
-      (sliderWidth * (step < 75 ? step : 150 - step)) / 150;
-
-    // Draw slider filled portion
-    ctx.fillStyle = themeRef.current === "dark" ? "#E0115F" : "#800000";
+    ctx.fillStyle = "#ffffff";
     ctx.beginPath();
-    ctx.roundRect(
-      centerX - sliderWidth / 2,
-      centerY,
-      sliderPos - (centerX - sliderWidth / 2),
-      sliderHeight,
-      4
+    ctx.arc(
+      width * (0.15 + sliderProgress),
+      height * 0.325,
+      12,
+      0,
+      Math.PI * 2
     );
     ctx.fill();
 
-    // Draw slider handle
+    ctx.shadowColor = "#3b82f6";
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = "#3b82f6";
     ctx.beginPath();
-    ctx.arc(sliderPos, centerY + sliderHeight / 2, 12, 0, Math.PI * 2);
+    ctx.arc(width * (0.15 + sliderProgress), height * 0.325, 8, 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowBlur = 0;
 
-    // Draw duration value
-    const duration = Math.floor(((step < 75 ? step : 150 - step) / 150) * 60);
-    ctx.font = "bold 18px Arial";
-    ctx.fillStyle = getTextColor();
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "14px Inter";
     ctx.fillText(
-      `${duration} seconds`,
-      centerX,
-      centerY + 40
+      `${Math.round((sliderProgress / 0.7) * 20 + 10)}s`,
+      width * (0.15 + sliderProgress),
+      height * 0.4
     );
+
+    if (step > 120) {
+      ctx.fillStyle = "#22c55e";
+      ctx.font = "bold 14px Inter";
+      ctx.fillText("Duration Selected ✓", width * 0.15, height * 0.5);
+    }
   };
 
   const drawBackgroundSelection = (
@@ -501,115 +393,78 @@ const VideoDemo = () => {
     height: number,
     step: number
   ) => {
-    const centerX = width * 0.5;
-    const topY = height * 0.25;
-    const gridWidth = width * 0.6;
-    const gridHeight = height * 0.4;
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "bold 16px Inter";
+    ctx.fillText("Select Background", width * 0.15, height * 0.2);
 
-    // Draw title with improved contrast
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = getTextColor();
-    ctx.textAlign = "center";
-    ctx.fillText("Choose Background", centerX, topY - 20);
+    ctx.fillStyle =
+      step < 70
+        ? "#3b82f6"
+        : themeRef.current === "dark"
+        ? "#334155"
+        : "#e2e8f0";
+    ctx.beginPath();
+    ctx.roundRect(width * 0.15, height * 0.25, width * 0.2, height * 0.1, 10);
+    ctx.fill();
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "14px Inter";
+    ctx.fillText("Image", width * 0.21, height * 0.3);
 
-    // Draw grid of background options
-    const columns = 3;
-    const rows = 2;
-    const thumbnailWidth = gridWidth / columns;
-    const thumbnailHeight = gridHeight / rows;
-    const padding = 10;
+    ctx.fillStyle =
+      step >= 70
+        ? "#3b82f6"
+        : themeRef.current === "dark"
+        ? "#334155"
+        : "#e2e8f0";
+    ctx.beginPath();
+    ctx.roundRect(width * 0.4, height * 0.25, width * 0.2, height * 0.1, 10);
+    ctx.fill();
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "14px Inter";
+    ctx.fillText("Video", width * 0.46, height * 0.3);
 
-    // Selected index based on animation step
-    const selectedIndex = Math.floor((step % 150) / 25);
+    if (step > 90) {
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.font = "bold 14px Inter";
+      ctx.fillText("Source:", width * 0.15, height * 0.45);
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < columns; col++) {
-        const index = row * columns + col;
-        
-        // Thumbnail position
-        const thumbX = centerX - gridWidth / 2 + col * thumbnailWidth;
-        const thumbY = topY + row * thumbnailHeight;
-        
-        // Check if this thumbnail is currently selected
-        const isSelected = selectedIndex === index;
-        
-        // Draw thumbnail background with improved contrast
-        ctx.fillStyle = themeRef.current === "dark" 
-          ? isSelected ? "rgba(224, 17, 95, 0.4)" : "rgba(30, 41, 59, 0.9)"
-          : isSelected ? "rgba(224, 17, 95, 0.3)" : "rgba(241, 245, 249, 0.9)";
-        
-        ctx.beginPath();
-        ctx.roundRect(
-          thumbX + padding,
-          thumbY + padding,
-          thumbnailWidth - padding * 2,
-          thumbnailHeight - padding * 2,
-          8
-        );
-        ctx.fill();
-        
-        // Draw border for selected thumbnail
-        if (isSelected) {
-          ctx.strokeStyle = themeRef.current === "dark" ? "#E0115F" : "#800000";
-          ctx.lineWidth = 3;
-          ctx.stroke();
-        }
-        
-        // Draw thumbnail content preview
-        const iconSize = Math.min(thumbnailWidth, thumbnailHeight) * 0.3;
-        const iconX = thumbX + thumbnailWidth / 2;
-        const iconY = thumbY + thumbnailHeight / 2;
-        
-        // Draw different icon shapes for different thumbnails
-        ctx.fillStyle = themeRef.current === "dark" ? "#FFFFFF" : "#1E293B";
-        
-        if (index === 0) {
-          // Mountain icon
-          ctx.beginPath();
-          ctx.moveTo(iconX - iconSize, iconY + iconSize/2);
-          ctx.lineTo(iconX - iconSize/2, iconY - iconSize/2);
-          ctx.lineTo(iconX, iconY + iconSize/3);
-          ctx.lineTo(iconX + iconSize/2, iconY - iconSize/3);
-          ctx.lineTo(iconX + iconSize, iconY + iconSize/2);
-          ctx.closePath();
-          ctx.fill();
-        } else if (index === 1) {
-          // Building icon
-          ctx.beginPath();
-          ctx.roundRect(
-            iconX - iconSize/2,
-            iconY - iconSize/2,
-            iconSize,
-            iconSize,
-            2
-          );
-          ctx.fill();
-          
-          // Windows
-          ctx.fillStyle = themeRef.current === "dark" ? "#1E293B" : "#FFFFFF";
-          const windowSize = iconSize / 4;
-          ctx.beginPath();
-          ctx.rect(iconX - iconSize/4, iconY - iconSize/4, windowSize, windowSize);
-          ctx.fill();
-          
-          ctx.beginPath();
-          ctx.rect(iconX + iconSize/4 - windowSize, iconY - iconSize/4, windowSize, windowSize);
-          ctx.fill();
-          
-          ctx.beginPath();
-          ctx.rect(iconX - iconSize/4, iconY + iconSize/4 - windowSize, windowSize, windowSize);
-          ctx.fill();
-          
-          ctx.beginPath();
-          ctx.rect(iconX + iconSize/4 - windowSize, iconY + iconSize/4 - windowSize, windowSize, windowSize);
-          ctx.fill();
-        } else {
-          // Abstract shapes for other thumbnails
-          ctx.beginPath();
-          ctx.arc(iconX, iconY, iconSize/2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      ctx.fillStyle =
+        step < 120
+          ? "#3b82f6"
+          : themeRef.current === "dark"
+          ? "#334155"
+          : "#e2e8f0";
+      ctx.beginPath();
+      ctx.roundRect(
+        width * 0.15,
+        height * 0.5,
+        width * 0.25,
+        height * 0.08,
+        10
+      );
+      ctx.fill();
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.font = "14px Inter";
+      ctx.fillText("Use our library", width * 0.19, height * 0.55);
+
+      ctx.fillStyle =
+        step >= 120
+          ? "#3b82f6"
+          : themeRef.current === "dark"
+          ? "#334155"
+          : "#e2e8f0";
+      ctx.beginPath();
+      ctx.roundRect(
+        width * 0.45,
+        height * 0.5,
+        width * 0.25,
+        height * 0.08,
+        10
+      );
+      ctx.fill();
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.font = "14px Inter";
+      ctx.fillText("Upload your own", width * 0.49, height * 0.55);
     }
   };
 
@@ -619,84 +474,199 @@ const VideoDemo = () => {
     height: number,
     step: number
   ) => {
-    const centerX = width * 0.5;
-    const centerY = height * 0.4;
-    
-    // Draw title with improved contrast
-    ctx.font = "bold 24px Arial";
-    ctx.fillStyle = getTextColor();
-    ctx.textAlign = "center";
-    ctx.fillText("Generating Your Short", centerX, centerY - 70);
-    
-    // Draw progress subtitle
-    const progressPercent = Math.min(100, Math.floor((step / 150) * 100));
-    ctx.font = "16px Arial";
-    ctx.fillStyle = getSubtextColor();
-    ctx.fillText(
-      `${progressPercent}% Complete`,
-      centerX,
-      centerY - 40
-    );
-    
-    // Draw progress bar
-    const progressWidth = width * 0.6;
-    const progressHeight = 12;
-    
-    // Progress bar background with improved contrast
-    ctx.fillStyle = themeRef.current === "dark" ? "rgba(55, 65, 81, 0.8)" : "rgba(226, 232, 240, 0.9)";
-    ctx.beginPath();
-    ctx.roundRect(
-      centerX - progressWidth / 2,
-      centerY,
-      progressWidth,
-      progressHeight,
-      6
-    );
-    ctx.fill();
-    
-    // Progress bar fill
-    const fillWidth = (progressWidth * step) / 150;
-    ctx.fillStyle = themeRef.current === "dark" ? "#E0115F" : "#800000";
-    ctx.beginPath();
-    ctx.roundRect(
-      centerX - progressWidth / 2,
-      centerY,
-      fillWidth,
-      progressHeight,
-      6
-    );
-    ctx.fill();
-    
-    // Draw status messages that change during the progress
-    const statusMessages = [
-      "Analyzing content...",
-      "Generating script...",
-      "Creating visuals...",
-      "Applying effects...",
-      "Finalizing export..."
-    ];
-    
-    const messageIndex = Math.min(
-      statusMessages.length - 1,
-      Math.floor((step / 150) * statusMessages.length)
-    );
-    
-    ctx.font = "16px Arial";
-    ctx.fillStyle = getTextColor();
-    ctx.fillText(
-      statusMessages[messageIndex],
-      centerX,
-      centerY + 40
-    );
-    
-    // Draw animated dots to indicate processing
-    const dotCount = (Math.floor(step / 15) % 4);
-    let dots = "";
-    for (let i = 0; i < dotCount; i++) {
-      dots += ".";
+    if (step < 30) {
+      const gradient = ctx.createLinearGradient(
+        width * 0.3,
+        height * 0.7,
+        width * 0.7,
+        height * 0.8
+      );
+      gradient.addColorStop(0, "#3b82f6");
+      gradient.addColorStop(1, "#2563eb");
+      ctx.fillStyle = gradient;
+
+      ctx.beginPath();
+      ctx.roundRect(width * 0.3, height * 0.7, width * 0.4, height * 0.1, 10);
+      ctx.fill();
+
+      ctx.shadowColor = "#3b82f680";
+      ctx.shadowBlur = 15;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 16px Inter";
+      ctx.fillText("Create Short", width * 0.42, height * 0.76);
+
+      if (step > 15) {
+        ctx.fillStyle = "rgba(59, 130, 246, 0.3)";
+        ctx.beginPath();
+        ctx.arc(width * 0.5, height * 0.75, (step - 15) * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (step <= 120) {
+      const progress = (step - 30) / 90;
+
+      ctx.fillStyle =
+        themeRef.current === "dark"
+          ? "rgba(17, 24, 39, 0.9)"
+          : "rgba(255, 255, 255, 0.9)";
+      ctx.fillRect(width * 0.1, height * 0.1, width * 0.8, height * 0.8);
+
+      const spinnerRadius = Math.min(width, height) * 0.1;
+      const spinnerCenterX = width * 0.5;
+      const spinnerCenterY = height * 0.3;
+
+      ctx.strokeStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(spinnerCenterX, spinnerCenterY, spinnerRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.shadowColor = "#3b82f680";
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(
+        spinnerCenterX,
+        spinnerCenterY,
+        spinnerRadius,
+        -Math.PI / 2,
+        -Math.PI / 2 + progress * Math.PI * 2
+      );
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.font = "bold 20px Inter";
+      const timeLeft = Math.ceil(30 - progress * 30);
+      ctx.fillText(`${timeLeft}s`, spinnerCenterX - 15, spinnerCenterY + 7);
+
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.font = "bold 18px Inter";
+      ctx.fillText("Generating your Short...", width * 0.5 - 100, height * 0.5);
+
+      ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
+      ctx.beginPath();
+      ctx.roundRect(width * 0.25, height * 0.6, width * 0.5, height * 0.03, 5);
+      ctx.fill();
+
+      const barGradient = ctx.createLinearGradient(
+        width * 0.25,
+        0,
+        width * 0.75,
+        0
+      );
+      barGradient.addColorStop(0, "#3b82f6");
+      barGradient.addColorStop(1, "#2563eb");
+      ctx.fillStyle = barGradient;
+
+      ctx.beginPath();
+      ctx.roundRect(
+        width * 0.25,
+        height * 0.6,
+        width * 0.5 * progress,
+        height * 0.03,
+        5
+      );
+      ctx.fill();
+
+      const steps = [
+        "Analyzing prompt",
+        "Generating content",
+        "Adding background",
+        "Finalizing",
+      ];
+      const stepActive = Math.floor(progress * 4);
+
+      for (let i = 0; i < steps.length; i++) {
+        if (i <= stepActive) {
+          ctx.fillStyle =
+            i === stepActive
+              ? "#3b82f6"
+              : themeRef.current === "dark"
+              ? "#e2e8f0"
+              : "#0f172a";
+          ctx.font = i === stepActive ? "bold 14px Inter" : "14px Inter";
+        } else {
+          ctx.fillStyle = themeRef.current === "dark" ? "#64748b" : "#9ca3af";
+          ctx.font = "14px Inter";
+        }
+        ctx.fillText(steps[i], width * (0.25 + i * 0.17), height * 0.7);
+      }
+    } else {
+      const videoGradient = ctx.createLinearGradient(
+        0,
+        height * 0.2,
+        0,
+        height * 0.6
+      );
+      videoGradient.addColorStop(
+        0,
+        themeRef.current === "dark" ? "#1e293b" : "#0f172a"
+      );
+      videoGradient.addColorStop(
+        1,
+        themeRef.current === "dark" ? "#0f172a" : "#1e293b"
+      );
+
+      ctx.fillStyle = videoGradient;
+      ctx.beginPath();
+      ctx.roundRect(width * 0.2, height * 0.2, width * 0.6, height * 0.4, 10);
+      ctx.fill();
+
+      ctx.strokeStyle = "#3b82f640";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      ctx.beginPath();
+      ctx.arc(width * 0.5, height * 0.4, 25, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#3b82f6";
+      ctx.beginPath();
+      ctx.moveTo(width * 0.5 + 10, height * 0.4);
+      ctx.lineTo(width * 0.5 - 5, height * 0.4 - 10);
+      ctx.lineTo(width * 0.5 - 5, height * 0.4 + 10);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.font = "bold 18px Inter";
+      ctx.fillText("Your Short is Ready!", width * 0.5 - 80, height * 0.7);
+
+      const downloadGradient = ctx.createLinearGradient(
+        width * 0.3,
+        height * 0.75,
+        width * 0.3,
+        height * 0.83
+      );
+      downloadGradient.addColorStop(0, "#3b82f6");
+      downloadGradient.addColorStop(1, "#2563eb");
+      ctx.fillStyle = downloadGradient;
+      ctx.beginPath();
+      ctx.roundRect(width * 0.3, height * 0.75, width * 0.18, height * 0.08, 8);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "14px Inter";
+      ctx.fillText("Download", width * 0.33, height * 0.79);
+
+      ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
+      ctx.beginPath();
+      ctx.roundRect(
+        width * 0.52,
+        height * 0.75,
+        width * 0.18,
+        height * 0.08,
+        8
+      );
+      ctx.fill();
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.font = "14px Inter";
+      ctx.fillText("Create New", width * 0.54, height * 0.79);
     }
-    
-    ctx.fillText(dots, centerX + ctx.measureText(statusMessages[messageIndex]).width / 2 + 10, centerY + 40);
   };
 
   return (

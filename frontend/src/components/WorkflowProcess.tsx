@@ -237,7 +237,7 @@ const WorkflowProcess = () => {
           <h2 className="font-semibold mb-4 text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Sophisticated Automation Process
           </h2>
-          <p className="text-lg text-gray-300 dark:text-gray-300 light:text-gray-700">
+          <p className="text-lg text-black-300 dark:text-gray-300 light:text-gray-700">
             Our enterprise-grade workflow delivers professional results with
             minimal effort
           </p>
@@ -297,7 +297,7 @@ const WorkflowProcess = () => {
           }}
         >
           <div
-            className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-100 border border-[#722F37]/20 dark:border-[#722F37]/20 light:border-gray-300"
+            className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#faf9f9] dark:bg-[#0A0A0A] light:bg-gray-100 border border-[#722F37]/20 dark:border-[#722F37]/20 light:border-gray-300"
             style={{ transform: "translateZ(0)" }}
           >
             <div className="absolute inset-0 flex items-center justify-center">
