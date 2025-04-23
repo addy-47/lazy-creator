@@ -57,10 +57,10 @@ const PromptSelector = ({
   const [isCustom, setIsCustom] = useState(false);
 
   useEffect(() => {
-    if (!selectedPrompt) {
+    if (!selectedPrompt && !isCustom) {
       onPromptChange(predefinedPrompts[0].prompt);
     }
-  }, [selectedPrompt, onPromptChange]);
+  }, []);
 
   const handlePredefinedPromptSelect = (prompt: string) => {
     onPromptChange(prompt);
@@ -70,17 +70,20 @@ const PromptSelector = ({
   const handleCustomPromptChange = (
     e: React.ChangeEvent<HTMLTextAreaElement>
   ) => {
-    setCustomPrompt(e.target.value);
-    onPromptChange(e.target.value);
+    const value = e.target.value;
+    setCustomPrompt(value);
+    onPromptChange(value);
   };
 
   const toggleCustomPrompt = () => {
-    setIsCustom(true);
-    if (!customPrompt) {
-      setCustomPrompt("");
-      onPromptChange("");
-    } else {
-      onPromptChange(customPrompt);
+    if (!isCustom) {
+      setIsCustom(true);
+      
+      if (customPrompt) {
+        onPromptChange(customPrompt);
+      } else {
+        setCustomPrompt("");
+      }
     }
   };
 
@@ -88,7 +91,6 @@ const PromptSelector = ({
     <div className="space-y-4">
       <h3 className="text-lg font-medium">Select a Prompt</h3>
 
-      {/* Improved scroll area with better overflow handling */}
       <div className="overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-rounded-full scrollbar-thumb-primary/50 scrollbar-track-transparent">
         <div className="flex space-x-2 pb-2 min-w-max">
           {predefinedPrompts.map((promptItem) => (
@@ -128,6 +130,7 @@ const PromptSelector = ({
             placeholder="Be specific about what you want in your YouTube Short..."
             value={customPrompt}
             onChange={handleCustomPromptChange}
+            autoFocus
           />
           <p className="text-xs text-foreground/60">
             Try to be detailed and specific about the content you want in your

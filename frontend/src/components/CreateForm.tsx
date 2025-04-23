@@ -53,9 +53,6 @@ const CreateForm = () => {
   } | null>(null);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   const [activeStep, setActiveStep] = useState(1);
-  const [stepTransitioning, setStepTransitioning] = useState<number | null>(
-    null
-  );
   const [announcement, setAnnouncement] = useState<string>("");
 
   const stepRefs = {
@@ -94,7 +91,7 @@ const CreateForm = () => {
   const goToStep = (step: number) => {
     if (step === activeStep) return;
 
-    setStepTransitioning(step);
+    // Set the active step immediately without transition animation
     setActiveStep(step);
     scrollToStep(stepRefs[`step${step}`].current);
 
@@ -105,11 +102,6 @@ const CreateForm = () => {
         stepData.isCompleted ? "This step is completed." : ""
       }`
     );
-
-    // Clear transition state after animation
-    setTimeout(() => {
-      setStepTransitioning(null);
-    }, 300);
   };
 
   useEffect(() => {
@@ -184,26 +176,34 @@ const CreateForm = () => {
   }, [activeStep]);
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
 
-    if (!prompt) {
+    // Check all steps are complete before proceeding
+    if (!isStepComplete(1)) {
       toast.error("Please select or write a prompt");
+      goToStep(1);
       return;
     }
 
-    if (!backgroundType || !backgroundSource) {
-      toast.error("Please select a background type and source");
+    if (!isStepComplete(2)) {
+      toast.error("Please set a duration between 15 and 60 seconds");
+      goToStep(2);
       return;
     }
 
-    if (backgroundSource === "custom" && !backgroundFile) {
-      toast.error(
-        "Please upload a background file or choose 'Use our library'"
-      );
+    if (!isStepComplete(3)) {
+      if (!backgroundType) {
+        toast.error("Please select a background type");
+      } else if (!backgroundSource) {
+        toast.error("Please select a background source");
+      } else if (backgroundSource === "custom" && !backgroundFile) {
+        toast.error("Please upload a background file or choose 'Use our library'");
+      }
+      goToStep(3);
       return;
     }
 
-    // Show confirmation dialog instead of starting generation immediately
+    // Show confirmation dialog
     setShowConfirmDialog(true);
   };
 
@@ -424,6 +424,7 @@ const CreateForm = () => {
           steps={formSteps}
           currentStep={activeStep}
           className="mb-8"
+          onStepClick={goToStep}
         />
       </div>
 
@@ -436,26 +437,17 @@ const CreateForm = () => {
           isActive={activeStep === 1}
           isCompleted={isStepComplete(1)}
           onClick={() => goToStep(1)}
-          className={`cursor-pointer transition-all duration-300 ${
-            stepTransitioning === 1 ? "animate-pulse" : ""
-          }`}
+          className="cursor-pointer transition-all duration-300"
           aria-label={`Step 1: Choose Your Content ${
             isStepComplete(1) ? "(Completed)" : ""
           }`}
         >
-          {stepTransitioning === 1 ? (
-            <div className="flex items-center justify-center py-8">
-              <LoadingSpinner size="md" />
-            </div>
-          ) : (
-            <PromptSelector
-              selectedPrompt={prompt}
-              onPromptChange={(value) => {
-                handlePromptChange(value);
-                if (value) goToStep(2);
-              }}
-            />
-          )}
+          <PromptSelector
+            selectedPrompt={prompt}
+            onPromptChange={(value) => {
+              handlePromptChange(value);
+            }}
+          />
         </StepCard>
 
         <StepCard
@@ -466,26 +458,17 @@ const CreateForm = () => {
           isActive={activeStep === 2}
           isCompleted={isStepComplete(2)}
           onClick={() => goToStep(2)}
-          className={`cursor-pointer transition-all duration-300 ${
-            stepTransitioning === 2 ? "animate-pulse" : ""
-          }`}
+          className="cursor-pointer transition-all duration-300"
           aria-label={`Step 2: Set Duration ${
             isStepComplete(2) ? "(Completed)" : ""
           }`}
         >
-          {stepTransitioning === 2 ? (
-            <div className="flex items-center justify-center py-8">
-              <LoadingSpinner size="md" />
-            </div>
-          ) : (
-            <DurationSlider
-              selectedDuration={duration}
-              onDurationChange={(value) => {
-                handleDurationChange(value);
-                if (value >= 15 && value <= 60) goToStep(3);
-              }}
-            />
-          )}
+          <DurationSlider
+            selectedDuration={duration}
+            onDurationChange={(value) => {
+              handleDurationChange(value);
+            }}
+          />
         </StepCard>
 
         <StepCard
@@ -496,27 +479,19 @@ const CreateForm = () => {
           isActive={activeStep === 3}
           isCompleted={isStepComplete(3)}
           onClick={() => goToStep(3)}
-          className={`cursor-pointer transition-all duration-300 ${
-            stepTransitioning === 3 ? "animate-pulse" : ""
-          }`}
+          className="cursor-pointer transition-all duration-300"
           aria-label={`Step 3: Choose Background ${
             isStepComplete(3) ? "(Completed)" : ""
           }`}
         >
-          {stepTransitioning === 3 ? (
-            <div className="flex items-center justify-center py-8">
-              <LoadingSpinner size="md" />
-            </div>
-          ) : (
-            <BackgroundSelector
-              selectedType={backgroundType}
-              selectedSource={backgroundSource}
-              customFile={backgroundFile}
-              onTypeChange={handleBackgroundTypeChange}
-              onSourceChange={handleBackgroundSourceChange}
-              onFileChange={handleBackgroundFileChange}
-            />
-          )}
+          <BackgroundSelector
+            selectedType={backgroundType}
+            selectedSource={backgroundSource}
+            customFile={backgroundFile}
+            onTypeChange={handleBackgroundTypeChange}
+            onSourceChange={handleBackgroundSourceChange}
+            onFileChange={handleBackgroundFileChange}
+          />
         </StepCard>
       </div>
 
