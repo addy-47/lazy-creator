@@ -451,31 +451,6 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         # Create the short
         update_progress(50, "Starting video rendering")
         
-        # Define a specialized progress tracker for the rendering process
-        # This will be called periodically during the rendering process
-        last_reported_progress = 50
-        
-        def rendering_progress_tracker():
-            nonlocal last_reported_progress
-            # Increment progress from 55-85 during the rendering process
-            elapsed_seconds = time.time() - rendering_start_time
-            # Don't allow progress to decrease
-            new_progress = max(last_reported_progress, int(50 + (elapsed_seconds / 60) * 7))  # Roughly 7% per minute
-            
-            # Cap at 85% (final step brings to 90%)
-            if new_progress > 85:
-                new_progress = 85
-                
-            # Only update if changed
-            if new_progress > last_reported_progress:
-                last_reported_progress = new_progress
-                phase_message = "Rendering video sections" if background_type == "video" else "Compositing image sequence"
-                update_progress(new_progress, phase_message)
-                logger.info(f"Rendering in progress - elapsed time: {elapsed_seconds:.1f}s")
-                
-            # Never request abort from this callback
-            return False
-            
         # Track start time for progress calculation
         rendering_start_time = time.time()
         logger.info(f"Starting video rendering at {datetime.datetime.now().strftime('%H:%M:%S')}")
@@ -483,6 +458,46 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         # Strict duration enforcement - log the max_duration
         logger.info(f"Enforcing strict max_duration of {max_duration} seconds")
         
+        # Define a specialized progress tracker for the rendering process
+        # This will be called periodically during the rendering process
+        last_reported_progress = 50
+        
+        def rendering_progress_tracker(progress=None, message=None):
+            nonlocal last_reported_progress
+            # If progress and message are provided, use them directly
+            if progress is not None and message is not None:
+                if progress > last_reported_progress:
+                    last_reported_progress = progress
+                    update_progress(progress, message)
+                    logger.info(f"Rendering progress: {progress}%, {message}")
+                return False
+                
+            # Otherwise, calculate progress based on elapsed time
+            elapsed_seconds = time.time() - rendering_start_time
+            
+            # Make progress more gradual - divide into smaller increments
+            # Estimate total rendering time as 5 minutes (300 seconds) to reach 85%
+            estimated_total_seconds = 300
+            progress_range = 35  # From 50% to 85%
+            
+            # Calculate progress with a minimum increment to avoid very small increases
+            # This creates a smooth, gradual progression from 50-85%
+            new_progress = 50 + min(progress_range, (elapsed_seconds / estimated_total_seconds) * progress_range)
+            
+            # Cap at 85% (final step brings to 90%)
+            if new_progress > 85:
+                new_progress = 85
+                
+            # Only update if changed by at least 1%
+            if int(new_progress) > last_reported_progress:
+                last_reported_progress = int(new_progress)
+                phase_message = "Rendering video sections" if background_type == "video" else "Compositing image sequence"
+                update_progress(last_reported_progress, phase_message)
+                logger.info(f"Rendering in progress - elapsed time: {elapsed_seconds:.1f}s, progress: {last_reported_progress}%")
+                
+            # Never request abort from this callback
+            return False
+            
         video_path = creator.create_youtube_short(
             title=video_title,
             script_sections=script_cards,

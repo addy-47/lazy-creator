@@ -1258,6 +1258,20 @@ class YTShortsCreator_V:
                         if check_progress():
                             # Returning True from a moviepy progress function aborts rendering
                             return True
+                            
+                        # Add more detailed progress reporting
+                        try:
+                            if total_frames > 0 and current_frame > 0:
+                                # Calculate percent complete for this video rendering phase
+                                # MoviePy calls this function with current frame
+                                percent_complete = min(99, int((current_frame / total_frames) * 100))
+                                
+                                # Only log every 5% to avoid excessive logging
+                                if percent_complete % 5 == 0:
+                                    logger.info(f"Video rendering progress: {percent_complete}% ({current_frame}/{total_frames} frames)")
+                        except Exception as e:
+                            logger.warning(f"Error in progress calculation: {e}")
+                            
                         return None  # Continue rendering
 
                     final_clip.write_videofile(

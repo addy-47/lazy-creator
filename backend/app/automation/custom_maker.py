@@ -4,6 +4,7 @@ import random
 import logging
 import tempfile
 import shutil
+import math
 from pathlib import Path
 from PIL import Image, ImageFilter
 from moviepy.editor import (
@@ -198,22 +199,41 @@ class CustomShortsCreator:
                 nonlocal rendering_last_update
                 current_time = time.time()
                 
-                # Update progress every 10 seconds to avoid too many updates
-                if current_time - rendering_last_update >= 10:
+                # Update progress more frequently (every 3 seconds) for a smoother experience
+                if current_time - rendering_last_update >= 3:
                     # Calculate estimated progress based on elapsed time
-                    # Use a curve that starts fast and slows down to create realistic progress feeling
+                    # Use a curve that starts faster initially and gradually slows down
                     # Limit to 88% as final step will bring to 90%
-                    estimated_total_seconds = 600  # Estimate 10 minutes total for rendering
-                    progress_pct = min(88, 55 + (elapsed_seconds / estimated_total_seconds) * 33)
+                    estimated_total_seconds = 300  # Estimate 5 minutes total for rendering
                     
-                    if background_type == "video":
-                        phase = "Rendering video sections"
+                    # More granular progress calculation with logarithmic scaling
+                    # This gives a smoother increase at the beginning with a gentler slope later
+                    progress_factor = min(1.0, elapsed_seconds / estimated_total_seconds)
+                    # Use log curve to make progress feel more natural (faster at start, slower near end)
+                    if progress_factor > 0:
+                        curve_factor = 0.3 + (math.log(1 + 9 * progress_factor) / math.log(10))
                     else:
-                        phase = "Compositing image sequence"
+                        curve_factor = 0.3
+                    
+                    # Scale to our desired range (55-88%)
+                    progress_pct = 55 + (curve_factor * 33)
+                    
+                    # Ensure progress doesn't decrease and increment by at least 1%
+                    if int(progress_pct) > last_reported_progress:
+                        last_reported_progress = int(progress_pct)
                         
-                    progress_callback(int(progress_pct), phase)
-                    rendering_last_update = current_time
-                
+                        if background_type == "video":
+                            phase = "Rendering video sections"
+                        else:
+                            phase = "Compositing image sequence"
+                            
+                        progress_callback(last_reported_progress, phase)
+                        rendering_last_update = current_time
+                        logger.info(f"Rendering in progress - elapsed: {elapsed_seconds:.1f}s, progress: {last_reported_progress}%")
+                    
+            # Initialize a variable to track the last reported progress percentage
+            last_reported_progress = 55
+
             # Report progress at start of rendering
             progress_callback(55, "Beginning media rendering")
 
