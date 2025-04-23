@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Clock } from "lucide-react";
 
@@ -9,7 +8,10 @@ interface DurationSliderProps {
 
 const durationOptions = [10, 15, 20, 25, 30];
 
-const DurationSlider = ({ selectedDuration, onDurationChange }: DurationSliderProps) => {
+const DurationSlider = ({
+  selectedDuration,
+  onDurationChange,
+}: DurationSliderProps) => {
   const [value, setValue] = useState(2); // Default to 20 seconds (index 2)
 
   useEffect(() => {
@@ -37,13 +39,15 @@ const DurationSlider = ({ selectedDuration, onDurationChange }: DurationSliderPr
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-medium">Short Duration</h3>
-      
+
       <div className="glass-card p-4">
         <div className="flex items-center gap-3 mb-6">
           <Clock size={18} className="text-primary" />
-          <div className="font-medium">{selectedDuration || durationOptions[value]} seconds</div>
+          <div className="font-medium">
+            {selectedDuration || durationOptions[value]} seconds
+          </div>
         </div>
-        
+
         <div className="space-y-6">
           <input
             type="range"
@@ -54,15 +58,15 @@ const DurationSlider = ({ selectedDuration, onDurationChange }: DurationSliderPr
             onChange={handleSliderChange}
             className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
           />
-          
+
           <div className="flex justify-between">
             {durationOptions.map((duration, index) => (
               <button
                 key={duration}
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all text-white ${
                   index === value
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-foreground/70 hover:bg-secondary/80"
+                    ? "bg-primary"
+                    : "bg-secondary hover:bg-secondary/80"
                 }`}
                 onClick={() => handleButtonClick(index)}
               >

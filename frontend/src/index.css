@@ -181,6 +181,14 @@
   ::selection {
     @apply bg-ruby/20;
   }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-[#E0115F] ring-opacity-50;
+  }
+
+  .step-card:focus-visible {
+    @apply ring-2 ring-[#E0115F] ring-opacity-50 scale-[1.01];
+  }
 }
 
 @layer components {
@@ -223,6 +231,47 @@
   .ruby-glow {
     @apply shadow-lg shadow-ruby/20 hover:shadow-xl hover:shadow-ruby/30 transition-all duration-300;
   }
+
+  .step-card {
+    @apply transform transition-all duration-300;
+  }
+
+  .step-card-inactive {
+    @apply hover:scale-[1.02] active:scale-[0.98];
+  }
+
+  .step-card-active {
+    @apply scale-100 hover:scale-[1.01] active:scale-[0.99];
+  }
+
+  .step-card-completed {
+    @apply border-[#E0115F]/30;
+  }
+
+  .step-transition-enter {
+    @apply opacity-0 translate-y-4;
+  }
+
+  .step-transition-enter-active {
+    @apply opacity-100 translate-y-0 transition-all duration-300 ease-out;
+  }
+
+  .step-transition-exit {
+    @apply opacity-100;
+  }
+
+  .step-transition-exit-active {
+    @apply opacity-0 -translate-y-4 transition-all duration-300 ease-in;
+  }
+}
+
+@keyframes step-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 @layer utilities {
@@ -232,5 +281,46 @@
 
   .text-gradient-ruby {
     @apply text-transparent bg-clip-text bg-gradient-to-r from-maroon via-wine to-ruby;
+  }
+
+  .scale-98 {
+    transform: scale(0.98);
+  }
+
+  .scale-99 {
+    transform: scale(0.99);
+  }
+
+  .animate-step-shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent 25%,
+      rgba(224, 17, 95, 0.1) 50%,
+      transparent 75%
+    );
+    background-size: 200% 100%;
+    animation: step-shimmer 2s infinite;
+  }
+
+  .sticky-top {
+    @apply sticky top-0 z-30;
+    /* Account for iOS Safari top bar */
+    top: env(safe-area-inset-top, 0);
+  }
+
+  .sticky-bottom {
+    @apply sticky bottom-0 z-30;
+    /* Account for iOS Safari bottom bar */
+    bottom: env(safe-area-inset-bottom, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+  }
+
+  /* Handle viewport height issues on mobile browsers */
+  .mobile-vh {
+    height: stretch;
+    height: -webkit-stretch;
+    /* Fallback for older browsers */
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 }

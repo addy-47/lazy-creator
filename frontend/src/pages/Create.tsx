@@ -75,9 +75,9 @@ const Create = () => {
 
       <Navbar />
 
-      <main className="flex-grow relative pt-24 md:pt-32">
-        <div className="container max-w-5xl mx-auto px-4 md:px-6 relative z-10">
-          <div className="text-left md:text-center mb-10">
+      <main className="flex-grow relative pt-16 md:pt-24 pb-16 md:pb-24">
+        <div className="container mx-auto px-4 md:px-6 relative z-10">
+          <div className="text-left md:text-center mb-12 md:mb-16">
             <div className="inline-block px-4 py-1 mb-4 text-sm font-medium text-[#E0115F] bg-[#E0115F]/10 dark:bg-[#E0115F]/5 border border-[#E0115F]/20 rounded-full">
               AI-Powered Creation
             </div>
@@ -94,19 +94,16 @@ const Create = () => {
 
           <div className="relative">
             {/* Decorative elements */}
-            <div className="absolute -top-6 -right-6 w-20 h-20 border border-[#E0115F]/20 rounded-full blur-md opacity-30 dark:opacity-20"></div>
-            <div className="absolute -bottom-10 -left-10 w-32 h-32 border border-[#800000]/20 rounded-full blur-md opacity-30 dark:opacity-20"></div>
+            <div className="absolute -top-20 -right-20 w-40 h-40 border border-[#E0115F]/20 rounded-full blur-lg opacity-30 dark:opacity-20"></div>
+            <div className="absolute -bottom-20 -left-20 w-48 h-48 border border-[#800000]/20 rounded-full blur-lg opacity-30 dark:opacity-20"></div>
 
-            {/* Form container with enhanced styling */}
-            <div className="glass-card-ruby p-6 md:p-8 relative z-20">
+            {/* Form container */}
+            <div className="relative z-20">
               <CreateForm />
             </div>
           </div>
         </div>
       </main>
-
-      {/* Added spacing before footer */}
-      <div className="py-16 md:py-20"></div>
 
       <Footer />
     </div>

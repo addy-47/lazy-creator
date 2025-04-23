@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ArrowRight, Info } from "lucide-react";
 import { Button } from "./Button";
 import PromptSelector from "./PromptSelector";
@@ -6,6 +6,7 @@ import DurationSlider from "./DurationSlider";
 import BackgroundSelector from "./BackgroundSelector";
 import { toast } from "sonner";
 import { getAPIBaseURL } from "@/lib/socket";
+import { scrollToStep } from "@/utils/step-transition";
 import {
   Tooltip,
   TooltipContent,
@@ -22,7 +23,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { StepCard } from "./ui/step-card";
+import { FormProgress } from "./ui/form-progress";
+import { LoadingSpinner } from "./ui/loading-spinner";
+import { LiveRegion } from "./ui/live-region";
 import { useNavigate } from "react-router-dom";
+import { useStepFocus } from "@/hooks/use-step-focus";
 
 const CreateForm = () => {
   const navigate = useNavigate();
@@ -46,6 +52,73 @@ const CreateForm = () => {
     id: string;
   } | null>(null);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  const [activeStep, setActiveStep] = useState(1);
+  const [stepTransitioning, setStepTransitioning] = useState<number | null>(
+    null
+  );
+  const [announcement, setAnnouncement] = useState<string>("");
+
+  const stepRefs = {
+    step1: useRef<HTMLDivElement>(null),
+    step2: useRef<HTMLDivElement>(null),
+    step3: useRef<HTMLDivElement>(null),
+  };
+
+  // Add focus management for each step
+  useStepFocus(activeStep, stepRefs[`step${activeStep}`]);
+
+  const isStepComplete = (step: number): boolean => {
+    switch (step) {
+      case 1:
+        return !!prompt;
+      case 2:
+        return duration >= 15 && duration <= 60;
+      case 3:
+        return (
+          backgroundType &&
+          backgroundSource &&
+          (backgroundSource === "provided" ||
+            (backgroundSource === "custom" && !!backgroundFile))
+        );
+      default:
+        return false;
+    }
+  };
+
+  const formSteps = [
+    { title: "Content", isCompleted: isStepComplete(1) },
+    { title: "Duration", isCompleted: isStepComplete(2) },
+    { title: "Background", isCompleted: isStepComplete(3) },
+  ] as const;
+
+  const goToStep = (step: number) => {
+    if (step === activeStep) return;
+
+    setStepTransitioning(step);
+    setActiveStep(step);
+    scrollToStep(stepRefs[`step${step}`].current);
+
+    // Announce step change
+    const stepData = formSteps[step - 1];
+    setAnnouncement(
+      `Moving to step ${step}: ${stepData.title}. ${
+        stepData.isCompleted ? "This step is completed." : ""
+      }`
+    );
+
+    // Clear transition state after animation
+    setTimeout(() => {
+      setStepTransitioning(null);
+    }, 300);
+  };
+
+  useEffect(() => {
+    // Announce step completion
+    const stepData = formSteps[activeStep - 1];
+    if (stepData?.isCompleted) {
+      setAnnouncement(`Step ${activeStep} completed: ${stepData.title}`);
+    }
+  }, [formSteps, activeStep]);
 
   const handlePromptChange = (value: string) => {
     setPrompt(value);
@@ -75,6 +148,40 @@ const CreateForm = () => {
       if (pollInterval) clearInterval(pollInterval);
     };
   }, [pollInterval]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Allow keyboard navigation only when not in an input/textarea
+      if (
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA"
+      ) {
+        return;
+      }
+
+      switch (e.key) {
+        case "ArrowDown":
+        case "j":
+          e.preventDefault();
+          if (activeStep < 3) goToStep(activeStep + 1);
+          break;
+        case "ArrowUp":
+        case "k":
+          e.preventDefault();
+          if (activeStep > 1) goToStep(activeStep - 1);
+          break;
+        case "1":
+        case "2":
+        case "3":
+          e.preventDefault();
+          goToStep(parseInt(e.key));
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeStep]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,9 +304,241 @@ const CreateForm = () => {
     }, 500);
   };
 
+  if (isGenerated) {
+    return (
+      <div className="glass-card p-8 animate-scale-in">
+        <div className="text-center space-y-6">
+          <div className="inline-block p-4 rounded-full bg-primary/20 mb-2">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-primary"
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+          </div>
+
+          <h2 className="text-2xl font-medium">Your Short is Ready!</h2>
+
+          <div className="aspect-[9/16] max-w-[280px] mx-auto rounded-lg overflow-hidden bg-black flex items-center justify-center">
+            {videoData ? (
+              <video
+                src={`${getAPIBaseURL()}/api/gallery/${
+                  videoData.filename
+                }?token=${encodeURIComponent(
+                  localStorage.getItem("token") || ""
+                )}`}
+                controls
+                autoPlay
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <p className="text-foreground/70">
+                Video is still processing. Check the gallery.
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
+            {videoData && (
+              <Button
+                onClick={async () => {
+                  try {
+                    // Get authentication token
+                    const token = localStorage.getItem("token");
+                    if (!token) {
+                      toast.error("Authentication required to download");
+                      return;
+                    }
+
+                    // Use the download API which handles authentication
+                    const response = await fetch(
+                      `${getAPIBaseURL()}/api/download/${videoData.id}`,
+                      {
+                        headers: {
+                          "x-access-token": token,
+                        },
+                      }
+                    );
+
+                    if (!response.ok) {
+                      throw new Error("Failed to download video");
+                    }
+
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+
+                    // Create download link
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = videoData.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(url);
+
+                    toast.success("Download started!");
+                  } catch (error) {
+                    console.error("Download error:", error);
+                    toast.error("Failed to download video");
+                  }
+                }}
+              >
+                Download
+              </Button>
+            )}
+            <Button onClick={navigateToGallery}>Go to Gallery</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setIsGenerated(false);
+                setPrompt("");
+                setDuration(20);
+                setBackgroundType(null);
+                setBackgroundSource(null);
+                setBackgroundFile(null);
+                setVideoData(null);
+              }}
+            >
+              Create Another
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-3xl mx-auto">
-      {/* Remove the GeneratingAnimation since we're redirecting to Processing page */}
+    <div className="max-w-4xl mx-auto mobile-vh">
+      <LiveRegion message={announcement} />
+
+      <div className="sticky-top py-4 bg-gradient-to-b from-background via-background to-transparent">
+        <FormProgress
+          steps={formSteps}
+          currentStep={activeStep}
+          className="mb-8"
+        />
+      </div>
+
+      <div className="space-y-8 pb-20">
+        <StepCard
+          ref={stepRefs.step1}
+          step={1}
+          title="Choose Your Content"
+          description="Select a template or write your own prompt"
+          isActive={activeStep === 1}
+          isCompleted={isStepComplete(1)}
+          onClick={() => goToStep(1)}
+          className={`cursor-pointer transition-all duration-300 ${
+            stepTransitioning === 1 ? "animate-pulse" : ""
+          }`}
+          aria-label={`Step 1: Choose Your Content ${
+            isStepComplete(1) ? "(Completed)" : ""
+          }`}
+        >
+          {stepTransitioning === 1 ? (
+            <div className="flex items-center justify-center py-8">
+              <LoadingSpinner size="md" />
+            </div>
+          ) : (
+            <PromptSelector
+              selectedPrompt={prompt}
+              onPromptChange={(value) => {
+                handlePromptChange(value);
+                if (value) goToStep(2);
+              }}
+            />
+          )}
+        </StepCard>
+
+        <StepCard
+          ref={stepRefs.step2}
+          step={2}
+          title="Set Duration"
+          description="Choose the length of your Short"
+          isActive={activeStep === 2}
+          isCompleted={isStepComplete(2)}
+          onClick={() => goToStep(2)}
+          className={`cursor-pointer transition-all duration-300 ${
+            stepTransitioning === 2 ? "animate-pulse" : ""
+          }`}
+          aria-label={`Step 2: Set Duration ${
+            isStepComplete(2) ? "(Completed)" : ""
+          }`}
+        >
+          {stepTransitioning === 2 ? (
+            <div className="flex items-center justify-center py-8">
+              <LoadingSpinner size="md" />
+            </div>
+          ) : (
+            <DurationSlider
+              selectedDuration={duration}
+              onDurationChange={(value) => {
+                handleDurationChange(value);
+                if (value >= 15 && value <= 60) goToStep(3);
+              }}
+            />
+          )}
+        </StepCard>
+
+        <StepCard
+          ref={stepRefs.step3}
+          step={3}
+          title="Choose Background"
+          description="Select your video or image background"
+          isActive={activeStep === 3}
+          isCompleted={isStepComplete(3)}
+          onClick={() => goToStep(3)}
+          className={`cursor-pointer transition-all duration-300 ${
+            stepTransitioning === 3 ? "animate-pulse" : ""
+          }`}
+          aria-label={`Step 3: Choose Background ${
+            isStepComplete(3) ? "(Completed)" : ""
+          }`}
+        >
+          {stepTransitioning === 3 ? (
+            <div className="flex items-center justify-center py-8">
+              <LoadingSpinner size="md" />
+            </div>
+          ) : (
+            <BackgroundSelector
+              selectedType={backgroundType}
+              selectedSource={backgroundSource}
+              customFile={backgroundFile}
+              onTypeChange={handleBackgroundTypeChange}
+              onSourceChange={handleBackgroundSourceChange}
+              onFileChange={handleBackgroundFileChange}
+            />
+          )}
+        </StepCard>
+      </div>
+
+      <div className="sticky-bottom pt-6 pb-2 bg-gradient-to-t from-background via-background to-transparent">
+        <Button
+          type="button"
+          size="lg"
+          className="w-full group"
+          onClick={handleSubmit}
+          disabled={
+            !isStepComplete(1) || !isStepComplete(2) || !isStepComplete(3)
+          }
+        >
+          <div className="flex items-center justify-center w-full">
+            <span>Create Short</span>
+            <ArrowRight
+              size={16}
+              className="ml-2 transition-transform group-hover:translate-x-0.5"
+            />
+          </div>
+        </Button>
+      </div>
 
       {/* Confirmation Dialog */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
@@ -219,158 +558,6 @@ const CreateForm = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {isGenerated ? (
-        <div className="glass-card p-8 animate-scale-in">
-          <div className="text-center space-y-6">
-            <div className="inline-block p-4 rounded-full bg-primary/20 mb-2">
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-primary"
-              >
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-              </svg>
-            </div>
-
-            <h2 className="text-2xl font-medium">Your Short is Ready!</h2>
-
-            <div className="aspect-[9/16] max-w-[280px] mx-auto rounded-lg overflow-hidden bg-black flex items-center justify-center">
-              {videoData ? (
-                <video
-                  src={`${getAPIBaseURL()}/api/gallery/${
-                    videoData.filename
-                  }?token=${encodeURIComponent(
-                    localStorage.getItem("token") || ""
-                  )}`}
-                  controls
-                  autoPlay
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <p className="text-foreground/70">
-                  Video is still processing. Check the gallery.
-                </p>
-              )}
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
-              {videoData && (
-                <Button
-                  onClick={async () => {
-                    try {
-                      // Get authentication token
-                      const token = localStorage.getItem("token");
-                      if (!token) {
-                        toast.error("Authentication required to download");
-                        return;
-                      }
-
-                      // Use the download API which handles authentication
-                      const response = await fetch(
-                        `${getAPIBaseURL()}/api/download/${videoData.id}`,
-                        {
-                          headers: {
-                            "x-access-token": token,
-                          },
-                        }
-                      );
-
-                      if (!response.ok) {
-                        throw new Error("Failed to download video");
-                      }
-
-                      const blob = await response.blob();
-                      const url = URL.createObjectURL(blob);
-
-                      // Create download link
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.download = videoData.filename;
-                      document.body.appendChild(link);
-                      link.click();
-                      link.remove();
-                      URL.revokeObjectURL(url);
-
-                      toast.success("Download started!");
-                    } catch (error) {
-                      console.error("Download error:", error);
-                      toast.error("Failed to download video");
-                    }
-                  }}
-                >
-                  Download
-                </Button>
-              )}
-              <Button onClick={navigateToGallery}>Go to Gallery</Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setIsGenerated(false);
-                  setPrompt("");
-                  setDuration(20);
-                  setBackgroundType(null);
-                  setBackgroundSource(null);
-                  setBackgroundFile(null);
-                  setVideoData(null);
-                }}
-              >
-                Create Another
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <PromptSelector
-            selectedPrompt={prompt}
-            onPromptChange={handlePromptChange}
-          />
-
-          <DurationSlider
-            selectedDuration={duration}
-            onDurationChange={handleDurationChange}
-          />
-
-          <BackgroundSelector
-            selectedType={backgroundType}
-            selectedSource={backgroundSource}
-            customFile={backgroundFile}
-            onTypeChange={handleBackgroundTypeChange}
-            onSourceChange={handleBackgroundSourceChange}
-            onFileChange={handleBackgroundFileChange}
-          />
-
-          <div className="pt-6">
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full group"
-              disabled={
-                !prompt ||
-                !backgroundType ||
-                !backgroundSource ||
-                (backgroundSource === "custom" && !backgroundFile)
-              }
-            >
-              <div className="flex items-center justify-center w-full">
-                <span>Create Short</span>
-                <ArrowRight
-                  size={16}
-                  className="ml-2 transition-transform group-hover:translate-x-0.5"
-                />
-              </div>
-            </Button>
-          </div>
-        </form>
-      )}
     </div>
   );
 };
