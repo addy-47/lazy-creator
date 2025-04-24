@@ -114,24 +114,24 @@ const Index = () => {
       {/* 3D Shorts visualization with will-change and transform3d for performance */}
       <div
         ref={parallaxRef}
-        className="fixed right-0 top-0 h-full w-1/2 pointer-events-none -z-5 opacity-70 overflow-hidden"
+        className="fixed right-0 top-0 h-full w-[70%] md:w-1/2 pointer-events-none -z-5 opacity-70 overflow-hidden"
         style={{
           willChange: "transform",
           transform: `translate3d(0, ${scrollY * 0.3}px, 0)`,
         }}
       >
-        <div className="absolute right-10 top-40">
-          <div className="relative w-40 h-72 rounded-2xl border border-[#E0115F]/30 bg-black/30 backdrop-blur-sm rotate-6 shadow-[0_0_15px_rgba(224,17,95,0.3)] transform-gpu hover:rotate-3 transition-transform duration-700">
+        <div className="absolute right-[5%] md:right-10 top-40">
+          <div className="relative w-[20vw] md:w-40 aspect-[10/16] rounded-2xl border border-[#E0115F]/30 bg-black/30 backdrop-blur-sm rotate-6 shadow-[0_0_15px_rgba(224,17,95,0.3)] transform-gpu hover:rotate-3 transition-transform duration-700">
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-white/50 rounded-full"></div>
           </div>
         </div>
-        <div className="absolute right-52 top-60">
-          <div className="relative w-40 h-72 rounded-2xl border border-[#722F37]/30 bg-black/30 backdrop-blur-sm -rotate-3 shadow-[0_0_15px_rgba(114,47,55,0.3)] transform-gpu hover:rotate-0 transition-transform duration-700">
+        <div className="absolute right-[35%] md:right-52 top-60">
+          <div className="relative w-[20vw] md:w-40 aspect-[10/16] rounded-2xl border border-[#722F37]/30 bg-black/30 backdrop-blur-sm -rotate-3 shadow-[0_0_15px_rgba(114,47,55,0.3)] transform-gpu hover:rotate-0 transition-transform duration-700">
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-white/50 rounded-full"></div>
           </div>
         </div>
-        <div className="absolute right-20 top-[350px]">
-          <div className="relative w-40 h-72 rounded-2xl border border-[#800000]/30 bg-black/30 backdrop-blur-sm rotate-12 shadow-[0_0_15px_rgba(128,0,0,0.3)] transform-gpu hover:rotate-6 transition-transform duration-700">
+        <div className="absolute right-[15%] md:right-20 top-[350px]">
+          <div className="relative w-[20vw] md:w-40 aspect-[10/16] rounded-2xl border border-[#800000]/30 bg-black/30 backdrop-blur-sm rotate-12 shadow-[0_0_15px_rgba(128,0,0,0.3)] transform-gpu hover:rotate-6 transition-transform duration-700">
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-12 h-1 bg-white/50 rounded-full"></div>
           </div>
         </div>

@@ -448,3 +448,9 @@ export async function processPendingActions(apiCallFunction: Function) {
 3. A/B testing for new features
 4. Push notification campaigns
 5. Analytics tracking to improve user experience
+
+
+Future Updates:
+1. add payment Integration with freemium plans
+2. the utimate sloth mode (auto everything)
+3. improve custom_maker
