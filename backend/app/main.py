@@ -1086,11 +1086,24 @@ def upload_video_to_youtube(current_user, video_id):
 
             # If the path is a GCS path
             if video_path.startswith('gs://'):
-                _, bucket, blob_name = video_path.split('/', 2)
-                logger.info(f"Downloading video from GCS: gs://{bucket}/{blob_name}")
+                # Extract bucket and blob name from gs:// path
+                parts = video_path.replace('gs://', '').split('/', 1)
+                if len(parts) != 2:
+                    return jsonify({"status": "error", "message": "Invalid GCS path format"}), 500
+
+                bucket_name = parts[0]
+                blob_name = parts[1]
+
+                # Check if the bucket name is duplicated in the blob_name
+                if blob_name.startswith(bucket_name + '/'):
+                    # Remove the duplicated bucket name from the blob path
+                    blob_name = blob_name[len(bucket_name)+1:]
+                    logger.info(f"Removed duplicated bucket name from path. Using blob path: {blob_name}")
+
+                logger.info(f"Downloading video from GCS: gs://{bucket_name}/{blob_name}")
 
                 # Download from GCS
-                cloud_storage.download_file(blob_name, local_path, bucket)
+                cloud_storage.download_file(blob_name, local_path, bucket_name)
 
                 if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
                     return jsonify({"status": "error", "message": "Failed to download video from Cloud Storage"}), 500
@@ -1134,12 +1147,21 @@ def upload_video_to_youtube(current_user, video_id):
                 media_body=googleapiclient.http.MediaFileUpload(
                     local_path,
                     mimetype='video/mp4',
-                    resumable=True
+                    resumable=True,
+                    chunksize=1024*1024*5  # 5MB chunks for better reliability
                 )
             )
 
-            # Execute the upload
-            response = request_upload.execute()
+            # Execute the upload with progress tracking
+            response = None
+            progress = 0
+            while response is None:
+                status, response = request_upload.next_chunk()
+                if status:
+                    new_progress = int(status.progress() * 100)
+                    if new_progress != progress:
+                        progress = new_progress
+                        logger.info(f"YouTube upload progress: {progress}%")
 
             # Get the YouTube video ID
             youtube_id = response['id']
@@ -1227,8 +1249,8 @@ def serve_gallery_file_with_token(filename):
         if not token:
             logger.warning(f"No token provided for file: {filename}")
             return jsonify({'message': 'A valid token is required!'}), 401
-
-            # Validate token
+            
+        # Validate token
         try:
             # Decode the token
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
@@ -1858,6 +1880,33 @@ def get_processing_videos(current_user):
             'status': 'error',
             'message': str(e)
         }), 500
+
+# Add a new route to serve demo videos
+@app.route('/lazycreator-media/demo/<filename>', methods=['GET'])
+def serve_demo_video(filename):
+    try:
+        # No authentication needed for demo videos
+        # Only serve files from the demo directory for security
+        if '..' in filename or '/' in filename:
+            return jsonify({'message': 'Invalid filename'}), 400
+            
+        # Path to demo videos
+        demo_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'demo')
+        file_path = os.path.join(demo_dir, filename)
+        
+        if not os.path.exists(file_path):
+            logger.error(f"Demo file not found: {filename}")
+            return jsonify({'message': 'File not found'}), 404
+            
+        logger.info(f"Serving demo video: {filename}")
+        return send_file(
+            file_path,
+            as_attachment=False,
+            mimetype='video/mp4'
+        )
+    except Exception as e:
+        logger.error(f"Error serving demo video {filename}: {e}")
+        return jsonify({'message': str(e)}), 500
 
 if __name__ == '__main__':
     # In development, use port 4000
