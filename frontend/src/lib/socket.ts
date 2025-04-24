@@ -2,14 +2,20 @@ import axios from "axios";
 
 // Helper to get API base URL consistently for both HTTP and WebSocket
 export const getAPIBaseURL = (): string => {
-  // Using the actual hostname dynamically to support both localhost and IP addresses
-  const hostname =
-    window.location.hostname === "localhost"
-      ? "localhost"
-      : window.location.hostname;
-
-  // Get the base URL without the /api path for API calls
-  return `http://${hostname}:4000`;
+  // Use the environment variable if available
+  const apiUrl = import.meta.env.VITE_API_URL;
+  
+  if (apiUrl) {
+    return apiUrl;
+  }
+  
+  // Fallback for local development
+  if (window.location.hostname === "localhost") {
+    return "http://localhost:4000";
+  }
+  
+  // Production fallback
+  return "https://backend.lazycreator.in";
 };
 
 // Create preconfigured axios instance for consistent API calls

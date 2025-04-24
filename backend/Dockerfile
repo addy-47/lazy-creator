@@ -27,7 +27,7 @@ RUN python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
 # Copy project files
 COPY . .
 
-# Set environment variables (these will be overridden by .env file if mounted)
+# Set environment variables for production (will be overridden by Cloud Run environment variables)
 ENV NEWS_API_KEY=""
 ENV PEXELS_API_KEY=""
 ENV PIXABAY_API_KEY=""
@@ -37,9 +37,11 @@ ENV YOUTUBE_TOPIC="Artificial Intelligence"
 ENV ENABLE_YOUTUBE_UPLOAD="false"
 ENV MEDIA_BUCKET="lazycreator-media"
 ENV UPLOADS_BUCKET="lazycreator-uploads"
+ENV DEBUG="False"
+ENV FRONTEND_URL="https://lazycreator.in"
 
 # Cloud Run specific: Use $PORT environment variable
 ENV PORT 8080
 
-# Command to run the application with gunicorn
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
+# Command to run the application with gunicorn for production
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app.main:app

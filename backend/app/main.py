@@ -52,21 +52,36 @@ app = Flask(__name__)
 logger.info("Initializing storage helper in main application")
 storage_helper.init_module()
 
-# Configure CORS with explicit settings
-CORS(app,
-     resources={r"/api/*": {"origins": "*"}},
-     supports_credentials=True,
-     allow_headers=["Content-Type", "Authorization", "x-access-token", "X-Requested-With"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
+# Get the frontend URL from environment variable
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3500')
 
-# Update to include specific origins
-CORS(app,
-     resources={r"/api/*": {"origins": ["http://localhost:3500", "https://lazy-creator.web.app"]}},
-     supports_credentials=True,
-     allow_headers=["Content-Type", "Authorization", "x-access-token", "X-Requested-With"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
-     expose_headers=["Content-Type", "Authorization"],
-     max_age=600)
+# Configure CORS based on environment
+if os.getenv('DEBUG', 'True').lower() == 'true':
+    # Development environment - more permissive CORS
+    CORS(app,
+         resources={r"/api/*": {"origins": "*"}},
+         supports_credentials=True,
+         allow_headers=["Content-Type", "Authorization", "x-access-token", "X-Requested-With"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
+    
+    logger.info("Configured CORS for development environment (all origins)")
+else:
+    # Production environment - strict CORS
+    allowed_origins = [
+        "https://lazycreator.in", 
+        "https://www.lazycreator.in",
+        FRONTEND_URL
+    ]
+    
+    CORS(app,
+         resources={r"/api/*": {"origins": allowed_origins}},
+         supports_credentials=True,
+         allow_headers=["Content-Type", "Authorization", "x-access-token", "X-Requested-With"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+         expose_headers=["Content-Type", "Authorization"],
+         max_age=600)
+    
+    logger.info(f"Configured CORS for production environment with origins: {allowed_origins}")
 
 # Secret key configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
@@ -1728,19 +1743,35 @@ def upload_to_youtube(current_user, video_id):
 # Add a global after_request handler to ensure CORS headers are set
 @app.after_request
 def add_cors_headers(response):
-    # Allow requests from any origin (you can restrict this to specific domains)
-    response.headers.add('Access-Control-Allow-Origin', '*')
+    # Check if this is a CORS preflight request (OPTIONS)
+    if request.method == 'OPTIONS':
+        # Get the allowed origins from our earlier CORS configuration
+        allowed_origins = ["https://lazycreator.in", "https://www.lazycreator.in"]
+        
+        # In development mode, allow all origins
+        if os.getenv('DEBUG', 'True').lower() == 'true':
+            response.headers.add('Access-Control-Allow-Origin', '*')
+        else:
+            # Get the origin from the request
+            origin = request.headers.get('Origin')
+            
+            # If the origin is in our allowed list, set it explicitly
+            if origin in allowed_origins or origin == FRONTEND_URL:
+                response.headers.add('Access-Control-Allow-Origin', origin)
 
-    # Allow the following headers
-    response.headers.add('Access-Control-Allow-Headers',
-                        'Content-Type,Authorization,x-access-token,X-Requested-With')
+        # Allow the following headers
+        response.headers.add('Access-Control-Allow-Headers',
+                            'Content-Type,Authorization,x-access-token,X-Requested-With')
 
-    # Allow the following methods
-    response.headers.add('Access-Control-Allow-Methods',
-                        'GET,PUT,POST,DELETE,OPTIONS')
+        # Allow the following methods
+        response.headers.add('Access-Control-Allow-Methods',
+                            'GET,PUT,POST,DELETE,OPTIONS')
 
-    # Allow credentials
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
+        # Allow credentials
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        
+        # Add cache control for preflight requests
+        response.headers.add('Access-Control-Max-Age', '600')
 
     return response
 
@@ -1829,4 +1860,8 @@ def get_processing_videos(current_user):
         }), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=4000, debug=True)
+    # In development, use port 4000
+    # In production (Cloud Run), PORT environment variable will be used by gunicorn
+    port = int(os.getenv('PORT', 4000))
+    debug = os.getenv('DEBUG', 'True').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)

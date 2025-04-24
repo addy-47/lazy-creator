@@ -17,6 +17,9 @@ def get_storage_client():
     Returns:
         A Google Cloud Storage client configured with the correct service account
     """
+    # Check if we're running in Cloud Run
+    is_cloud_run = os.getenv('K_SERVICE') is not None
+    
     # Check if we already have a client for this thread
     if hasattr(_thread_local, 'client'):
         return _thread_local.client
@@ -24,11 +27,17 @@ def get_storage_client():
     # Get service account information from environment variables
     service_account_email = os.getenv('GCS_SERVICE_ACCOUNT', 'lazycreator-1@yt-shorts-automation-452420.iam.gserviceaccount.com')
     credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-    project_id = "yt-shorts-automation-452420"
+    project_id = os.getenv('GCP_PROJECT', "yt-shorts-automation-452420")
 
     logger.info(f"Creating storage client with service account: {service_account_email}")
 
-    if credentials_path and os.path.exists(credentials_path):
+    if is_cloud_run:
+        # In Cloud Run, we'll use the default service account
+        logger.info("Running in Cloud Run, using default authentication")
+        client = storage.Client(project=project_id)
+        _thread_local.client = client
+        return client
+    elif credentials_path and os.path.exists(credentials_path):
         try:
             # Normalize path for the current OS
             credentials_path = os.path.normpath(credentials_path)
