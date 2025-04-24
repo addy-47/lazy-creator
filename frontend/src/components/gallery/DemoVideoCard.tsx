@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, memo, useCallback } from "react";
 import { Film, Youtube, AlertTriangle } from "lucide-react";
 
 interface DemoVideo {
@@ -15,7 +15,8 @@ interface DemoVideoCardProps {
   onClick: (demo: DemoVideo) => void;
 }
 
-const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
+// Using memo to prevent unnecessary re-renders
+const DemoVideoCard: React.FC<DemoVideoCardProps> = memo(({ demo, onClick }) => {
   const cardWidthClass = "w-full";
   const cardClass = "aspect-[9/16] rounded-xl overflow-hidden";
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -25,10 +26,34 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
   const [videoError, setVideoError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Pre-compute these values to avoid recalculation in renders
   const isLocalDemo = demo.url && demo.url.includes("/demo/");
   const isYouTubeThumbnail =
     demo.url &&
     (demo.url.includes("youtube.com") || demo.url.includes("ytimg.com"));
+
+  // Memoize the onClick callback to prevent unnecessary re-renders
+  const handleClick = useCallback(() => {
+    onClick(demo);
+  }, [demo, onClick]);
+
+  // Use a more efficient approach for error handling
+  const handleError = useCallback((e) => {
+    console.error(`Error loading video ${demo.id}:`, e);
+    setVideoError(true);
+    
+    // Only perform fetch check in development, not in production
+    if (process.env.NODE_ENV === 'development' && demo.url) {
+      console.error(`Failed URL: ${demo.url}`);
+      fetch(demo.url, { method: 'HEAD' })
+        .then(response => {
+          if (!response.ok) {
+            console.error(`HTTP status: ${response.status} - ${response.statusText}`);
+          }
+        })
+        .catch(fetchError => console.error('Fetch check failed:', fetchError));
+    }
+  }, [demo.id, demo.url]);
 
   // Update UI based on video play/pause state
   useEffect(() => {
@@ -70,32 +95,19 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
       }
     };
 
-    const handleError = (e) => {
-      console.error(`Error loading video ${demo.id}:`, e);
-      setVideoError(true);
-      // Log additional information to help debug the issue
-      if (demo.url) {
-        console.error(`Failed URL: ${demo.url}`);
-        // Try to fetch the URL with fetch API to get more error details
-        fetch(demo.url, { method: 'HEAD' })
-          .then(response => {
-            if (!response.ok) {
-              console.error(`HTTP status: ${response.status} - ${response.statusText}`);
-            }
-          })
-          .catch(fetchError => console.error('Fetch check failed:', fetchError));
-      }
-    };
-
     const handleLoadedData = () => {
       setIsLoading(false);
     };
 
-    // Set a timeout to detect slow loading videos
+    // Optimize timeout to avoid unnecessary reloading
     const loadTimeout = setTimeout(() => {
-      if (isLoading && !videoError) {
-        console.warn(`Video loading timeout for ${demo.id}: ${demo.url}`);
-        // Try to reload the video once
+      if (isLoading && !videoError && video) {
+        // Only log in development
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`Video loading timeout for ${demo.id}: ${demo.url}`);
+        }
+        
+        // Only reload if in the appropriate state
         if (video.networkState === HTMLMediaElement.NETWORK_NO_SOURCE ||
             video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
           video.load();
@@ -103,12 +115,12 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
       }
     }, 10000); // 10 second timeout
 
-    // Add event listeners
-    video.addEventListener("play", handlePlay);
-    video.addEventListener("pause", handlePause);
-    video.addEventListener("volumechange", handleVolumeChange);
+    // Add event listeners with passive option where appropriate for better performance
+    video.addEventListener("play", handlePlay, { passive: true });
+    video.addEventListener("pause", handlePause, { passive: true });
+    video.addEventListener("volumechange", handleVolumeChange, { passive: true });
     video.addEventListener("error", handleError);
-    video.addEventListener("loadeddata", handleLoadedData);
+    video.addEventListener("loadeddata", handleLoadedData, { passive: true });
 
     // Clean up event listeners and timeout
     return () => {
@@ -119,32 +131,34 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
       video.removeEventListener("loadeddata", handleLoadedData);
       clearTimeout(loadTimeout);
     };
-  }, [isYouTubeThumbnail, demo.id, demo.url, isLoading, videoError]);
+  }, [isYouTubeThumbnail, demo.id, demo.url, isLoading, videoError, handleError]);
 
   return (
     <div className={cardWidthClass}>
       <div
-        className={`${cardClass} bg-black group relative shadow-sm hover:shadow-md transition-shadow duration-300`}
-        onClick={() => onClick(demo)}
+        className={`${cardClass} bg-black group relative shadow-sm hover:shadow-md transition-shadow`}
+        onClick={handleClick}
       >
         {isYouTubeThumbnail ? (
-          // YouTube thumbnail
+          // YouTube thumbnail - Using loading="lazy" for better performance
           <img
             src={demo.url}
             className="w-full h-full object-cover"
             alt={demo.title || `Short ${demo.id}`}
             onError={() => setVideoError(true)}
+            loading="lazy"
           />
         ) : (
-          // Local video
+          // Local video - Optimized loading
           <video
             id={`featured-${demo.id}`}
             ref={videoRef}
             src={demo.url}
             className="w-full h-full object-cover"
             muted
-            preload="metadata"
+            preload="none" // Changed from metadata to none for better performance
             playsInline
+            onError={handleError}
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity"></div>
@@ -162,20 +176,20 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
           </div>
         )}
 
-        {/* Loading State */}
+        {/* Loading State - Simplified animation */}
         {isLoading && !videoError && !isYouTubeThumbnail && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/30">
             <div className="relative w-8 h-8">
-              <div className="absolute inset-0 rounded-full border-4 border-secondary animate-ping opacity-20"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-secondary opacity-20"></div>
               <div className="absolute inset-0 rounded-full border-4 border-t-primary border-secondary animate-spin"></div>
             </div>
           </div>
         )}
 
-        {/* Play/Pause Button Overlay */}
+        {/* Play/Pause Button Overlay - Simplified transitions */}
         {!isYouTubeThumbnail && !videoError && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <div className="p-3 rounded-full bg-background/80 backdrop-blur-sm transform group-hover:scale-110 transition-transform">
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="p-3 rounded-full bg-background/80">
               {/* Play icon - shown when video is paused */}
               <svg
                 width="24"
@@ -227,6 +241,7 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
           <span>Sound On</span>
         </div>
 
+        {/* Video info - Pre-optimized to reduce DOM nesting */}
         <div className="absolute bottom-0 left-0 right-0 p-4">
           <div className="text-white text-sm font-medium mb-1 truncate">
             {demo.title || `Creative Short #${demo.id.replace("demo", "")}`}
@@ -254,6 +269,8 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
       </div>
     </div>
   );
-};
+});
+
+DemoVideoCard.displayName = "DemoVideoCard";
 
 export default DemoVideoCard;

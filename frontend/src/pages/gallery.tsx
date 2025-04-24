@@ -229,15 +229,18 @@ function GalleryPage() {
     });
   }, []);
 
-  // Simplified function to load demo videos from the known path
+  // Simplified function to load demo videos from the known path with better performance
   const loadDemoVideos = useCallback((count = 6) => {
+    // Only load a reasonable number of videos to prevent lag
+    const maxVideos = Math.min(count, 8);
     const demos = [];
-    // Use the direct path to the demo videos with the API base URL
+    
+    // Use the direct path to the demo videos
     const apiBase = getAPIBaseURL();
     const demoPath = "/lazycreator-media/demo/";
     
     // Simple loop to generate demo video objects
-    for (let i = 1; i <= count; i++) {
+    for (let i = 1; i <= maxVideos; i++) {
       demos.push({
         id: `demo${i}`,
         url: `${apiBase}${demoPath}demo${i}.mp4`,
@@ -245,8 +248,13 @@ function GalleryPage() {
       });
     }
     
-    setDemoVideos(demos);
-    console.log(`Loaded ${count} demo videos from ${apiBase}${demoPath}`);
+    // Use requestAnimationFrame to update state during idle time
+    requestAnimationFrame(() => {
+      if (isMounted.current) {
+        setDemoVideos(demos);
+        console.log(`Loaded ${demos.length} demo videos from ${apiBase}${demoPath}`);
+      }
+    });
   }, []);
 
   // Radically simplify the loading workflow to ensure we exit loading state
@@ -844,8 +852,19 @@ function GalleryPage() {
           return;
         }
 
-        // Check if we need to refresh based on timestamp
+        // Only force refresh if it has been at least 10 seconds since last refresh
+        // to prevent rapid refresh spam that could cause performance issues
         const now = Date.now();
+        if (
+          forceRefresh && 
+          lastTrendingFetch > 0 && 
+          now - lastTrendingFetch < 10000
+        ) {
+          console.log("Refresh requested too soon, ignoring");
+          return;
+        }
+
+        // Check if we need to refresh based on timestamp
         if (
           !forceRefresh &&
           lastTrendingFetch > 0 &&
@@ -882,21 +901,30 @@ function GalleryPage() {
           );
 
           if (response.data && response.data.shorts) {
-            const trendingShorts = response.data.shorts.map((short) => ({
-              id: short.id,
-              url: short.thumbnail,
-              title: short.title,
-              views: short.views,
-              youtubeUrl: `https://youtube.com/shorts/${short.id}`,
-              channel: short.channel,
-            }));
+            // Limit the number of trending shorts to prevent performance issues
+            const trendingShorts = response.data.shorts
+              .slice(0, 10) // Only take the first 10 shorts
+              .map((short) => ({
+                id: short.id,
+                url: short.thumbnail,
+                title: short.title,
+                views: short.views,
+                youtubeUrl: `https://youtube.com/shorts/${short.id}`,
+                channel: short.channel,
+              }));
 
             if (trendingShorts.length > 0) {
               console.log(`Setting ${trendingShorts.length} trending shorts`);
-              // Set trending videos in separate state
-              setTrendingVideos([...trendingShorts]);
-              // Update last fetch timestamp
-              setLastTrendingFetch(now);
+              
+              // Use requestAnimationFrame to update state during idle time
+              requestAnimationFrame(() => {
+                if (isMounted.current) {
+                  // Set trending videos in separate state
+                  setTrendingVideos([...trendingShorts]);
+                  // Update last fetch timestamp
+                  setLastTrendingFetch(now);
+                }
+              });
             } else {
               console.log("No trending shorts returned from API");
             }

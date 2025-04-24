@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, memo } from "react";
 import { Youtube, ExternalLink, Film, RefreshCw } from "lucide-react";
 import { InfiniteMovingCards } from "@/components/ui/infinite-moving-cards";
 import { DemoVideo } from "./types";
@@ -10,7 +10,106 @@ interface TrendingYouTubeShortsProps {
   onRefresh?: () => void;
 }
 
-const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
+// Extracted card component for better memoization
+const VideoCard = memo(({ video }: { video: DemoVideo }) => {
+  const isYouTube = !!video.youtubeUrl;
+  const isYouTubeThumbnail = 
+    video.url && (video.url.includes("youtube.com") || video.url.includes("ytimg.com"));
+
+  // Pre-calculate view count to avoid runtime calculations in render
+  const viewsDisplay = video.views
+    ? `${parseInt(video.views).toLocaleString()} views`
+    : `${Math.floor(Math.random() * 50) + 10}K views`;
+
+  const handleClick = () => {
+    if (video.youtubeUrl) {
+      window.open(video.youtubeUrl, "_blank");
+    }
+  };
+
+  return (
+    <div
+      className="group relative overflow-hidden rounded-xl w-56 h-auto cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 mx-2"
+      onClick={handleClick}
+    >
+      <div className="relative aspect-[9/16] w-full overflow-hidden rounded-t-xl">
+        {/* Thumbnail - optimize based on source */}
+        {isYouTubeThumbnail ? (
+          <img
+            src={video.url}
+            alt={video.title || "YouTube Short"}
+            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <video
+            src={video.url}
+            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            muted
+            preload="none" // Changed from metadata to none for better performance
+            playsInline
+            poster={`${getAPIBaseURL()}/api/thumbnail/${video.id}`}
+          />
+        )}
+
+        {/* Badge - simplified */}
+        <div
+          className={`absolute top-2 right-2 text-white text-xs py-0.5 px-2 rounded-full flex items-center gap-1 shadow-sm ${
+            isYouTube ? "bg-red-600" : "bg-primary"
+          }`}
+        >
+          {isYouTube ? (
+            <>
+              <Youtube size={10} />
+              <span>YouTube</span>
+            </>
+          ) : (
+            <>
+              <Film size={10} />
+              <span>Demo</span>
+            </>
+          )}
+        </div>
+
+        {/* Simplified play overlay with fewer transitions */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+          <div className="p-3 rounded-full bg-white/90">
+            {isYouTube ? (
+              <Youtube size={24} className="text-red-600" />
+            ) : (
+              <Film size={24} className="text-primary" />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Video Info - simplified */}
+      <div className="p-3 bg-card/90">
+        <h3 className="font-medium text-sm line-clamp-1">
+          {video.title || `Trending Short #${video.id}`}
+        </h3>
+        <div className="flex items-center justify-between mt-1">
+          <div className="text-xs text-muted-foreground">
+            <span className="opacity-80">
+              {video.channel
+                ? `@${video.channel}`
+                : isYouTube
+                ? "YouTube"
+                : "Demo"}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {viewsDisplay}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+VideoCard.displayName = "VideoCard";
+
+const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = memo(({
   demoVideos,
   isYouTubeConnected,
   onRefresh,
@@ -20,94 +119,16 @@ const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
     return null;
   }
 
-  // Create items for InfiniteMovingCards
-  const cardItems = demoVideos.map((video) => ({
-    id: video.id,
-    content: (
-      <div
-        className="group relative overflow-hidden rounded-xl w-56 h-auto cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 mx-2"
-        onClick={() => {
-          if (video.youtubeUrl) {
-            window.open(video.youtubeUrl, "_blank");
-          }
-        }}
-      >
-        <div className="relative aspect-[9/16] w-full overflow-hidden rounded-t-xl">
-          {/* Thumbnail */}
-          {video.url &&
-          (video.url.includes("youtube.com") ||
-            video.url.includes("ytimg.com")) ? (
-            <img
-              src={video.url}
-              alt={video.title || "YouTube Short"}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-            />
-          ) : (
-            <video
-              src={video.url}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-              muted
-              preload="metadata"
-              playsInline
-            />
-          )}
-
-          {/* YouTube or Demo Badge */}
-          <div
-            className={`absolute top-2 right-2 text-white text-xs py-0.5 px-2 rounded-full flex items-center gap-1 shadow-sm ${
-              video.youtubeUrl ? "bg-red-600" : "bg-primary"
-            }`}
-          >
-            {video.youtubeUrl ? (
-              <>
-                <Youtube size={10} />
-                <span>YouTube</span>
-              </>
-            ) : (
-              <>
-                <Film size={10} />
-                <span>Demo</span>
-              </>
-            )}
-          </div>
-
-          {/* Play Overlay */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/30">
-            <div className="p-3 rounded-full bg-white/90 backdrop-blur-sm transform group-hover:scale-110 transition-transform">
-              {video.youtubeUrl ? (
-                <Youtube size={24} className="text-red-600" />
-              ) : (
-                <Film size={24} className="text-primary" />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Video Info */}
-        <div className="p-3 bg-card/90 backdrop-blur-sm">
-          <h3 className="font-medium text-sm line-clamp-1">
-            {video.title || `Trending Short #${video.id}`}
-          </h3>
-          <div className="flex items-center justify-between mt-1">
-            <div className="text-xs text-muted-foreground flex items-center gap-1">
-              <span className="opacity-80">
-                {video.channel
-                  ? `@${video.channel}`
-                  : video.youtubeUrl
-                  ? "YouTube"
-                  : "Demo"}
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {video.views
-                ? `${parseInt(video.views).toLocaleString()} views`
-                : `${Math.floor(Math.random() * 50) + 10}K views`}
-            </div>
-          </div>
-        </div>
-      </div>
-    ),
-  }));
+  // Use useMemo to prevent expensive recalculations
+  const cardItems = useMemo(() => {
+    // Limit the number of videos to improve performance
+    const limitedVideos = demoVideos.slice(0, 10);
+    
+    return limitedVideos.map((video) => ({
+      id: video.id,
+      content: <VideoCard video={video} />
+    }));
+  }, [demoVideos]);
 
   return (
     <div className="py-6">
@@ -132,7 +153,7 @@ const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
             <button
               onClick={(e) => {
                 e.preventDefault();
-                e.stopPropagation(); // Prevent event bubbling
+                e.stopPropagation();
                 if (typeof onRefresh === 'function') {
                   onRefresh();
                 }
@@ -169,6 +190,8 @@ const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
       />
     </div>
   );
-};
+});
+
+TrendingYouTubeShorts.displayName = "TrendingYouTubeShorts";
 
 export default TrendingYouTubeShorts;
