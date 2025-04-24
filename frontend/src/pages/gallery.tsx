@@ -186,6 +186,9 @@ function GalleryPage() {
       });
       setAuthCheckComplete(true);
       setActiveSection("explore"); // Switch to explore tab automatically
+      
+      // Force loading to false for non-authenticated users
+      setLoading(false);
     }
   }, [isAuthenticated, authCheckComplete, navigate]);
 
@@ -211,29 +214,74 @@ function GalleryPage() {
         }
       }
 
-      // Use apiWithoutPreflight to avoid CORS preflight issues
-      const response = await apiWithoutPreflight.get("/api/gallery");
-
-      if (response.data && response.data.videos) {
-        // Update cache
-        requestCache.current.set(cacheKey, {
-          data: response.data,
-          timestamp: Date.now()
-        });
-        
-        if (isMounted.current) {
-          setVideos(response.data.videos);
-        }
-        return response.data;
+      // Try to get the token explicitly for verification
+      const token = localStorage.getItem("token");
+      if (!token) {
+        console.error("No auth token found, cannot fetch videos");
+        setLoading(false);
+        return null;
       }
+
+      try {
+        // First try with apiWithoutPreflight
+        console.log("Fetching gallery data with apiWithoutPreflight");
+        const response = await apiWithoutPreflight.get("/api/gallery");
+        
+        if (response.data && response.data.videos) {
+          // Update cache
+          requestCache.current.set(cacheKey, {
+            data: response.data,
+            timestamp: Date.now()
+          });
+          
+          if (isMounted.current) {
+            setVideos(response.data.videos);
+            setLoading(false);
+          }
+          return response.data;
+        }
+      } catch (apiError) {
+        console.error("Error using apiWithoutPreflight:", apiError);
+        
+        // Fallback to direct axios call if first attempt fails
+        try {
+          console.log("Falling back to direct API call");
+          const fallbackResponse = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
+            headers: {
+              "x-access-token": token,
+              "Content-Type": "application/json"
+            }
+          });
+          
+          if (fallbackResponse.data && fallbackResponse.data.videos) {
+            if (isMounted.current) {
+              setVideos(fallbackResponse.data.videos);
+              setLoading(false);
+            }
+            return fallbackResponse.data;
+          }
+        } catch (fallbackError) {
+          console.error("Fallback API call also failed:", fallbackError);
+          throw fallbackError; // Re-throw to be caught by outer catch
+        }
+      }
+      
+      // If we reach here, both attempts failed or returned invalid data
+      console.warn("API calls returned invalid data format");
+      setLoading(false);
       return null;
     } catch (error) {
       console.error("Error fetching videos:", error);
       if (isMounted.current) {
         toast.error("Error loading your gallery");
+        
+        // Force showing empty state instead of infinite loader
+        setVideos([]);
+        setLoading(false);
       }
       return null;
     } finally {
+      // Ensure loading is always set to false
       if (isMounted.current) {
         setLoading(false);
       }
@@ -329,7 +377,23 @@ function GalleryPage() {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      await fetchVideos();
+      
+      // Add timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        if (isMounted.current && loading) {
+          console.warn("Gallery fetch timeout reached, forcing loading to false");
+          setLoading(false);
+          
+          // Show error toast if still loading after timeout
+          toast.error("Loading took too long. Please refresh the page.");
+        }
+      }, 10000); // 10 second timeout
+      
+      try {
+        await fetchVideos();
+      } finally {
+        clearTimeout(timeoutId);
+      }
     };
 
     // Set demo videos with dynamic URLs but limit initial load for performance
@@ -356,6 +420,10 @@ function GalleryPage() {
     
     // Observe video elements after initial render
     setTimeout(observeVideoElements, 500);
+    
+    return () => {
+      isMounted.current = false;
+    };
   }, []);
 
   // Re-observe video elements when videos state changes
@@ -1169,7 +1237,10 @@ function GalleryPage() {
     shouldRenderVideo,
   };
 
-  if (loading) {
+  // Add a check that combines loading state with authentication context
+  const isActuallyLoading = loading && (isAuthenticated || activeSection !== "explore");
+
+  if (isActuallyLoading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
