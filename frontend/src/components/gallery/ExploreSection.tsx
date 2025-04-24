@@ -1,4 +1,4 @@
-import React, { useMemo, memo } from "react";
+import React, { useMemo, memo, useEffect, useState } from "react";
 import { Film } from "lucide-react";
 import DemoVideoCard from "./DemoVideoCard";
 import TrendingYouTubeShorts from "./TrendingYouTubeShorts";
@@ -53,20 +53,40 @@ const ExploreSection: React.FC<ExploreSectionProps> = memo(({
   onDemoVideoClick,
   onRefreshTrending,
 }) => {
-  // Use memoization to prevent unnecessary recalculations
-  const isLoading = useMemo(() => 
-    trendingLoading && trendingVideos.length === 0 && demoVideos.length === 0, 
-    [trendingLoading, trendingVideos.length, demoVideos.length]
-  );
+  // Create a stable loading state to prevent flickering
+  const [stableLoading, setStableLoading] = useState(true);
+  
+  // Use effect to stabilize the loading state
+  useEffect(() => {
+    // Initial loading state
+    const initialLoadingState = trendingLoading && 
+      trendingVideos.length === 0 && 
+      demoVideos.length === 0;
+    
+    if (initialLoadingState) {
+      // Already loading, no need to update
+      return;
+    }
+    
+    // If we have content, set loading to false with a small delay
+    // This prevents flickering by ensuring we don't switch loading states too quickly
+    const timer = setTimeout(() => {
+      setStableLoading(false);
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [trendingLoading, trendingVideos.length, demoVideos.length]);
 
   return (
     <div className="space-y-10">
       {/* Trending YouTube Shorts with InfiniteMovingCards */}
-      <TrendingYouTubeShorts
-        demoVideos={trendingVideos}
-        isYouTubeConnected={isYouTubeConnected}
-        onRefresh={onRefreshTrending}
-      />
+      {!stableLoading && (
+        <TrendingYouTubeShorts
+          demoVideos={trendingVideos}
+          isYouTubeConnected={isYouTubeConnected}
+          onRefresh={onRefreshTrending}
+        />
+      )}
 
       {/* Demo Videos Grid */}
       <div>
@@ -75,7 +95,7 @@ const ExploreSection: React.FC<ExploreSectionProps> = memo(({
           <span>Featured Demos</span>
         </h2>
 
-        {isLoading ? (
+        {stableLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="relative w-12 h-12">
               <div className="absolute inset-0 rounded-full border-4 border-secondary opacity-20"></div>
