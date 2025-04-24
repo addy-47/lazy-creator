@@ -132,10 +132,14 @@ const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
             <button
               onClick={(e) => {
                 e.preventDefault();
-                onRefresh();
+                e.stopPropagation(); // Prevent event bubbling
+                if (typeof onRefresh === 'function') {
+                  onRefresh();
+                }
               }}
               className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors p-1 rounded-full hover:bg-secondary/30"
               title="Refresh trending videos"
+              aria-label="Refresh trending videos"
             >
               <RefreshCw size={16} />
             </button>

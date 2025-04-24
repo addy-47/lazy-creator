@@ -232,20 +232,21 @@ function GalleryPage() {
   // Simplified function to load demo videos from the known path
   const loadDemoVideos = useCallback((count = 6) => {
     const demos = [];
-    // Use the direct path to the demo videos
+    // Use the direct path to the demo videos with the API base URL
+    const apiBase = getAPIBaseURL();
     const demoPath = "/lazycreator-media/demo/";
     
     // Simple loop to generate demo video objects
     for (let i = 1; i <= count; i++) {
       demos.push({
         id: `demo${i}`,
-        url: `${getAPIBaseURL()}${demoPath}demo${i}.mp4`,
+        url: `${apiBase}${demoPath}demo${i}.mp4`,
         title: `Demo Short #${i}`,
       });
     }
     
     setDemoVideos(demos);
-    console.log(`Loaded ${count} demo videos from ${demoPath}`);
+    console.log(`Loaded ${count} demo videos from ${apiBase}${demoPath}`);
   }, []);
 
   // Radically simplify the loading workflow to ensure we exit loading state
@@ -1035,7 +1036,10 @@ function GalleryPage() {
     trendingLoading,
     isYouTubeConnected,
     onDemoVideoClick: handleDemoVideoClick,
-    onRefreshTrending: () => fetchTrendingYouTubeShorts(true),
+    onRefreshTrending: () => {
+      console.log("Refresh trending videos requested");
+      return fetchTrendingYouTubeShorts(true);
+    },
     shouldRenderVideo,
   };
 

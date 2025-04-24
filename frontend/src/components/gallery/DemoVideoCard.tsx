@@ -73,11 +73,35 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
     const handleError = (e) => {
       console.error(`Error loading video ${demo.id}:`, e);
       setVideoError(true);
+      // Log additional information to help debug the issue
+      if (demo.url) {
+        console.error(`Failed URL: ${demo.url}`);
+        // Try to fetch the URL with fetch API to get more error details
+        fetch(demo.url, { method: 'HEAD' })
+          .then(response => {
+            if (!response.ok) {
+              console.error(`HTTP status: ${response.status} - ${response.statusText}`);
+            }
+          })
+          .catch(fetchError => console.error('Fetch check failed:', fetchError));
+      }
     };
 
     const handleLoadedData = () => {
       setIsLoading(false);
     };
+
+    // Set a timeout to detect slow loading videos
+    const loadTimeout = setTimeout(() => {
+      if (isLoading && !videoError) {
+        console.warn(`Video loading timeout for ${demo.id}: ${demo.url}`);
+        // Try to reload the video once
+        if (video.networkState === HTMLMediaElement.NETWORK_NO_SOURCE ||
+            video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+          video.load();
+        }
+      }
+    }, 10000); // 10 second timeout
 
     // Add event listeners
     video.addEventListener("play", handlePlay);
@@ -86,15 +110,16 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
     video.addEventListener("error", handleError);
     video.addEventListener("loadeddata", handleLoadedData);
 
-    // Clean up event listeners
+    // Clean up event listeners and timeout
     return () => {
       video.removeEventListener("play", handlePlay);
       video.removeEventListener("pause", handlePause);
       video.removeEventListener("volumechange", handleVolumeChange);
       video.removeEventListener("error", handleError);
       video.removeEventListener("loadeddata", handleLoadedData);
+      clearTimeout(loadTimeout);
     };
-  }, [isYouTubeThumbnail, demo.id]);
+  }, [isYouTubeThumbnail, demo.id, demo.url, isLoading, videoError]);
 
   return (
     <div className={cardWidthClass}>
@@ -130,6 +155,9 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
             <AlertTriangle className="h-8 w-8 text-red-500 mb-2" />
             <div className="text-center text-sm">
               <p>Video could not be loaded</p>
+              <p className="text-xs mt-1 opacity-80">
+                Try refreshing the page or check your connection
+              </p>
             </div>
           </div>
         )}
