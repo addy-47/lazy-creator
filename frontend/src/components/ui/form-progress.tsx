@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { CheckCircle } from "lucide-react";
 
 interface FormProgressProps {
   steps: ReadonlyArray<{ title: string; isCompleted: boolean }>;
@@ -31,24 +32,31 @@ export const FormProgress = React.forwardRef<HTMLDivElement, FormProgressProps>(
               >
                 <div
                   className={cn(
-                    "flex items-center justify-center w-8 h-8 rounded-full mb-1 border-2 transition-all",
+                    "flex items-center justify-center w-9 h-9 rounded-full mb-1 border-2 transition-all duration-300",
                     currentStep === i + 1
-                      ? "border-[#E0115F] bg-[#E0115F]/10"
+                      ? "border-[#E0115F] bg-[#E0115F]/10 shadow-md shadow-[#E0115F]/20"
                       : "border-muted",
-                    step.isCompleted && "border-[#E0115F]"
+                    step.isCompleted && 
+                      "border-[#E0115F] shadow-md shadow-[#E0115F]/30"
                   )}
                 >
-                  <span
-                    className={cn(
-                      "text-sm font-medium",
-                      currentStep === i + 1
-                        ? "text-[#E0115F]"
-                        : "text-muted-foreground",
-                      step.isCompleted && "text-[#E0115F]"
-                    )}
-                  >
-                    {i + 1}
-                  </span>
+                  {step.isCompleted ? (
+                    <CheckCircle 
+                      size={16} 
+                      className="text-[#E0115F]" 
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        "text-sm font-medium",
+                        currentStep === i + 1
+                          ? "text-[#E0115F]"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {i + 1}
+                    </span>
+                  )}
                 </div>
                 <div
                   className={cn(
@@ -65,9 +73,9 @@ export const FormProgress = React.forwardRef<HTMLDivElement, FormProgressProps>(
             ))}
           </div>
         </div>
-        <div className="relative h-1.5 w-full bg-muted rounded-full overflow-hidden">
+        <div className="relative h-2 w-full bg-muted rounded-full overflow-hidden">
           <div
-            className="absolute left-0 top-0 h-full bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full transition-all duration-300 ease-out"
+            className="absolute left-0 top-0 h-full bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full transition-all duration-300 ease-out shadow-[0_0_10px_rgba(224,17,95,0.5)]"
             style={{ width: `${progress}%` }}
           />
         </div>

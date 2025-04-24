@@ -64,6 +64,23 @@ const CreateForm = () => {
   // Add focus management for each step
   useStepFocus(activeStep, stepRefs[`step${activeStep}`]);
 
+  // Force UI update when relevant states change
+  // This ensures the form progress and step cards update immediately
+  const [stepCompletionStates, setStepCompletionStates] = useState({
+    step1Complete: false,
+    step2Complete: false,
+    step3Complete: false
+  });
+
+  // Re-evaluate step completion when relevant states change
+  useEffect(() => {
+    setStepCompletionStates({
+      step1Complete: isStepComplete(1),
+      step2Complete: isStepComplete(2),
+      step3Complete: isStepComplete(3)
+    });
+  }, [prompt, duration, backgroundType, backgroundSource, backgroundFile]);
+
   const isStepComplete = (step: number): boolean => {
     switch (step) {
       case 1:
@@ -114,24 +131,51 @@ const CreateForm = () => {
 
   const handlePromptChange = (value: string) => {
     setPrompt(value);
+    // Immediately check if this step is now complete
+    if (value) {
+      setAnnouncement(`Step 1 completed: Content`);
+    }
   };
 
   const handleDurationChange = (value: number) => {
     setDuration(value);
+    // Immediately check if this step is now complete
+    if (value >= 15 && value <= 60) {
+      setAnnouncement(`Step 2 completed: Duration`);
+    }
   };
 
   const handleBackgroundTypeChange = (type: "image" | "video" | null) => {
     setBackgroundType(type);
+    checkBackgroundCompletion(type, backgroundSource, backgroundFile);
   };
 
   const handleBackgroundSourceChange = (
     source: "custom" | "provided" | null
   ) => {
     setBackgroundSource(source);
+    checkBackgroundCompletion(backgroundType, source, backgroundFile);
   };
 
   const handleBackgroundFileChange = (file: File | null) => {
     setBackgroundFile(file);
+    checkBackgroundCompletion(backgroundType, backgroundSource, file);
+  };
+
+  // Helper to check if background step is completed after any change
+  const checkBackgroundCompletion = (
+    type: "image" | "video" | null,
+    source: "custom" | "provided" | null,
+    file: File | null
+  ) => {
+    const isCompleted = 
+      type && 
+      source && 
+      (source === "provided" || (source === "custom" && !!file));
+    
+    if (isCompleted) {
+      setAnnouncement(`Step 3 completed: Background`);
+    }
   };
 
   // Cleanup poll interval on component unmount
