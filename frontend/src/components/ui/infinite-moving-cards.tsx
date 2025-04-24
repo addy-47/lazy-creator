@@ -1,13 +1,15 @@
+"use client";
+
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
-interface InfiniteMovingCardsProps {
+export interface InfiniteMovingCardsProps {
   items: {
-    id: string;
+    id: string | number;
     content: React.ReactNode;
   }[];
   direction?: "left" | "right";
-  speed?: "slow" | "normal" | "fast";
+  speed?: "fast" | "normal" | "slow";
   pauseOnHover?: boolean;
   className?: string;
   itemClassName?: string;
@@ -23,105 +25,160 @@ export function InfiniteMovingCards({
 }: InfiniteMovingCardsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
-
   const [start, setStart] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
   const [loopCreated, setLoopCreated] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const resizeTimeoutRef = useRef<number | null>(null);
 
-  const getSpeed = useCallback(() => {
-    switch (speed) {
-      case "slow":
-        return 40;
-      case "fast":
-        return 15;
-      case "normal":
-      default:
-        return 25;
-    }
-  }, [speed]);
-
+  // Make sure we create a loop with just the right amount of items
+  // Don't call this effect on every render - only when needed
   const createLoop = useCallback(() => {
     if (!scrollerRef.current || loopCreated) return;
 
-    // Reset any animation first
-    scrollerRef.current.style.animation = "none";
-    scrollerRef.current.style.transform = "translateX(0)";
-
-    // Create duplicate set of items for seamless looping
+    // Clone the scroller children to create a loop
     const scrollerContent = Array.from(scrollerRef.current.children);
-    if (scrollerContent.length) {
-      const duplicatedItems = scrollerContent.map((item) =>
-        item.cloneNode(true)
-      );
-      duplicatedItems.forEach((item) => {
-        if (scrollerRef.current) {
-          scrollerRef.current.appendChild(item);
-        }
-      });
-      setLoopCreated(true);
-    }
+    
+    // Check if we have enough content to scroll
+    if (scrollerContent.length <= 1) return;
+
+    // Create a buffer of cloned items to ensure seemless scrolling
+    const contentToAdd = scrollerContent.map((item) => {
+      const clone = item.cloneNode(true) as HTMLElement;
+      clone.setAttribute("aria-hidden", "true");
+      return clone;
+    });
+
+    // Only append clones once to avoid performance issues
+    contentToAdd.forEach((item) => {
+      scrollerRef.current?.appendChild(item);
+    });
+
+    setLoopCreated(true);
   }, [loopCreated]);
+
+  // Function to get speed value
+  const getSpeed = useCallback(() => {
+    return {
+      fast: 40,
+      normal: 25,
+      slow: 15,
+    }[speed] || 25;
+  }, [speed]);
 
   useEffect(() => {
     if (!scrollerRef.current) return;
-
-    // Set up the loop
-    createLoop();
-
-    // Get the computed width of the scroller
-    const scrollerWidth = scrollerRef.current.scrollWidth;
-    const animationDuration = (scrollerWidth / 50) * (getSpeed() / 25);
-
-    // Apply the animation with dynamically calculated duration
-    if (scrollerRef.current && loopCreated) {
-      const directionValue = direction === "left" ? "forwards" : "backwards";
-
-      scrollerRef.current.style.animation = `scroll-${direction} ${animationDuration}s linear infinite`;
-      scrollerRef.current.style.animationDirection = directionValue;
-      scrollerRef.current.style.animationPlayState = start
-        ? "running"
-        : "paused";
-
-      // Start animation after a short delay to ensure everything is loaded
-      setTimeout(() => setStart(true), 100);
+    
+    // Only create the loop once - this is heavy DOM manipulation
+    if (!loopCreated) {
+      createLoop();
     }
 
-    // Create resize observer to handle window size changes
-    const resizeObserver = new ResizeObserver(() => {
-      if (scrollerRef.current) {
-        const newScrollerWidth = scrollerRef.current.scrollWidth;
-        const newAnimationDuration =
-          (newScrollerWidth / 50) * (getSpeed() / 25);
-
-        scrollerRef.current.style.animation = `scroll-${direction} ${newAnimationDuration}s linear infinite`;
+    // Use requestAnimationFrame to batch style changes
+    let animationRequest: number;
+    
+    const setupAnimation = () => {
+      if (!scrollerRef.current || !loopCreated) return;
+      
+      // Calculate dimensions once rather than repeatedly accessing scrollWidth
+      const scrollerWidth = scrollerRef.current.scrollWidth;
+      const animationDuration = (scrollerWidth / 50) * (getSpeed() / 25);
+      
+      // Use requestAnimationFrame to batch style changes
+      animationRequest = requestAnimationFrame(() => {
+        if (scrollerRef.current) {
+          const directionValue = direction === "left" ? "forwards" : "backwards";
+          
+          // Set all styles at once to minimize layout thrashing
+          scrollerRef.current.style.animation = `scroll-${direction} ${animationDuration}s linear infinite`;
+          scrollerRef.current.style.animationDirection = directionValue;
+          scrollerRef.current.style.animationPlayState = "paused";
+          
+          // Slight delay to ensure styles are applied before starting animation
+          setTimeout(() => {
+            if (scrollerRef.current) {
+              scrollerRef.current.style.animationPlayState = start ? "running" : "paused";
+            }
+          }, 50);
+        }
+      });
+    };
+    
+    setupAnimation();
+    
+    // Start animation after a short delay to ensure everything is loaded
+    const startTimeout = setTimeout(() => setStart(true), 100);
+    
+    // Handle resize efficiently with debouncing
+    const handleResize = () => {
+      // Clear previous timeout to implement debouncing
+      if (resizeTimeoutRef.current) {
+        window.clearTimeout(resizeTimeoutRef.current);
       }
-    });
+      
+      // Set a new timeout to prevent frequent recalculations
+      resizeTimeoutRef.current = window.setTimeout(() => {
+        if (scrollerRef.current) {
+          // Pause animation during resize to prevent jumps
+          if (scrollerRef.current.style.animationPlayState !== "paused") {
+            scrollerRef.current.style.animationPlayState = "paused";
+          }
+          
+          // Recalculate size and restart animation
+          setupAnimation();
+          
+          // Resume animation if not hovering
+          if (!isHovering && scrollerRef.current) {
+            scrollerRef.current.style.animationPlayState = "running";
+          }
+        }
+      }, 200); // 200ms debounce
+    };
 
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
+    // Use ResizeObserver instead of window resize for better performance
+    if (containerRef.current && !resizeObserverRef.current) {
+      resizeObserverRef.current = new ResizeObserver(handleResize);
+      resizeObserverRef.current.observe(containerRef.current);
     }
 
     return () => {
-      if (containerRef.current) {
-        resizeObserver.unobserve(containerRef.current);
+      if (startTimeout) clearTimeout(startTimeout);
+      if (animationRequest) cancelAnimationFrame(animationRequest);
+      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
       }
     };
-  }, [direction, getSpeed, start, createLoop, loopCreated]);
+  }, [direction, getSpeed, start, createLoop, loopCreated, isHovering]);
 
-  // Handle mouse hover
+  // Handle mouse hover with debouncing
   const handleMouseEnter = useCallback(() => {
-    if (pauseOnHover && scrollerRef.current) {
-      scrollerRef.current.style.animationPlayState = "paused";
-      setIsHovering(true);
-    }
+    if (!pauseOnHover || !scrollerRef.current) return;
+    
+    requestAnimationFrame(() => {
+      if (scrollerRef.current) {
+        scrollerRef.current.style.animationPlayState = "paused";
+        setIsHovering(true);
+      }
+    });
   }, [pauseOnHover]);
 
   const handleMouseLeave = useCallback(() => {
-    if (pauseOnHover && scrollerRef.current) {
-      scrollerRef.current.style.animationPlayState = "running";
-      setIsHovering(false);
-    }
+    if (!pauseOnHover || !scrollerRef.current) return;
+    
+    requestAnimationFrame(() => {
+      if (scrollerRef.current) {
+        scrollerRef.current.style.animationPlayState = "running";
+        setIsHovering(false);
+      }
+    });
   }, [pauseOnHover]);
+
+  // Add scroll keyframes at mount instead of on every render
+  useEffect(() => {
+    addScrollKeyframes();
+  }, []);
 
   return (
     <div
@@ -155,9 +212,11 @@ export function InfiniteMovingCards({
   );
 }
 
-// Define keyframes for smooth scrolling
+// Define keyframes for smooth scrolling - only insert once
+let keyframesAdded = false;
+
 export function addScrollKeyframes() {
-  if (typeof document !== "undefined") {
+  if (typeof document !== "undefined" && !keyframesAdded) {
     const style = document.createElement("style");
     style.textContent = `
       @keyframes scroll-left {
@@ -170,15 +229,11 @@ export function addScrollKeyframes() {
         to { transform: translateX(0); }
       }
 
-      .animate-paused {
+      .animation-paused {
         animation-play-state: paused !important;
       }
     `;
     document.head.append(style);
+    keyframesAdded = true;
   }
-}
-
-// Add scroll keyframes when imported
-if (typeof document !== "undefined") {
-  addScrollKeyframes();
 }

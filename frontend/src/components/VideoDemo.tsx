@@ -5,9 +5,18 @@ const VideoDemo = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { resolvedTheme, theme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const animationFrameRef = useRef<number | null>(null);
+  const throttleTimerRef = useRef<number | null>(null);
 
   // Initialize themeRef with resolvedTheme
   const themeRef = useRef(resolvedTheme || "light");
+
+  // Check if device is low-end
+  const isLowEndDevice = typeof window !== "undefined" && (
+    window.navigator.hardwareConcurrency < 4 || 
+    window.innerWidth < 768 || 
+    navigator.userAgent.includes("Mobile")
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -41,6 +50,53 @@ const VideoDemo = () => {
     }
   }, [resolvedTheme]);
 
+  // Draw a static frame for low-end devices
+  const drawStaticFrame = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+
+    // Set background color based on current theme
+    ctx.fillStyle = themeRef.current === "dark" ? "#111827" : "#f8fafc";
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw app frame with glass effect
+    ctx.fillStyle =
+      themeRef.current === "dark"
+        ? "rgba(30, 41, 59, 0.8)"
+        : "rgba(255, 255, 255, 0.8)";
+    ctx.beginPath();
+    ctx.roundRect(width * 0.1, height * 0.1, width * 0.8, height * 0.8, 20);
+    ctx.fill();
+
+    // Add simple content - just the completed state
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "bold 20px Inter";
+    ctx.fillText("LazyCreator Demo", width * 0.2, height * 0.2);
+
+    // Add a completed checkmark
+    const centerX = width * 0.5;
+    const centerY = height * 0.4;
+    const radius = Math.min(width, height) * 0.1;
+
+    // Draw green circle
+    ctx.fillStyle = "#22c55e";
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw checkmark
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(centerX - radius * 0.5, centerY);
+    ctx.lineTo(centerX - radius * 0.1, centerY + radius * 0.4);
+    ctx.lineTo(centerX + radius * 0.5, centerY - radius * 0.4);
+    ctx.stroke();
+  };
+
   useEffect(() => {
     if (!mounted) return;
 
@@ -50,9 +106,16 @@ const VideoDemo = () => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let animationFrame: number;
+    // For low-end devices, just draw a static frame and exit
+    if (isLowEndDevice) {
+      drawStaticFrame(ctx, canvas);
+      return;
+    }
+
     let step = 0;
     const totalSteps = 600; // 10 seconds at 60fps
+    const targetFps = 30; // Reduce to 30fps for better performance
+    const frameInterval = 1000 / targetFps;
 
     // Initial theme check before starting animation
     const isDarkMode = document.documentElement.classList.contains("dark");
@@ -89,6 +152,23 @@ const VideoDemo = () => {
 
     const drawDemoFrame = () => {
       if (!ctx || !canvas) return;
+      
+      // Skip if canvas is not visible
+      const rect = canvas.getBoundingClientRect();
+      const isVisible = 
+        rect.top < window.innerHeight && 
+        rect.bottom >= 0 && 
+        rect.width > 0 && 
+        rect.height > 0;
+        
+      if (!isVisible) {
+        // If not visible, request next frame but with lower frequency
+        animationFrameRef.current = requestAnimationFrame(() => {
+          if (throttleTimerRef.current) clearTimeout(throttleTimerRef.current);
+          throttleTimerRef.current = window.setTimeout(drawDemoFrame, 200);
+        });
+        return;
+      }
 
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -104,20 +184,30 @@ const VideoDemo = () => {
       // Draw demo interface
       drawInterface(ctx, canvas, step);
 
-      // Increment step and request next animation frame
+      // Increment step and request next animation frame with throttling
       step = (step + 1) % totalSteps;
-      animationFrame = requestAnimationFrame(drawDemoFrame);
+      
+      // Throttle the animation to achieve target fps
+      if (throttleTimerRef.current) clearTimeout(throttleTimerRef.current);
+      throttleTimerRef.current = window.setTimeout(() => {
+        animationFrameRef.current = requestAnimationFrame(drawDemoFrame);
+      }, frameInterval);
     };
 
     // Start animation
-    drawDemoFrame();
+    animationFrameRef.current = requestAnimationFrame(drawDemoFrame);
 
     return () => {
-      cancelAnimationFrame(animationFrame);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current);
+      }
       window.removeEventListener("storage", handleThemeChange);
       observer.disconnect();
     };
-  }, [mounted]);
+  }, [mounted, isLowEndDevice]);
 
   const drawInterface = (
     ctx: CanvasRenderingContext2D,
@@ -136,6 +226,7 @@ const VideoDemo = () => {
     ctx.roundRect(width * 0.1, height * 0.1, width * 0.8, height * 0.8, 20);
     ctx.fill();
 
+    // Simple border instead of complex stroke
     ctx.strokeStyle =
       themeRef.current === "dark"
         ? "rgba(255, 255, 255, 0.1)"
@@ -143,7 +234,7 @@ const VideoDemo = () => {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Add glassmorphism shine
+    // Simplified glassmorphism (fewer gradient stops)
     const gradient = ctx.createLinearGradient(0, 0, 0, height * 0.1);
     gradient.addColorStop(
       0,
@@ -163,20 +254,20 @@ const VideoDemo = () => {
     );
     ctx.fill();
 
-    // Animation phase based on current step
-    const phase = Math.floor(currentStep / 150) % 4;
+    // Animation phase based on current step - simplified to fewer phases
+    const phase = Math.floor(currentStep / 200) % 3; // 3 phases instead of 4
     if (phase === 0) {
-      drawPromptSelection(ctx, width, height, currentStep % 150);
+      drawPromptSelection(ctx, width, height, currentStep % 200);
     } else if (phase === 1) {
-      drawDurationSlider(ctx, width, height, currentStep % 150);
-    } else if (phase === 2) {
-      drawBackgroundSelection(ctx, width, height, currentStep % 150);
+      drawDurationSlider(ctx, width, height, currentStep % 200);
     } else {
-      drawVideoGeneration(ctx, width, height, currentStep % 150);
+      drawVideoGeneration(ctx, width, height, currentStep % 200);
     }
 
-    // Add stick figure mascot based on the phase
-    drawStickFigure(ctx, width, height, currentStep, phase);
+    // Simplified stick figure with fewer animation details
+    if (!isLowEndDevice) {
+      drawStickFigure(ctx, width, height, currentStep, phase);
+    }
   };
 
   const drawStickFigure = (
@@ -186,25 +277,15 @@ const VideoDemo = () => {
     step: number,
     phase: number
   ) => {
-    let x = width * 0.9;
+    // Simplified stick figure position calculations
+    let x = width * 0.85;
     let y = height * 0.85;
 
     if (phase === 0) {
-      x = width * 0.85;
-      y = height * 0.85 - (step % 150 < 30 ? (step % 30) * 2 : 60);
+      // Less complex animation
+      y = height * 0.8;
     } else if (phase === 1) {
-      x = width * (0.85 - ((step % 150) / 150) * 0.7);
-      y = height * 0.85;
-    } else if (phase === 2) {
-      x = width * 0.15;
-      y = height * (0.85 - Math.sin((step % 150) / 25) * 0.1);
-    } else {
-      x = width * 0.8;
-      y = height * 0.5;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(((step % 150) / 150) * Math.PI * 2);
-      ctx.translate(-x, -y);
+      x = width * 0.5;
     }
 
     // Updated color to match site theme (from blue to red)
@@ -216,7 +297,7 @@ const VideoDemo = () => {
     ctx.arc(x, y - 15, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw stick figure body
+    // Draw stick figure body (simplified)
     ctx.strokeStyle = primaryColor;
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -224,34 +305,18 @@ const VideoDemo = () => {
     ctx.lineTo(x, y + 7);
     ctx.stroke();
 
-    // Draw arms
-    if (phase === 0 || phase === 3) {
-      const waveAngle = Math.sin((step % 150) / 15) * 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x, y - 3);
-      ctx.lineTo(
-        x + Math.cos(waveAngle) * 12,
-        y - 7 - Math.sin(waveAngle) * 12
-      );
-      ctx.stroke();
+    // Draw arms (simplified - fewer animations)
+    ctx.beginPath();
+    ctx.moveTo(x, y - 3);
+    ctx.lineTo(x + 8, y - 7);
+    ctx.stroke();
 
-      ctx.beginPath();
-      ctx.moveTo(x, y - 3);
-      ctx.lineTo(x - 8, y - 7);
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.moveTo(x, y - 3);
-      ctx.lineTo(x + 8, y - 7);
-      ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - 3);
+    ctx.lineTo(x - 8, y - 7);
+    ctx.stroke();
 
-      ctx.beginPath();
-      ctx.moveTo(x, y - 3);
-      ctx.lineTo(x - 8, y - 7);
-      ctx.stroke();
-    }
-
-    // Draw legs
+    // Draw legs (simplified)
     ctx.beginPath();
     ctx.moveTo(x, y + 7);
     ctx.lineTo(x + 8, y + 15);
@@ -261,10 +326,6 @@ const VideoDemo = () => {
     ctx.moveTo(x, y + 7);
     ctx.lineTo(x - 8, y + 15);
     ctx.stroke();
-
-    if (phase === 3) {
-      ctx.restore();
-    }
   };
 
   const drawPromptSelection = (
@@ -273,57 +334,78 @@ const VideoDemo = () => {
     height: number,
     step: number
   ) => {
+    // Simplify drawing operations - reduce text rendering and effects
     ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
     ctx.font = "bold 16px Inter";
-    ctx.fillText("Select a Prompt", width * 0.15, height * 0.2);
+    ctx.fillText("Enter prompt:", width * 0.15, height * 0.2);
 
-    const promptColors = [
-      themeRef.current === "dark" ? "#3b82f6" : "#3b82f6",
-      themeRef.current === "dark" ? "#334155" : "#e2e8f0",
-      themeRef.current === "dark" ? "#334155" : "#e2e8f0",
-      themeRef.current === "dark" ? "#334155" : "#e2e8f0",
-    ];
+    // Draw input box
+    ctx.fillStyle = themeRef.current === "dark" ? "#1e293b" : "#f1f5f9";
+    ctx.beginPath();
+    ctx.roundRect(width * 0.15, height * 0.25, width * 0.7, height * 0.1, 10);
+    ctx.fill();
 
-    for (let i = 0; i < 4; i++) {
-      ctx.fillStyle = promptColors[i];
+    // Skip shadow effects for better performance
+    ctx.strokeStyle = themeRef.current === "dark" ? "#334155" : "#cbd5e1";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Only show text cursor animation in certain step ranges - simplified
+    if (Math.floor(step / 20) % 2 === 0) {
+      const promptText = "AI Fashion Tips";
+      const textWidth = ctx.measureText(promptText).width;
+      
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.fillText(
+        promptText,
+        width * 0.18,
+        height * 0.31
+      );
+
+      // Draw cursor
+      ctx.fillRect(
+        width * 0.18 + textWidth + 5,
+        height * 0.26,
+        2,
+        height * 0.08
+      );
+    } else {
+      const promptText = "AI Fashion Tips";
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+      ctx.fillText(
+        promptText,
+        width * 0.18,
+        height * 0.31
+      );
+    }
+
+    // Simplified trending topics
+    const topics = ["AI News", "Workout", "Recipes", "Technology"];
+    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
+    ctx.font = "bold 14px Inter";
+    ctx.fillText("Trending topics:", width * 0.15, height * 0.45);
+
+    // Simplified topic rendering - fewer effects
+    topics.forEach((topic, index) => {
+      ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
       ctx.beginPath();
       ctx.roundRect(
-        width * (0.15 + i * 0.15),
-        height * 0.25,
-        width * 0.12,
-        height * 0.08,
-        20
+        width * (0.15 + index * 0.18),
+        height * 0.5,
+        width * 0.16,
+        height * 0.06,
+        15
       );
       ctx.fill();
 
-      ctx.strokeStyle = "#3b82f6";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.fillStyle =
-        i === 0
-          ? "#ffffff"
-          : themeRef.current === "dark"
-          ? "#e2e8f0"
-          : "#0f172a";
+      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
       ctx.font = "12px Inter";
       ctx.fillText(
-        `Prompt ${i + 1}`,
-        width * (0.15 + i * 0.15) + 10,
-        height * 0.25 + 20
+        topic,
+        width * (0.15 + index * 0.18 + 0.02),
+        height * 0.53
       );
-    }
-
-    const progress = Math.min(1, step / 100);
-    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-    ctx.font = "14px Inter";
-    ctx.fillText("Prompt Selected", width * 0.15, height * 0.4);
-
-    if (step > 100) {
-      ctx.fillStyle = "#22c55e";
-      ctx.font = "bold 14px Inter";
-      ctx.fillText("✓", width * 0.35, height * 0.4);
-    }
+    });
   };
 
   const drawDurationSlider = (
@@ -332,16 +414,19 @@ const VideoDemo = () => {
     height: number,
     step: number
   ) => {
+    // Simplified slider animation
     ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
     ctx.font = "bold 16px Inter";
     ctx.fillText("Select Duration", width * 0.15, height * 0.2);
 
+    // Simplified slider track
     ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
     ctx.beginPath();
     ctx.roundRect(width * 0.15, height * 0.3, width * 0.7, height * 0.05, 10);
     ctx.fill();
 
-    const sliderProgress = Math.min(0.7, Math.max(0, (step / 150) * 0.7));
+    // Reduced complexity in animation
+    const sliderProgress = Math.min(0.7, Math.max(0.1, step / 200));
     ctx.fillStyle = "#3b82f6";
     ctx.beginPath();
     ctx.roundRect(
@@ -353,24 +438,17 @@ const VideoDemo = () => {
     );
     ctx.fill();
 
+    // Simplified slider handle - no shadows
     ctx.fillStyle = "#ffffff";
     ctx.beginPath();
     ctx.arc(
       width * (0.15 + sliderProgress),
       height * 0.325,
-      12,
+      10,
       0,
       Math.PI * 2
     );
     ctx.fill();
-
-    ctx.shadowColor = "#3b82f6";
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = "#3b82f6";
-    ctx.beginPath();
-    ctx.arc(width * (0.15 + sliderProgress), height * 0.325, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
 
     ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
     ctx.font = "14px Inter";
@@ -379,93 +457,6 @@ const VideoDemo = () => {
       width * (0.15 + sliderProgress),
       height * 0.4
     );
-
-    if (step > 120) {
-      ctx.fillStyle = "#22c55e";
-      ctx.font = "bold 14px Inter";
-      ctx.fillText("Duration Selected ✓", width * 0.15, height * 0.5);
-    }
-  };
-
-  const drawBackgroundSelection = (
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-    step: number
-  ) => {
-    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-    ctx.font = "bold 16px Inter";
-    ctx.fillText("Select Background", width * 0.15, height * 0.2);
-
-    ctx.fillStyle =
-      step < 70
-        ? "#3b82f6"
-        : themeRef.current === "dark"
-        ? "#334155"
-        : "#e2e8f0";
-    ctx.beginPath();
-    ctx.roundRect(width * 0.15, height * 0.25, width * 0.2, height * 0.1, 10);
-    ctx.fill();
-    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-    ctx.font = "14px Inter";
-    ctx.fillText("Image", width * 0.21, height * 0.3);
-
-    ctx.fillStyle =
-      step >= 70
-        ? "#3b82f6"
-        : themeRef.current === "dark"
-        ? "#334155"
-        : "#e2e8f0";
-    ctx.beginPath();
-    ctx.roundRect(width * 0.4, height * 0.25, width * 0.2, height * 0.1, 10);
-    ctx.fill();
-    ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-    ctx.font = "14px Inter";
-    ctx.fillText("Video", width * 0.46, height * 0.3);
-
-    if (step > 90) {
-      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-      ctx.font = "bold 14px Inter";
-      ctx.fillText("Source:", width * 0.15, height * 0.45);
-
-      ctx.fillStyle =
-        step < 120
-          ? "#3b82f6"
-          : themeRef.current === "dark"
-          ? "#334155"
-          : "#e2e8f0";
-      ctx.beginPath();
-      ctx.roundRect(
-        width * 0.15,
-        height * 0.5,
-        width * 0.25,
-        height * 0.08,
-        10
-      );
-      ctx.fill();
-      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-      ctx.font = "14px Inter";
-      ctx.fillText("Use our library", width * 0.19, height * 0.55);
-
-      ctx.fillStyle =
-        step >= 120
-          ? "#3b82f6"
-          : themeRef.current === "dark"
-          ? "#334155"
-          : "#e2e8f0";
-      ctx.beginPath();
-      ctx.roundRect(
-        width * 0.45,
-        height * 0.5,
-        width * 0.25,
-        height * 0.08,
-        10
-      );
-      ctx.fill();
-      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-      ctx.font = "14px Inter";
-      ctx.fillText("Upload your own", width * 0.49, height * 0.55);
-    }
   };
 
   const drawVideoGeneration = (
@@ -475,37 +466,19 @@ const VideoDemo = () => {
     step: number
   ) => {
     if (step < 30) {
-      const gradient = ctx.createLinearGradient(
-        width * 0.3,
-        height * 0.7,
-        width * 0.7,
-        height * 0.8
-      );
-      gradient.addColorStop(0, "#3b82f6");
-      gradient.addColorStop(1, "#2563eb");
-      ctx.fillStyle = gradient;
-
+      // Simplified button
+      ctx.fillStyle = "#3b82f6";
       ctx.beginPath();
       ctx.roundRect(width * 0.3, height * 0.7, width * 0.4, height * 0.1, 10);
       ctx.fill();
 
-      ctx.shadowColor = "#3b82f680";
-      ctx.shadowBlur = 15;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
+      // No shadows for better performance
       ctx.fillStyle = "#ffffff";
       ctx.font = "bold 16px Inter";
       ctx.fillText("Create Short", width * 0.42, height * 0.76);
-
-      if (step > 15) {
-        ctx.fillStyle = "rgba(59, 130, 246, 0.3)";
-        ctx.beginPath();
-        ctx.arc(width * 0.5, height * 0.75, (step - 15) * 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else if (step <= 120) {
-      const progress = (step - 30) / 90;
+    } else {
+      // Simplified progress display
+      const progress = (step - 30) / 170;
 
       ctx.fillStyle =
         themeRef.current === "dark"
@@ -513,6 +486,7 @@ const VideoDemo = () => {
           : "rgba(255, 255, 255, 0.9)";
       ctx.fillRect(width * 0.1, height * 0.1, width * 0.8, height * 0.8);
 
+      // Simplified spinner
       const spinnerRadius = Math.min(width, height) * 0.1;
       const spinnerCenterX = width * 0.5;
       const spinnerCenterY = height * 0.3;
@@ -523,8 +497,7 @@ const VideoDemo = () => {
       ctx.arc(spinnerCenterX, spinnerCenterY, spinnerRadius, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.shadowColor = "#3b82f680";
-      ctx.shadowBlur = 10;
+      // Remove shadows for better performance
       ctx.strokeStyle = "#3b82f6";
       ctx.lineWidth = 5;
       ctx.beginPath();
@@ -536,156 +509,65 @@ const VideoDemo = () => {
         -Math.PI / 2 + progress * Math.PI * 2
       );
       ctx.stroke();
-      ctx.shadowBlur = 0;
 
       ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-      ctx.font = "bold 20px Inter";
+      ctx.font = "bold 18px Inter";
       const timeLeft = Math.ceil(300 - progress * 300);
       
       const minutes = Math.floor(timeLeft / 60);
       const seconds = timeLeft % 60;
       const timeDisplay = timeLeft > 0 
         ? `${minutes}:${seconds.toString().padStart(2, '0')}`
-        : "";
+        : "Complete!";
       
-      if (timeLeft > 0) {
-        ctx.fillText(timeDisplay, spinnerCenterX - 25, spinnerCenterY + 7);
-      }
+      ctx.fillText(timeDisplay, spinnerCenterX - 25, spinnerCenterY + 7);
 
+      // Simplified status text
       ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-      ctx.font = "bold 18px Inter";
+      ctx.font = "bold 14px Inter";
       
-      if (timeLeft <= 0) {
-        ctx.fillText("Still working on your Short...", width * 0.5 - 120, height * 0.5);
-        ctx.font = "14px Inter";
-        ctx.fillText("This is taking longer than expected.", width * 0.5 - 110, height * 0.55);
-        ctx.fillText("Thanks for your patience!", width * 0.5 - 80, height * 0.6);
-      } else {
-        ctx.fillText("Generating your Short...", width * 0.5 - 100, height * 0.5);
-      }
+      // Skip complex calculations for status text
+      const statusText = progress < 0.3 ? "Generating script..."
+                       : progress < 0.6 ? "Creating visuals..."
+                       : progress < 0.9 ? "Rendering video..."
+                       : "Processing complete!";
+      
+      ctx.fillText(statusText, width * 0.5 - 70, height * 0.45);
 
+      // Simplified progress bar
       ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
       ctx.beginPath();
-      ctx.roundRect(width * 0.25, height * 0.6, width * 0.5, height * 0.03, 5);
-      ctx.fill();
-
-      const barGradient = ctx.createLinearGradient(
-        width * 0.25,
-        0,
-        width * 0.75,
-        0
-      );
-      barGradient.addColorStop(0, "#3b82f6");
-      barGradient.addColorStop(1, "#2563eb");
-      ctx.fillStyle = barGradient;
-
-      ctx.beginPath();
-      ctx.roundRect(
-        width * 0.25,
-        height * 0.6,
-        width * 0.5 * progress,
-        height * 0.03,
-        5
-      );
-      ctx.fill();
-
-      const steps = [
-        "Analyzing prompt",
-        "Generating content",
-        "Adding background",
-        "Finalizing",
-      ];
-      const stepActive = Math.floor(progress * 4);
-
-      for (let i = 0; i < steps.length; i++) {
-        if (i <= stepActive) {
-          ctx.fillStyle =
-            i === stepActive
-              ? "#3b82f6"
-              : themeRef.current === "dark"
-              ? "#e2e8f0"
-              : "#0f172a";
-          ctx.font = i === stepActive ? "bold 14px Inter" : "14px Inter";
-        } else {
-          ctx.fillStyle = themeRef.current === "dark" ? "#64748b" : "#9ca3af";
-          ctx.font = "14px Inter";
-        }
-        ctx.fillText(steps[i], width * (0.25 + i * 0.17), height * 0.7);
-      }
-    } else {
-      const videoGradient = ctx.createLinearGradient(
-        0,
-        height * 0.2,
-        0,
-        height * 0.6
-      );
-      videoGradient.addColorStop(
-        0,
-        themeRef.current === "dark" ? "#1e293b" : "#0f172a"
-      );
-      videoGradient.addColorStop(
-        1,
-        themeRef.current === "dark" ? "#0f172a" : "#1e293b"
-      );
-
-      ctx.fillStyle = videoGradient;
-      ctx.beginPath();
-      ctx.roundRect(width * 0.2, height * 0.2, width * 0.6, height * 0.4, 10);
-      ctx.fill();
-
-      ctx.strokeStyle = "#3b82f640";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-      ctx.beginPath();
-      ctx.arc(width * 0.5, height * 0.4, 25, 0, Math.PI * 2);
+      ctx.roundRect(width * 0.2, height * 0.5, width * 0.6, height * 0.02, 4);
       ctx.fill();
 
       ctx.fillStyle = "#3b82f6";
       ctx.beginPath();
-      ctx.moveTo(width * 0.5 + 10, height * 0.4);
-      ctx.lineTo(width * 0.5 - 5, height * 0.4 - 10);
-      ctx.lineTo(width * 0.5 - 5, height * 0.4 + 10);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-      ctx.font = "bold 18px Inter";
-      ctx.fillText("Your Short is Ready!", width * 0.5 - 80, height * 0.7);
-      
-      ctx.font = "14px Inter";
-      ctx.fillText("Creation completed successfully!", width * 0.5 - 100, height * 0.65);
-
-      const downloadGradient = ctx.createLinearGradient(
-        width * 0.3,
-        height * 0.75,
-        width * 0.3,
-        height * 0.83
-      );
-      downloadGradient.addColorStop(0, "#3b82f6");
-      downloadGradient.addColorStop(1, "#2563eb");
-      ctx.fillStyle = downloadGradient;
-      ctx.beginPath();
-      ctx.roundRect(width * 0.3, height * 0.75, width * 0.18, height * 0.08, 8);
-      ctx.fill();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "14px Inter";
-      ctx.fillText("Download", width * 0.33, height * 0.79);
-
-      ctx.fillStyle = themeRef.current === "dark" ? "#334155" : "#e2e8f0";
-      ctx.beginPath();
       ctx.roundRect(
-        width * 0.52,
-        height * 0.75,
-        width * 0.18,
-        height * 0.08,
-        8
+        width * 0.2,
+        height * 0.5,
+        width * 0.6 * progress,
+        height * 0.02,
+        4
       );
       ctx.fill();
-      ctx.fillStyle = themeRef.current === "dark" ? "#e2e8f0" : "#0f172a";
-      ctx.font = "14px Inter";
-      ctx.fillText("Create New", width * 0.54, height * 0.79);
+
+      // Show video thumbnail when complete - simplified
+      if (progress > 0.95) {
+        // Simplified thumbnail
+        ctx.fillStyle = "#000000";
+        ctx.beginPath();
+        ctx.roundRect(width * 0.25, height * 0.55, width * 0.5, height * 0.25, 8);
+        ctx.fill();
+        
+        // Checkmark
+        ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(width * 0.4, height * 0.67);
+        ctx.lineTo(width * 0.45, height * 0.71);
+        ctx.lineTo(width * 0.6, height * 0.63);
+        ctx.stroke();
+      }
     }
   };
 
@@ -703,26 +585,26 @@ const VideoDemo = () => {
         </div>
 
         <div className="relative max-w-4xl mx-auto">
-          {/* Video demo canvas */}
+          {/* Video demo canvas - Add loading="lazy" for better performance */}
           <div className="relative mx-auto w-full max-w-[320px] md:max-w-[540px] aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-4 border-[#E0115F]/10 dark:border-[#E0115F]/20">
             <canvas
               ref={canvasRef}
               width={1080}
               height={1920}
               className="w-full h-full"
+              loading="lazy"
             ></canvas>
           </div>
 
-          {/* Controls overlay */}
+          {/* Controls overlay - simplified */}
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <div className="w-3 h-3 rounded-full bg-[#E0115F]"></div>
                 <span className="text-white text-sm font-medium">
-                  Recording
+                  Preview
                 </span>
               </div>
-              <div className="text-white text-sm">00:15</div>
             </div>
           </div>
         </div>

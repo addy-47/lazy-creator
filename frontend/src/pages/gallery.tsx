@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import axios from "axios";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -24,6 +24,19 @@ import {
   YouTubeChannel,
 } from "@/components/gallery/types";
 import YouTubeConnect from "@/components/YouTubeConnect";
+
+// Lazy load non-critical components
+const LazyVideoDialog = React.lazy(() => import("@/components/gallery/VideoDialog"));
+const LazyUploadFormDialog = React.lazy(() => import("@/components/gallery/UploadFormDialog"));
+const LazyYouTubeConnect = React.lazy(() => import("@/components/YouTubeConnect"));
+
+// Helper function to detect if device is low-end
+const isLowEndDevice = () => {
+  return (
+    navigator.hardwareConcurrency <= 4 || 
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  );
+};
 
 function GalleryPage() {
   const navigate = useNavigate();
@@ -64,6 +77,20 @@ function GalleryPage() {
   const [lastTrendingFetch, setLastTrendingFetch] = useState<number>(0);
   const [trendingRequestInProgress, setTrendingRequestInProgress] =
     useState(false);
+  // Tracking visible videos for optimization
+  const [visibleVideos, setVisibleVideos] = useState<Set<string>>(new Set());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  // Track if component is mounted to avoid updates after unmount
+  const isMounted = useRef(true);
+  // Throttle video loading
+  const loadingQueue = useRef<string[]>([]);
+  const isProcessingQueue = useRef(false);
+  
+  // Cache for network requests
+  const requestCache = useRef<Map<string, any>>(new Map());
+  
+  // Low-end device detection
+  const isLowEnd = useRef(isLowEndDevice());
 
   // Define checkYouTubeAuth function early so it can be referenced elsewhere
   const checkYouTubeAuth = async () => {
@@ -80,6 +107,20 @@ function GalleryPage() {
     const toastId = toast.loading("Checking YouTube connection status...");
 
     try {
+      // Check cache first
+      const cacheKey = `youtube-auth-status-${token.substring(0, 10)}`;
+      if (requestCache.current.has(cacheKey)) {
+        const cachedData = requestCache.current.get(cacheKey);
+        const cacheAge = Date.now() - cachedData.timestamp;
+        // Use cache if less than 5 minutes old
+        if (cacheAge < 300000) {
+          toast.dismiss(toastId);
+          handleAuthResponse(cachedData.data);
+          setIsCheckingAuth(false);
+          return;
+        }
+      }
+
       // Use direct approach with proper headers
       const response = await axios.get(
         `${getAPIBaseURL()}/api/youtube-auth-status`,
@@ -93,17 +134,13 @@ function GalleryPage() {
 
       toast.dismiss(toastId);
 
-      if (response.data.status === "success") {
-        if (response.data.is_connected || response.data.authenticated) {
-          setYouTubeConnected(true);
-          toast.success("Successfully connected to YouTube!");
-        } else {
-          setYouTubeConnected(false);
-          toast.error("YouTube connection failed. Please try again.");
-        }
-      } else {
-        toast.error("Unable to verify YouTube connection status.");
-      }
+      // Cache the response
+      requestCache.current.set(cacheKey, {
+        data: response.data,
+        timestamp: Date.now()
+      });
+
+      handleAuthResponse(response.data);
     } catch (error: any) {
       toast.dismiss(toastId);
       console.error("YouTube auth status check error:", error);
@@ -118,6 +155,21 @@ function GalleryPage() {
     } finally {
       setIsCheckingAuth(false);
       localStorage.removeItem("checkYouTubeAuth");
+    }
+  };
+
+  // Helper function to handle auth response
+  const handleAuthResponse = (data: any) => {
+    if (data.status === "success") {
+      if (data.is_connected || data.authenticated) {
+        setYouTubeConnected(true);
+        toast.success("Successfully connected to YouTube!");
+      } else {
+        setYouTubeConnected(false);
+        toast.error("YouTube connection failed. Please try again.");
+      }
+    } else {
+      toast.error("Unable to verify YouTube connection status.");
     }
   };
 
@@ -146,22 +198,133 @@ function GalleryPage() {
         return null;
       }
 
+      // Check cache first
+      const cacheKey = "user-videos";
+      if (requestCache.current.has(cacheKey)) {
+        const cachedData = requestCache.current.get(cacheKey);
+        const cacheAge = Date.now() - cachedData.timestamp;
+        // Use cache if less than 2 minutes old
+        if (cacheAge < 120000) {
+          setVideos(cachedData.data.videos);
+          setLoading(false);
+          return cachedData.data;
+        }
+      }
+
       // Use apiWithoutPreflight to avoid CORS preflight issues
       const response = await apiWithoutPreflight.get("/api/gallery");
 
       if (response.data && response.data.videos) {
-        setVideos(response.data.videos);
+        // Update cache
+        requestCache.current.set(cacheKey, {
+          data: response.data,
+          timestamp: Date.now()
+        });
+        
+        if (isMounted.current) {
+          setVideos(response.data.videos);
+        }
         return response.data;
       }
       return null;
     } catch (error) {
       console.error("Error fetching videos:", error);
-      toast.error("Error loading your gallery");
+      if (isMounted.current) {
+        toast.error("Error loading your gallery");
+      }
       return null;
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
+
+  // Set up intersection observer for lazy loading videos
+  useEffect(() => {
+    // Set up the intersection observer
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        // Create a batch update for better performance
+        const newVisibleVideos = new Set(visibleVideos);
+        let hasChanges = false;
+
+        entries.forEach((entry) => {
+          const videoId = entry.target.getAttribute("data-video-id");
+          if (!videoId) return;
+
+          if (entry.isIntersecting) {
+            if (!newVisibleVideos.has(videoId)) {
+              newVisibleVideos.add(videoId);
+              hasChanges = true;
+              
+              // Add to loading queue if not already visible
+              if (!loadingQueue.current.includes(videoId)) {
+                loadingQueue.current.push(videoId);
+              }
+            }
+          } else {
+            if (newVisibleVideos.has(videoId)) {
+              newVisibleVideos.delete(videoId);
+              hasChanges = true;
+            }
+          }
+        });
+
+        // Only update state if there are changes
+        if (hasChanges && isMounted.current) {
+          setVisibleVideos(newVisibleVideos);
+          processLoadingQueue();
+        }
+      },
+      {
+        root: null,
+        rootMargin: "100px",
+        threshold: 0.1,
+      }
+    );
+
+    // Start processing the loading queue
+    processLoadingQueue();
+
+    return () => {
+      // Clean up the observer when component unmounts
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+      isMounted.current = false;
+    };
+  }, []);
+
+  // Function to process the video loading queue
+  const processLoadingQueue = useCallback(() => {
+    if (isProcessingQueue.current || loadingQueue.current.length === 0) return;
+    
+    isProcessingQueue.current = true;
+    
+    // Process at most 3 videos at a time to avoid overwhelming the browser
+    const batchSize = isLowEnd.current ? 1 : 3;
+    const batchToProcess = loadingQueue.current.splice(0, batchSize);
+    
+    // Set a timeout to process the next batch
+    setTimeout(() => {
+      isProcessingQueue.current = false;
+      if (loadingQueue.current.length > 0) {
+        processLoadingQueue();
+      }
+    }, isLowEnd.current ? 500 : 200);
+  }, []);
+
+  // Observe new video elements when they're added to the DOM
+  const observeVideoElements = useCallback(() => {
+    if (!observerRef.current) return;
+    
+    // Find all video containers and observe them
+    const videoElements = document.querySelectorAll('[data-video-id]');
+    videoElements.forEach(el => {
+      observerRef.current?.observe(el);
+    });
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -169,39 +332,19 @@ function GalleryPage() {
       await fetchVideos();
     };
 
-    // Set demo videos with dynamic URLs
-    setDemoVideos([
-      {
-        id: "demo1",
-        url: `${getAPIBaseURL()}/demo/demo1.mp4`,
-        title: "Demo Short #1",
-      },
-      {
-        id: "demo2",
-        url: `${getAPIBaseURL()}/demo/demo2.mp4`,
-        title: "Demo Short #2",
-      },
-      {
-        id: "demo3",
-        url: `${getAPIBaseURL()}/demo/demo3.mp4`,
-        title: "Demo Short #3",
-      },
-      {
-        id: "demo4",
-        url: `${getAPIBaseURL()}/demo/demo4.mp4`,
-        title: "Demo Short #4",
-      },
-      {
-        id: "demo5",
-        url: `${getAPIBaseURL()}/demo/demo5.mp4`,
-        title: "Demo Short #5",
-      },
-      {
-        id: "demo6",
-        url: `${getAPIBaseURL()}/demo/demo6.mp4`,
-        title: "Demo Short #6",
-      },
-    ]);
+    // Set demo videos with dynamic URLs but limit initial load for performance
+    const demoCount = isLowEnd.current ? 3 : 6;
+    const initialDemos = [];
+    
+    for (let i = 1; i <= demoCount; i++) {
+      initialDemos.push({
+        id: `demo${i}`,
+        url: `${getAPIBaseURL()}/demo/demo${i}.mp4`,
+        title: `Demo Short #${i}`,
+      });
+    }
+    
+    setDemoVideos(initialDemos);
 
     fetchData();
 
@@ -210,7 +353,18 @@ function GalleryPage() {
     if (shouldCheck === "true") {
       checkYouTubeAuth();
     }
+    
+    // Observe video elements after initial render
+    setTimeout(observeVideoElements, 500);
   }, []);
+
+  // Re-observe video elements when videos state changes
+  useEffect(() => {
+    if (videos.length > 0 || demoVideos.length > 0) {
+      // Wait for the DOM to update
+      setTimeout(observeVideoElements, 100);
+    }
+  }, [videos, demoVideos, observeVideoElements]);
 
   // Check URL parameters for YouTube auth status
   useEffect(() => {
@@ -981,6 +1135,40 @@ function GalleryPage() {
     }
   };
 
+  // Optimized video rendering with visibility check
+  const shouldRenderVideo = useCallback((videoId: string) => {
+    return visibleVideos.has(videoId);
+  }, [visibleVideos]);
+
+  // Forward the visibility check to child components
+  const enhancedMyVideosProps = {
+    videos,
+    loading,
+    searchQuery,
+    isYouTubeConnected,
+    onCreateNew: () => navigate("/create"),
+    onVideoClick: setActiveVideo,
+    onDownload: handleDownload,
+    onDelete: handleDelete,
+    onShowUploadForm: handleShowUploadForm,
+    onConnectYouTube: connectYouTube,
+    onOpenYouTube: handleOpenYouTube,
+    onClearSearch: () => setSearchQuery(""),
+    isAuthenticated,
+    downloadingVideoId,
+    shouldRenderVideo,
+  };
+
+  const enhancedExploreSectionProps = {
+    demoVideos,
+    trendingVideos,
+    trendingLoading,
+    isYouTubeConnected,
+    onDemoVideoClick: handleDemoVideoClick,
+    onRefreshTrending: () => fetchTrendingYouTubeShorts(true),
+    shouldRenderVideo,
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -1028,149 +1216,59 @@ function GalleryPage() {
 
           {/* My Videos Section */}
           {activeSection === "my-videos" && (
-            <MyVideosSection
-              videos={videos}
-              searchQuery={searchQuery}
-              isYouTubeConnected={isYouTubeConnected}
-              loading={loading}
-              onCreateNew={() => navigate("/create")}
-              onVideoClick={setActiveVideo}
-              onDownload={handleDownload}
-              onDelete={handleDelete}
-              onShowUploadForm={handleShowUploadForm}
-              onConnectYouTube={connectYouTube}
-              onOpenYouTube={handleOpenYouTube}
-              onClearSearch={() => setSearchQuery("")}
-              isAuthenticated={isAuthenticated}
-              downloadingVideoId={downloadingVideoId}
-            />
+            <MyVideosSection {...enhancedMyVideosProps} />
           )}
 
           {/* Explore Section */}
           {activeSection === "explore" && (
-            <ExploreSection
-              demoVideos={demoVideos}
-              trendingVideos={trendingVideos}
-              trendingLoading={trendingLoading}
-              onDemoVideoClick={handleDemoVideoClick}
-              isYouTubeConnected={isYouTubeConnected}
-              onRefreshTrending={() => fetchTrendingYouTubeShorts(true)}
-            />
+            <ExploreSection {...enhancedExploreSectionProps} />
           )}
         </div>
       </main>
 
-      {/* Video Popup Dialog */}
-      {activeVideo && (
-        <VideoDialog
-          video={activeVideo}
-          isYouTubeConnected={isYouTubeConnected}
-          onClose={() => setActiveVideo(null)}
-          onDownload={handleDownload}
-          onShowUploadForm={handleShowUploadForm}
-          onOpenYouTube={handleOpenYouTube}
-        />
-      )}
+      {/* Use Suspense for lazily loaded components */}
+      <Suspense fallback={null}>
+        {activeVideo && (
+          <LazyVideoDialog
+            video={activeVideo}
+            isYouTubeConnected={isYouTubeConnected}
+            onClose={() => setActiveVideo(null)}
+            onDownload={handleDownload}
+            onShowUploadForm={handleShowUploadForm}
+            onOpenYouTube={handleOpenYouTube}
+          />
+        )}
 
-      {/* YouTube Upload Form Dialog */}
-      {showUploadForm && (
-        <UploadFormDialog
-          videoId={showUploadForm}
-          isUploading={uploading === showUploadForm}
-          uploadData={uploadData}
-          generatedContent={
-            videos.find((v) => v.id === showUploadForm)?.comprehensive_content
-          }
-          onUploadDataChange={setUploadData}
-          onClose={() => setShowUploadForm(null)}
-          onUpload={handleUpload}
-          youtubeChannels={youtubeChannels}
-        />
-      )}
+        {showUploadForm && (
+          <LazyUploadFormDialog
+            videoId={showUploadForm}
+            isUploading={uploading === showUploadForm}
+            uploadData={uploadData}
+            generatedContent={videos.find(v => v.id === showUploadForm)?.comprehensive_content}
+            onUploadDataChange={setUploadData}
+            onClose={() => setShowUploadForm(null)}
+            onUpload={handleUpload}
+            youtubeChannels={youtubeChannels}
+          />
+        )}
 
-      {/* YouTube Connect Modal */}
-      {showYouTubeConnectModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="relative bg-card shadow-lg border rounded-xl p-5 flex flex-col max-w-md w-full">
-            <button
-              onClick={() => setShowYouTubeConnectModal(false)}
-              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
-            >
-              &times;
-            </button>
-            <h2 className="text-xl font-bold mb-4">YouTube Connection</h2>
-
-            {isFetchingChannelData ? (
-              <div className="py-4 text-center">
-                <div className="animate-spin w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full mx-auto mb-2"></div>
-                <p className="text-sm text-muted-foreground">
-                  Refreshing channel data...
-                </p>
-              </div>
-            ) : (
-              <YouTubeConnect
-                visible={showYouTubeConnectModal}
-                onConnectionChange={(connected) => {
-                  console.log("YouTube connection changed:", connected);
-                  // Only update if the connection state actually changed
-                  if (connected !== isYouTubeConnected) {
-                    setYouTubeConnected(connected);
-                    if (connected) {
-                      console.log("YouTube connected, fetching channels...");
-                      // Set loading state while fetching channels
-                      setIsFetchingChannelData(true);
-                      // Force a small delay to ensure backend has processed auth
-                      setTimeout(() => {
-                        fetchYouTubeChannels().finally(() => {
-                          setIsFetchingChannelData(false);
-                        });
-                      }, 1000);
-                    }
-                  }
-                }}
-                onChannelSelect={(channel) => {
-                  console.log("Channel selected:", channel);
-                  setSelectedYouTubeChannel(channel);
-                  // Update upload form if open
-                  if (showUploadForm) {
-                    setUploadData({
-                      ...uploadData,
-                      channelId: channel.id,
-                    });
-                  }
-                  // No longer auto-closing, let user close manually
-                }}
-                selectedChannelId={selectedYouTubeChannel?.id}
-              />
-            )}
-
-            <div className="mt-4 flex justify-between">
-              <Button
-                onClick={() => {
-                  console.log("Manually refreshing channel data");
-                  setIsFetchingChannelData(true);
-                  fetchYouTubeChannels().finally(() => {
-                    setIsFetchingChannelData(false);
-                  });
-                }}
-                variant="outline"
-                className="text-sm"
-              >
-                Refresh Channels
-              </Button>
-              <Button
-                onClick={() => setShowYouTubeConnectModal(false)}
-                variant="outline"
-                className="text-sm"
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Video creation status UI removed */}
+        {showYouTubeConnectModal && (
+          <LazyYouTubeConnect
+            visible={showYouTubeConnectModal}
+            onClose={() => setShowYouTubeConnectModal(false)}
+            onConnectionChange={(connected) => {
+              setYouTubeConnected(connected);
+              if (connected) {
+                fetchYouTubeChannels();
+              }
+            }}
+            onChannelSelect={(channel) => {
+              setSelectedYouTubeChannel(channel);
+            }}
+            selectedChannelId={selectedYouTubeChannel?.id}
+          />
+        )}
+      </Suspense>
 
       <Footer />
     </div>

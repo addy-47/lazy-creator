@@ -25,6 +25,7 @@ interface YouTubeConnectProps {
   onChannelSelect?: (channel: Channel) => void;
   selectedChannelId?: string;
   visible?: boolean;
+  onClose?: () => void;
 }
 
 const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
@@ -32,6 +33,7 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
   onChannelSelect,
   selectedChannelId,
   visible,
+  onClose,
 }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
