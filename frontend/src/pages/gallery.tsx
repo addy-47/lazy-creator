@@ -92,6 +92,14 @@ function GalleryPage() {
   // Low-end device detection
   const isLowEnd = useRef(isLowEndDevice());
 
+  // Debug auth status to console
+  console.log("Gallery page loaded with auth status:", { 
+    isAuthenticated, 
+    isYouTubeConnected,
+    hasToken: !!localStorage.getItem("token"),
+    hasUser: !!localStorage.getItem("user")
+  });
+
   // Define checkYouTubeAuth function early so it can be referenced elsewhere
   const checkYouTubeAuth = async () => {
     if (isCheckingAuth) return;
@@ -192,101 +200,134 @@ function GalleryPage() {
     }
   }, [isAuthenticated, authCheckComplete, navigate]);
 
-  // Enhanced fetchData function that returns the data for use with creation check
-  const fetchVideos = async () => {
-    try {
-      // Skip fetching videos if not authenticated
-      if (!isAuthenticated) {
-        setLoading(false);
-        return null;
+  // Add this before any useEffect
+  useEffect(() => {
+    // Force exit loading state after 5 seconds no matter what
+    const emergencyTimeout = setTimeout(() => {
+      console.log("Emergency timeout triggered to force exit loading state");
+      setLoading(false);
+      if (loading) {
+        toast.error("Something went wrong while loading. Showing available content.");
       }
+    }, 5000);
 
-      // Check cache first
-      const cacheKey = "user-videos";
-      if (requestCache.current.has(cacheKey)) {
-        const cachedData = requestCache.current.get(cacheKey);
-        const cacheAge = Date.now() - cachedData.timestamp;
-        // Use cache if less than 2 minutes old
-        if (cacheAge < 120000) {
-          setVideos(cachedData.data.videos);
-          setLoading(false);
-          return cachedData.data;
-        }
-      }
+    return () => {
+      clearTimeout(emergencyTimeout);
+    };
+  }, []);
 
-      // Try to get the token explicitly for verification
-      const token = localStorage.getItem("token");
-      if (!token) {
-        console.error("No auth token found, cannot fetch videos");
-        setLoading(false);
-        return null;
-      }
+  // Define observeVideoElements before using it in any effects
+  // Observe new video elements when they're added to the DOM
+  const observeVideoElements = useCallback(() => {
+    if (!observerRef.current) return;
+    
+    console.log("Observing video elements");
+    // Find all video containers and observe them
+    const videoElements = document.querySelectorAll('[data-video-id]');
+    videoElements.forEach(el => {
+      observerRef.current?.observe(el);
+    });
+  }, []);
 
+  // Simplified function to load demo videos from the known path
+  const loadDemoVideos = useCallback((count = 6) => {
+    const demos = [];
+    // Use the direct path to the demo videos
+    const demoPath = "/lazycreator-media/demo/";
+    
+    // Simple loop to generate demo video objects
+    for (let i = 1; i <= count; i++) {
+      demos.push({
+        id: `demo${i}`,
+        url: `${getAPIBaseURL()}${demoPath}demo${i}.mp4`,
+        title: `Demo Short #${i}`,
+      });
+    }
+    
+    setDemoVideos(demos);
+    console.log(`Loaded ${count} demo videos from ${demoPath}`);
+  }, []);
+
+  // Radically simplify the loading workflow to ensure we exit loading state
+  useEffect(() => {
+    const loadGallery = async () => {
       try {
-        // First try with apiWithoutPreflight
-        console.log("Fetching gallery data with apiWithoutPreflight");
-        const response = await apiWithoutPreflight.get("/api/gallery");
+        console.log("Starting gallery page loading sequence");
+        setLoading(true);
         
-        if (response.data && response.data.videos) {
-          // Update cache
-          requestCache.current.set(cacheKey, {
-            data: response.data,
-            timestamp: Date.now()
-          });
+        // Handle non-authenticated users immediately
+        if (!isAuthenticated) {
+          console.log("User not authenticated, showing explore section");
+          setActiveSection("explore");
+          setLoading(false);
           
-          if (isMounted.current) {
-            setVideos(response.data.videos);
-            setLoading(false);
-          }
-          return response.data;
+          // Load demo videos for non-authenticated users with a smaller count
+          loadDemoVideos(isLowEnd.current ? 3 : 6);
+          return;
         }
-      } catch (apiError) {
-        console.error("Error using apiWithoutPreflight:", apiError);
         
-        // Fallback to direct axios call if first attempt fails
+        // For authenticated users, try to fetch their videos
+        console.log("User authenticated, fetching videos");
+        
         try {
-          console.log("Falling back to direct API call");
-          const fallbackResponse = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
+          // Simple, direct API call
+          const token = localStorage.getItem("token");
+          if (!token) {
+            throw new Error("No auth token found");
+          }
+          
+          const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
             headers: {
               "x-access-token": token,
               "Content-Type": "application/json"
-            }
+            },
+            timeout: 8000 // 8 second timeout
           });
           
-          if (fallbackResponse.data && fallbackResponse.data.videos) {
-            if (isMounted.current) {
-              setVideos(fallbackResponse.data.videos);
-              setLoading(false);
-            }
-            return fallbackResponse.data;
+          if (response.data && response.data.videos) {
+            console.log(`Loaded ${response.data.videos.length} videos successfully`);
+            setVideos(response.data.videos);
+          } else {
+            console.warn("API response missing videos array");
+            setVideos([]);
           }
-        } catch (fallbackError) {
-          console.error("Fallback API call also failed:", fallbackError);
-          throw fallbackError; // Re-throw to be caught by outer catch
+        } catch (error) {
+          console.error("Failed to fetch videos:", error);
+          toast.error("Couldn't load your videos. Please try again later.");
+          setVideos([]);
         }
-      }
-      
-      // If we reach here, both attempts failed or returned invalid data
-      console.warn("API calls returned invalid data format");
-      setLoading(false);
-      return null;
-    } catch (error) {
-      console.error("Error fetching videos:", error);
-      if (isMounted.current) {
-        toast.error("Error loading your gallery");
         
-        // Force showing empty state instead of infinite loader
-        setVideos([]);
+        // Load demo videos for all users
+        loadDemoVideos(isLowEnd.current ? 3 : 6);
+      } catch (e) {
+        console.error("Unexpected error in gallery loading sequence:", e);
+      } finally {
+        // Always exit loading state
+        console.log("Exiting loading state");
         setLoading(false);
       }
-      return null;
-    } finally {
-      // Ensure loading is always set to false
-      if (isMounted.current) {
-        setLoading(false);
-      }
+    };
+
+    loadGallery();
+    
+    // Check YouTube auth status if needed
+    const shouldCheck = localStorage.getItem("checkYouTubeAuth");
+    if (shouldCheck === "true") {
+      checkYouTubeAuth();
     }
-  };
+  }, [isAuthenticated, loadDemoVideos]); // Add loadDemoVideos to dependencies
+
+  // Re-observe video elements when videos or demo videos change
+  useEffect(() => {
+    if (videos.length > 0 || demoVideos.length > 0) {
+      // Wait for DOM to update before observing
+      const timer = setTimeout(() => {
+        observeVideoElements();
+      }, 250);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [videos, demoVideos, observeVideoElements]);
 
   // Set up intersection observer for lazy loading videos
   useEffect(() => {
@@ -363,77 +404,6 @@ function GalleryPage() {
     }, isLowEnd.current ? 500 : 200);
   }, []);
 
-  // Observe new video elements when they're added to the DOM
-  const observeVideoElements = useCallback(() => {
-    if (!observerRef.current) return;
-    
-    // Find all video containers and observe them
-    const videoElements = document.querySelectorAll('[data-video-id]');
-    videoElements.forEach(el => {
-      observerRef.current?.observe(el);
-    });
-  }, []);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      
-      // Add timeout to prevent infinite loading
-      const timeoutId = setTimeout(() => {
-        if (isMounted.current && loading) {
-          console.warn("Gallery fetch timeout reached, forcing loading to false");
-          setLoading(false);
-          
-          // Show error toast if still loading after timeout
-          toast.error("Loading took too long. Please refresh the page.");
-        }
-      }, 10000); // 10 second timeout
-      
-      try {
-        await fetchVideos();
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    };
-
-    // Set demo videos with dynamic URLs but limit initial load for performance
-    const demoCount = isLowEnd.current ? 3 : 6;
-    const initialDemos = [];
-    
-    for (let i = 1; i <= demoCount; i++) {
-      initialDemos.push({
-        id: `demo${i}`,
-        url: `${getAPIBaseURL()}/demo/demo${i}.mp4`,
-        title: `Demo Short #${i}`,
-      });
-    }
-    
-    setDemoVideos(initialDemos);
-
-    fetchData();
-
-    // Only check YouTube auth status if needed
-    const shouldCheck = localStorage.getItem("checkYouTubeAuth");
-    if (shouldCheck === "true") {
-      checkYouTubeAuth();
-    }
-    
-    // Observe video elements after initial render
-    setTimeout(observeVideoElements, 500);
-    
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
-  // Re-observe video elements when videos state changes
-  useEffect(() => {
-    if (videos.length > 0 || demoVideos.length > 0) {
-      // Wait for the DOM to update
-      setTimeout(observeVideoElements, 100);
-    }
-  }, [videos, demoVideos, observeVideoElements]);
-
   // Check URL parameters for YouTube auth status
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -453,10 +423,6 @@ function GalleryPage() {
       if (token) {
         localStorage.setItem("token", token);
       }
-
-      // Fetch videos with new token
-      fetchVideos();
-      return;
     }
 
     // Check for YouTube auth error
@@ -985,193 +951,7 @@ function GalleryPage() {
     }
   }, [activeSection, isYouTubeConnected, fetchTrendingYouTubeShorts]);
 
-  // Handle Featured Demos videos - separate from trending videos
-  useEffect(() => {
-    if (activeSection === "explore") {
-      console.log(
-        "Setting up demo videos using specified path: lazycreator-media/demo"
-      );
-
-      // Use the specific path provided in requirements
-      const demoPath = "/lazycreator-media/demo/";
-
-      // Test if this path works
-      const testDemoAvailability = async () => {
-        try {
-          // Test if the specified path works
-          const testUrl = `${getAPIBaseURL()}${demoPath}demo1.mp4`;
-          console.log(`Testing demo video availability at: ${testUrl}`);
-
-          const response = await fetch(testUrl, { method: "HEAD" });
-          console.log(`Demo video test response status: ${response.status}`);
-
-          if (response.ok) {
-            console.log(
-              "lazycreator-media/demo path is valid, using local videos"
-            );
-            // Set videos with the confirmed working path
-            setDemoVideos([
-              {
-                id: "demo1",
-                url: `${getAPIBaseURL()}${demoPath}demo1.mp4`,
-                title: "Demo Short #1",
-              },
-              {
-                id: "demo2",
-                url: `${getAPIBaseURL()}${demoPath}demo2.mp4`,
-                title: "Demo Short #2",
-              },
-              {
-                id: "demo3",
-                url: `${getAPIBaseURL()}${demoPath}demo3.mp4`,
-                title: "Demo Short #3",
-              },
-              {
-                id: "demo4",
-                url: `${getAPIBaseURL()}${demoPath}demo4.mp4`,
-                title: "Demo Short #4",
-              },
-              {
-                id: "demo5",
-                url: `${getAPIBaseURL()}${demoPath}demo5.mp4`,
-                title: "Demo Short #5",
-              },
-              {
-                id: "demo6",
-                url: `${getAPIBaseURL()}${demoPath}demo6.mp4`,
-                title: "Demo Short #6",
-              },
-            ]);
-          } else {
-            console.log(
-              "lazycreator-media/demo path returned 404, falling back to fallback videos"
-            );
-            // Try path without the slash
-            const altPath = "lazycreator-media/demo/";
-            const altUrl = `${getAPIBaseURL()}/${altPath}demo1.mp4`;
-            console.log(`Testing alternative URL: ${altUrl}`);
-
-            try {
-              const altResponse = await fetch(altUrl, { method: "HEAD" });
-              if (altResponse.ok) {
-                console.log("Alternative path works, using it");
-                setDemoVideos([
-                  {
-                    id: "demo1",
-                    url: `${getAPIBaseURL()}/${altPath}demo1.mp4`,
-                    title: "Demo Short #1",
-                  },
-                  {
-                    id: "demo2",
-                    url: `${getAPIBaseURL()}/${altPath}demo2.mp4`,
-                    title: "Demo Short #2",
-                  },
-                  {
-                    id: "demo3",
-                    url: `${getAPIBaseURL()}/${altPath}demo3.mp4`,
-                    title: "Demo Short #3",
-                  },
-                  {
-                    id: "demo4",
-                    url: `${getAPIBaseURL()}/${altPath}demo4.mp4`,
-                    title: "Demo Short #4",
-                  },
-                  {
-                    id: "demo5",
-                    url: `${getAPIBaseURL()}/${altPath}demo5.mp4`,
-                    title: "Demo Short #5",
-                  },
-                  {
-                    id: "demo6",
-                    url: `${getAPIBaseURL()}/${altPath}demo6.mp4`,
-                    title: "Demo Short #6",
-                  },
-                ]);
-                return;
-              }
-            } catch (error) {
-              console.error("Error testing alternative URL:", error);
-            }
-
-            // Fallback to external videos if both attempts fail
-            console.log("All local paths failed, using external sample videos");
-            setDemoVideos([
-              {
-                id: "demo1",
-                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-                title: "Demo Short #1",
-              },
-              {
-                id: "demo2",
-                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-                title: "Demo Short #2",
-              },
-              {
-                id: "demo3",
-                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-                title: "Demo Short #3",
-              },
-              {
-                id: "demo4",
-                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-                title: "Demo Short #4",
-              },
-              {
-                id: "demo5",
-                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-                title: "Demo Short #5",
-              },
-              {
-                id: "demo6",
-                url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
-                title: "Demo Short #6",
-              },
-            ]);
-          }
-        } catch (error) {
-          console.error("Error testing demo video availability:", error);
-          // Use external sample videos as fallback
-          setDemoVideos([
-            {
-              id: "demo1",
-              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-              title: "Demo Short #1",
-            },
-            {
-              id: "demo2",
-              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-              title: "Demo Short #2",
-            },
-            {
-              id: "demo3",
-              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-              title: "Demo Short #3",
-            },
-            {
-              id: "demo4",
-              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-              title: "Demo Short #4",
-            },
-            {
-              id: "demo5",
-              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-              title: "Demo Short #5",
-            },
-            {
-              id: "demo6",
-              url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
-              title: "Demo Short #6",
-            },
-          ]);
-        }
-      };
-
-      // Try to load the demo videos
-      testDemoAvailability();
-    }
-  }, [activeSection]);
-
-  // Handle demo video click
+  // Updated handleDemoVideoClick to include error handling
   const handleDemoVideoClick = (demo: DemoVideo) => {
     // Never redirect local demo videos
     const isLocalDemo = demo.url && demo.url.includes("/demo/");
@@ -1182,7 +962,29 @@ function GalleryPage() {
       const videoElement = document.getElementById(
         `featured-${demo.id}`
       ) as HTMLVideoElement;
+      
       if (videoElement) {
+        // Add error handling for video loading
+        videoElement.onerror = () => {
+          console.error(`Failed to load demo video: ${demo.url}`);
+          // Show error UI in the video element
+          const container = videoElement.parentElement;
+          if (container) {
+            // Create error overlay
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'absolute inset-0 flex items-center justify-center bg-black/80 text-white text-center p-4';
+            errorDiv.innerHTML = `
+              <div>
+                <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-10 w-10 text-red-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p>Failed to load video</p>
+              </div>
+            `;
+            container.appendChild(errorDiv);
+          }
+        };
+        
         if (videoElement.paused) {
           // Pause all other videos first
           document.querySelectorAll("video").forEach((v) => {
@@ -1240,7 +1042,8 @@ function GalleryPage() {
   // Add a check that combines loading state with authentication context
   const isActuallyLoading = loading && (isAuthenticated || activeSection !== "explore");
 
-  if (isActuallyLoading) {
+  if (loading) {
+    console.log("Rendering loading state");
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
@@ -1253,6 +1056,12 @@ function GalleryPage() {
             <p className="text-foreground/70 animate-pulse">
               Loading your gallery...
             </p>
+            <button 
+              onClick={() => setLoading(false)}
+              className="text-xs text-primary mt-4 underline"
+            >
+              Click here if loading takes too long
+            </button>
           </div>
         </main>
         <Footer />
