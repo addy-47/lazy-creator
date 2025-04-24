@@ -69,7 +69,7 @@ const CreateForm = () => {
   const [stepCompletionStates, setStepCompletionStates] = useState({
     step1Complete: false,
     step2Complete: false,
-    step3Complete: false
+    step3Complete: false,
   });
 
   // Re-evaluate step completion when relevant states change
@@ -77,7 +77,7 @@ const CreateForm = () => {
     setStepCompletionStates({
       step1Complete: isStepComplete(1),
       step2Complete: isStepComplete(2),
-      step3Complete: isStepComplete(3)
+      step3Complete: isStepComplete(3),
     });
   }, [prompt, duration, backgroundType, backgroundSource, backgroundFile]);
 
@@ -86,7 +86,7 @@ const CreateForm = () => {
       case 1:
         return !!prompt;
       case 2:
-        return duration >= 15 && duration <= 60;
+        return duration >= 10 && duration <= 60; // Changed from 15 to 10
       case 3:
         return (
           backgroundType &&
@@ -140,7 +140,7 @@ const CreateForm = () => {
   const handleDurationChange = (value: number) => {
     setDuration(value);
     // Immediately check if this step is now complete
-    if (value >= 15 && value <= 60) {
+    if (value >= 10 && value <= 60) {
       setAnnouncement(`Step 2 completed: Duration`);
     }
   };
@@ -168,11 +168,11 @@ const CreateForm = () => {
     source: "custom" | "provided" | null,
     file: File | null
   ) => {
-    const isCompleted = 
-      type && 
-      source && 
+    const isCompleted =
+      type &&
+      source &&
       (source === "provided" || (source === "custom" && !!file));
-    
+
     if (isCompleted) {
       setAnnouncement(`Step 3 completed: Background`);
     }
@@ -230,7 +230,7 @@ const CreateForm = () => {
     }
 
     if (!isStepComplete(2)) {
-      toast.error("Please set a duration between 15 and 60 seconds");
+      toast.error("Please set a duration between 10 and 60 seconds");
       goToStep(2);
       return;
     }
@@ -241,7 +241,9 @@ const CreateForm = () => {
       } else if (!backgroundSource) {
         toast.error("Please select a background source");
       } else if (backgroundSource === "custom" && !backgroundFile) {
-        toast.error("Please upload a background file or choose 'Use our library'");
+        toast.error(
+          "Please upload a background file or choose 'Use our library'"
+        );
       }
       goToStep(3);
       return;

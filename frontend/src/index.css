@@ -245,12 +245,7 @@
   }
 
   .step-card-completed {
-    @apply border-[#E0115F]/30 shadow-md shadow-[#E0115F]/20 ruby-glow;
-  }
-
-  .step-completed-glow {
-    @apply shadow-lg shadow-[#E0115F]/30 border-[#E0115F]/40;
-    animation: step-completed-pulse 2s infinite;
+    @apply border-[#E0115F]/30 shadow-sm;
   }
 
   .step-transition-enter {
@@ -276,15 +271,6 @@
   }
   100% {
     background-position: 200% 0;
-  }
-}
-
-@keyframes step-completed-pulse {
-  0%, 100% {
-    box-shadow: 0 10px 15px -3px rgba(224, 17, 95, 0.2);
-  }
-  50% {
-    box-shadow: 0 15px 20px -3px rgba(224, 17, 95, 0.3);
   }
 }
 
