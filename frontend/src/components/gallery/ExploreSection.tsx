@@ -22,8 +22,12 @@ const DemoVideoGrid = memo(({
   onDemoVideoClick: (demo: DemoVideo) => void 
 }) => {
   // Don't render anything if no videos
-  if (demoVideos.length === 0) {
-    return null;
+  if (!demoVideos || demoVideos.length === 0) {
+    return (
+      <div className="py-8 text-center text-muted-foreground">
+        No demo videos available
+      </div>
+    );
   }
 
   // Limit to a reasonable number for initial render (virtual scrolling would be better for larger sets)
@@ -54,59 +58,66 @@ const ExploreSection: React.FC<ExploreSectionProps> = memo(({
   onRefreshTrending,
 }) => {
   // Create a stable loading state to prevent flickering
-  const [stableLoading, setStableLoading] = useState(true);
+  const [showLoader, setShowLoader] = useState(true);
+  
+  // Debug logging to understand component state
+  console.log("ExploreSection render:", {
+    demoVideosCount: demoVideos?.length || 0,
+    trendingVideosCount: trendingVideos?.length || 0,
+    trendingLoading,
+    showLoader
+  });
   
   // Use effect to stabilize the loading state
   useEffect(() => {
-    // Initial loading state
-    const initialLoadingState = trendingLoading && 
-      trendingVideos.length === 0 && 
-      demoVideos.length === 0;
+    // Check if we have any content to display
+    const hasContent = (demoVideos && demoVideos.length > 0) || 
+                       (trendingVideos && trendingVideos.length > 0);
     
-    if (initialLoadingState) {
-      // Already loading, no need to update
-      return;
+    // Only hide loader once we have content or explicitly know loading is done
+    if (hasContent || (!trendingLoading && demoVideos)) {
+      // Use a short delay to avoid flickering
+      const timer = setTimeout(() => {
+        setShowLoader(false);
+      }, 300);
+      
+      return () => clearTimeout(timer);
     }
-    
-    // If we have content, set loading to false with a small delay
-    // This prevents flickering by ensuring we don't switch loading states too quickly
-    const timer = setTimeout(() => {
-      setStableLoading(false);
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [trendingLoading, trendingVideos.length, demoVideos.length]);
+  }, [demoVideos, trendingVideos, trendingLoading]);
 
   return (
     <div className="space-y-10">
-      {/* Trending YouTube Shorts with InfiniteMovingCards */}
-      {!stableLoading && (
-        <TrendingYouTubeShorts
-          demoVideos={trendingVideos}
-          isYouTubeConnected={isYouTubeConnected}
-          onRefresh={onRefreshTrending}
-        />
-      )}
-
-      {/* Demo Videos Grid */}
-      <div>
-        <h2 className="text-xl font-medium mb-5 flex items-center gap-2">
-          <Film size={18} />
-          <span>Featured Demos</span>
-        </h2>
-
-        {stableLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="relative w-12 h-12">
-              <div className="absolute inset-0 rounded-full border-4 border-secondary opacity-20"></div>
-              <div className="absolute inset-0 rounded-full border-4 border-t-primary border-secondary animate-spin"></div>
-            </div>
-            <p className="ml-4 text-foreground/70">Loading videos...</p>
+      {/* Only show loader or content */}
+      {showLoader ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="relative w-12 h-12">
+            <div className="absolute inset-0 rounded-full border-4 border-secondary opacity-20"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-t-primary border-secondary animate-spin"></div>
           </div>
-        ) : (
-          <DemoVideoGrid demoVideos={demoVideos} onDemoVideoClick={onDemoVideoClick} />
-        )}
-      </div>
+          <p className="ml-4 text-foreground/70">Loading videos...</p>
+        </div>
+      ) : (
+        <>
+          {/* Trending YouTube Shorts with InfiniteMovingCards */}
+          {trendingVideos && trendingVideos.length > 0 && (
+            <TrendingYouTubeShorts
+              demoVideos={trendingVideos}
+              isYouTubeConnected={isYouTubeConnected}
+              onRefresh={onRefreshTrending}
+            />
+          )}
+
+          {/* Demo Videos Grid */}
+          <div>
+            <h2 className="text-xl font-medium mb-5 flex items-center gap-2">
+              <Film size={18} />
+              <span>Featured Demos</span>
+            </h2>
+            
+            <DemoVideoGrid demoVideos={demoVideos} onDemoVideoClick={onDemoVideoClick} />
+          </div>
+        </>
+      )}
     </div>
   );
 });
