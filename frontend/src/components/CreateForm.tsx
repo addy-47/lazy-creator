@@ -130,18 +130,6 @@ const CreateForm = () => {
     }
   }, [formSteps, activeStep]);
 
-  const handlePromptChange = (value: string) => {
-    // Detect if this is likely a custom prompt (not matching any predefined ones)
-    const isPredefined = predefinedPrompts.some(p => p.prompt === value);
-    setIsCustomPrompt(!isPredefined);
-    
-    setPrompt(value);
-    // Immediately check if this step is now complete
-    if (value) {
-      setAnnouncement(`Step 1 completed: Content`);
-    }
-  };
-
   // Predefined prompts for checking (same as in PromptSelector)
   const predefinedPrompts = [
     {
@@ -177,6 +165,26 @@ const CreateForm = () => {
       prompt: "Demonstrate a clever everyday life hack that saves time or money",
     },
   ];
+
+  // Handle custom prompt state change from PromptSelector
+  const handleCustomPromptStateChange = (isCustom: boolean) => {
+    setIsCustomPrompt(isCustom);
+  };
+
+  const handlePromptChange = (value: string) => {
+    setPrompt(value);
+    
+    // Check if this is likely a custom prompt (not matching any predefined ones)
+    const isPredefined = predefinedPrompts.some(p => p.prompt === value);
+    if (!isPredefined && value.trim().length > 0) {
+      setIsCustomPrompt(true);
+    }
+    
+    // Immediately check if this step is now complete
+    if (value) {
+      setAnnouncement(`Step 1 completed: Content`);
+    }
+  };
 
   const handleDurationChange = (value: number) => {
     setDuration(value);
@@ -270,9 +278,9 @@ const CreateForm = () => {
       return;
     }
 
-    // Special check for custom prompt that might be empty
-    if (isCustomPrompt && (!prompt.trim() || prompt.trim().length < 3)) {
-      toast.error("Please enter your custom prompt before proceeding");
+    // Special check for custom prompt that might be empty or too short
+    if (isCustomPrompt && prompt.trim().length < 5) {
+      toast.error("Please enter a more detailed custom prompt (at least 5 characters)");
       goToStep(1);
       return;
     }
@@ -542,9 +550,8 @@ const CreateForm = () => {
           >
             <PromptSelector
               selectedPrompt={prompt}
-              onPromptChange={(value) => {
-                handlePromptChange(value);
-              }}
+              onPromptChange={handlePromptChange}
+              onCustomPromptStateChange={handleCustomPromptStateChange}
             />
           </StepCard>
         </div>

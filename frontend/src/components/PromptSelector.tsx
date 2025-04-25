@@ -47,24 +47,48 @@ const predefinedPrompts = [
 interface PromptSelectorProps {
   selectedPrompt: string;
   onPromptChange: (prompt: string) => void;
+  onCustomPromptStateChange?: (isCustom: boolean) => void;
 }
 
 const PromptSelector = ({
   selectedPrompt,
   onPromptChange,
+  onCustomPromptStateChange,
 }: PromptSelectorProps) => {
   const [customPrompt, setCustomPrompt] = useState("");
   const [isCustom, setIsCustom] = useState(false);
 
+  // Effect to notify parent component when isCustom changes
   useEffect(() => {
+    if (onCustomPromptStateChange) {
+      onCustomPromptStateChange(isCustom);
+    }
+  }, [isCustom, onCustomPromptStateChange]);
+
+  // Effect to initialize the form on first load and handle selecting a predefined prompt
+  useEffect(() => {
+    // Check if we're first loading with no prompt selected
     if (!selectedPrompt && !isCustom) {
+      // Set to the first predefined prompt by default
       onPromptChange(predefinedPrompts[0].prompt);
       return;
     }
 
-    const isPredefined = predefinedPrompts.some(p => p.prompt === selectedPrompt);
-    
-    if (selectedPrompt && !isPredefined) {
+    // Check if the currently selected prompt matches any predefined prompts
+    const matchingPredefinedPrompt = predefinedPrompts.find(
+      p => p.prompt === selectedPrompt
+    );
+
+    // If we're in custom mode, update the custom prompt text field
+    if (isCustom) {
+      setCustomPrompt(selectedPrompt || "");
+    }
+    // If we've got a predefined prompt selected, make sure we're not in custom mode
+    else if (matchingPredefinedPrompt) {
+      setIsCustom(false);
+    } 
+    // If we have a prompt but it's not a predefined one, we must be in custom mode
+    else if (selectedPrompt) {
       setIsCustom(true);
       setCustomPrompt(selectedPrompt);
     }
@@ -84,12 +108,12 @@ const PromptSelector = ({
   };
 
   const toggleCustomPrompt = () => {
+    // Always set to custom mode when toggling
     setIsCustom(true);
     
+    // If the custom prompt field isn't empty, use its value
     if (customPrompt) {
       onPromptChange(customPrompt);
-    } else {
-      setCustomPrompt(selectedPrompt || "");
     }
   };
 
