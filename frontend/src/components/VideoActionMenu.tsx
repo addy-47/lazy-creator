@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +32,9 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
   onOpenYouTube,
   onDelete,
 }) => {
+  // State to control dropdown open state
+  const [open, setOpen] = useState(false);
+
   // Handler for the trigger button to prevent video playback
   const handleTriggerClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -48,11 +51,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
     
     // Close the dropdown menu if requested
     if (closeMenu) {
-      // Find and click the trigger button to close the menu
-      const triggerButton = document.querySelector('[data-state="open"]');
-      if (triggerButton instanceof HTMLElement) {
-        triggerButton.click();
-      }
+      setOpen(false);
     }
   };
 
@@ -81,7 +80,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           className="absolute top-3 left-3 z-10 p-1 rounded-full bg-background/80 backdrop-blur-sm hover:bg-background"
