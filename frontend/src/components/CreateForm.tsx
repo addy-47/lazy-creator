@@ -373,8 +373,15 @@ const CreateForm = () => {
           "Video creation started! You'll be redirected to the processing page."
         );
 
-        // Navigate to processing page with video ID
-        navigate(`/processing?id=${data.video_id}&duration=${duration * 6}`);
+        // Navigate to processing page with video ID and additional context
+        const videoContext = {
+          prompt: prompt,
+          duration: duration,
+          backgroundType: backgroundType,
+          customPrompt: isCustomPrompt
+        };
+        
+        navigate(`/processing?id=${data.video_id}&duration=${duration * 6}&context=${encodeURIComponent(JSON.stringify(videoContext))}`);
       } else {
         throw new Error(data.message || "Failed to start video generation");
       }

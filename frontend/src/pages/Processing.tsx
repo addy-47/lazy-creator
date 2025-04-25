@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { motion } from "framer-motion";
-import { X } from "lucide-react";
+import { X, Info } from "lucide-react";
 import LazyCreatorLoader from "@/components/LazyCreatorLoader";
 
 const ProcessingPage: React.FC = () => {
@@ -25,12 +25,19 @@ const ProcessingPage: React.FC = () => {
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const [isCancelling, setIsCancelling] = useState(false);
   const [progressStage, setProgressStage] = useState<string>("Initializing");
+  const [videoContext, setVideoContext] = useState<{
+    prompt: string;
+    duration: number;
+    backgroundType: string | null;
+    customPrompt: boolean;
+  } | null>(null);
 
-  // Parse query parameters to get video ID and estimated time
+  // Parse query parameters to get video ID, estimated time, and context
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const id = params.get("id");
     const duration = params.get("duration");
+    const context = params.get("context");
 
     if (id) {
       setVideoId(id);
@@ -42,6 +49,15 @@ const ProcessingPage: React.FC = () => {
 
     if (duration) {
       setEstimatedTime(parseInt(duration));
+    }
+
+    if (context) {
+      try {
+        const contextData = JSON.parse(decodeURIComponent(context));
+        setVideoContext(contextData);
+      } catch (error) {
+        console.error("Error parsing video context:", error);
+      }
     }
   }, [location.search, navigate]);
 
@@ -223,6 +239,27 @@ const ProcessingPage: React.FC = () => {
           <Card className="overflow-hidden border border-[#E0115F]/20 bg-card/50 backdrop-blur-sm">
             <CardContent className="p-8">
               <div className="flex flex-col items-center justify-center space-y-8">
+                {/* Video Context Card */}
+                {videoContext && (
+                  <div className="w-full p-4 bg-card/80 border border-[#E0115F]/20 rounded-lg mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Info size={18} className="text-[#E0115F]" />
+                      <h3 className="font-medium">Short Details</h3>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <p><span className="font-medium">Content:</span> {videoContext.prompt.length > 80 
+                          ? `${videoContext.prompt.substring(0, 80)}...` 
+                          : videoContext.prompt}
+                      </p>
+                      <p><span className="font-medium">Duration:</span> {videoContext.duration} seconds</p>
+                      {videoContext.backgroundType && (
+                        <p><span className="font-medium">Background:</span> {videoContext.backgroundType}</p>
+                      )}
+                      <p><span className="font-medium">Type:</span> {videoContext.customPrompt ? 'Custom content' : 'Template content'}</p>
+                    </div>
+                  </div>
+                )}
+                
                 {/* Branded Loader */}
                 <LazyCreatorLoader progress={progress} />
 
