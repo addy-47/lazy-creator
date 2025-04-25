@@ -354,9 +354,24 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
             if (authPopup.closed) {
               clearInterval(checkInterval);
 
-              // Wait a moment then check auth status
+              // Wait longer before checking auth status
+              toast.info("Verifying connection...");
+              
+              // Use a progressive check system with multiple delays
+              // First attempt after 2 seconds
               setTimeout(() => {
-                checkConnectionStatus(true);
+                checkConnectionStatus(false);
+                
+                // Second attempt after 4 seconds total (2+2)
+                setTimeout(() => {
+                  checkConnectionStatus(false);
+                  
+                  // Final attempt after 7 seconds total (2+2+3)
+                  setTimeout(() => {
+                    checkConnectionStatus(true);
+                    setIsConnecting(false);
+                  }, 3000);
+                }, 2000);
               }, 2000);
             }
           }, 500);
@@ -517,7 +532,8 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
 
     return (
       <div className="p-6">
-        {errorMessage && (
+        {/* Only show error message if we're not in the middle of connecting and we have a real error */}
+        {errorMessage && !isConnecting && localStorage.getItem("checkYouTubeAuth") !== "true" && (
           <div className="text-red-500 mb-4 text-sm p-3 bg-red-500/5 rounded-lg border border-red-200/20">
             <p className="mb-2">{errorMessage}</p>
             <Button

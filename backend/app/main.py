@@ -1001,7 +1001,7 @@ def youtube_auth_callback_new():
         if user:
             token = jwt.encode({
                 'user_id': str(user['_id']),
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
+                'exp': datetime.utcnow() + timedelta(days=30)
             }, os.getenv('SECRET_KEY', 'dev_key'))
             
             # Add token to the redirect URL

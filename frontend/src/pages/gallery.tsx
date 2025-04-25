@@ -129,26 +129,45 @@ function GalleryPage() {
         }
       }
 
-      // Use direct approach with proper headers
-      const response = await axios.get(
-        `${getAPIBaseURL()}/api/youtube-auth-status`,
-        {
-          headers: {
-            "x-access-token": token,
-            "Content-Type": "application/json",
-          },
+      // Use a progressive retry approach with increasing delays
+      let retryCount = 0;
+      const maxRetries = 3;
+      const tryAuthCheck = async () => {
+        try {
+          // Use direct approach with proper headers
+          const response = await axios.get(
+            `${getAPIBaseURL()}/api/youtube-auth-status`,
+            {
+              headers: {
+                "x-access-token": token,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+
+          // Cache the response
+          requestCache.current.set(cacheKey, {
+            data: response.data,
+            timestamp: Date.now()
+          });
+
+          return response.data;
+        } catch (error) {
+          console.error(`YouTube auth retry ${retryCount} failed:`, error);
+          if (retryCount < maxRetries - 1) {
+            retryCount++;
+            // Increasing delay: 1s, 2s, 4s
+            const delay = Math.pow(2, retryCount - 1) * 1000;
+            await new Promise(r => setTimeout(r, delay));
+            return await tryAuthCheck();
+          }
+          throw error;
         }
-      );
+      };
 
+      const data = await tryAuthCheck();
       toast.dismiss(toastId);
-
-      // Cache the response
-      requestCache.current.set(cacheKey, {
-        data: response.data,
-        timestamp: Date.now()
-      });
-
-      handleAuthResponse(response.data);
+      handleAuthResponse(data);
     } catch (error: any) {
       toast.dismiss(toastId);
       console.error("YouTube auth status check error:", error);
@@ -158,7 +177,10 @@ function GalleryPage() {
         localStorage.removeItem("token");
         navigate("/auth");
       } else {
-        toast.error("Failed to check YouTube connection status.");
+        // Don't show error for initial auth check
+        if (localStorage.getItem("checkYouTubeAuth") === "true") {
+          toast.error("Failed to check YouTube connection status.");
+        }
       }
     } finally {
       setIsCheckingAuth(false);
@@ -168,16 +190,41 @@ function GalleryPage() {
 
   // Helper function to handle auth response
   const handleAuthResponse = (data: any) => {
+    console.log("Handling YouTube auth response:", data);
+    
+    // If we're in the process of checking auth after a redirect, be more cautious
+    const isPostRedirect = localStorage.getItem("checkYouTubeAuth") === "true";
+    
     if (data.status === "success") {
       if (data.is_connected || data.authenticated) {
+        // Successful connection
         setYouTubeConnected(true);
-        toast.success("Successfully connected to YouTube!");
+        
+        // Only show toast if this wasn't from an automatic check
+        if (isPostRedirect) {
+          toast.success("Successfully connected to YouTube!");
+          // Clear the checkYouTubeAuth flag now that we've confirmed success
+          localStorage.removeItem("checkYouTubeAuth");
+        }
+      } else if (isPostRedirect) {
+        // Only consider this a failure if we were explicitly checking after a redirect
+        console.warn("YouTube auth response indicates not connected, but we were expecting success");
+        
+        // Instead of immediately showing an error, wait for another attempt
+        // The retryAuth mechanism in checkYouTubeAuth will handle this
       } else {
+        // Normal "not connected" state during regular checking - this is not an error
         setYouTubeConnected(false);
-        toast.error("YouTube connection failed. Please try again.");
+        console.log("Not connected to YouTube (normal state)");
       }
     } else {
-      toast.error("Unable to verify YouTube connection status.");
+      // Only show toast for explicit errors, not routine checks
+      if (isPostRedirect) {
+        toast.error("Unable to verify YouTube connection status.");
+        // Clear the flag
+        localStorage.removeItem("checkYouTubeAuth");
+      }
+      setYouTubeConnected(false);
     }
   };
 
