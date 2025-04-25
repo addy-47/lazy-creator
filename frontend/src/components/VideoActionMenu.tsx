@@ -72,17 +72,11 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
     e.preventDefault();
 
     if (isUploaded && youtubeId) {
-      onOpenYouTube(youtubeId);
+      handleItemClick(e, () => onOpenYouTube(youtubeId), true);
     } else if (isYouTubeConnected) {
-      onShowUploadForm();
-      
-      // Close the menu after showing upload form
-      const triggerButton = document.querySelector('[data-state="open"]');
-      if (triggerButton instanceof HTMLElement) {
-        triggerButton.click();
-      }
+      handleItemClick(e, onShowUploadForm, true);
     } else {
-      onConnectYouTube();
+      handleItemClick(e, onConnectYouTube, true);
     }
   };
 
@@ -106,7 +100,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         onTouchEnd={handleMenuContentTouch}
       >
         <DropdownMenuItem
-          onClick={(e) => handleItemClick(e, () => onDownload(videoId))}
+          onClick={(e) => handleItemClick(e, () => onDownload(videoId), true)}
           className="cursor-pointer"
         >
           <Download className="mr-2 h-4 w-4" />
@@ -116,7 +110,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         {isUploaded ? (
           <DropdownMenuItem
             onClick={(e) =>
-              youtubeId && handleItemClick(e, () => onOpenYouTube(youtubeId))
+              youtubeId && handleItemClick(e, () => onOpenYouTube(youtubeId), true)
             }
             className="cursor-pointer"
             disabled={!youtubeId}
@@ -134,7 +128,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem
-            onClick={(e) => handleItemClick(e, onConnectYouTube)}
+            onClick={(e) => handleItemClick(e, onConnectYouTube, true)}
             className="cursor-pointer"
           >
             <Youtube className="mr-2 h-4 w-4" />
@@ -145,7 +139,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
-          onClick={(e) => handleItemClick(e, () => onDelete(videoId))}
+          onClick={(e) => handleItemClick(e, () => onDelete(videoId), true)}
           className="cursor-pointer text-destructive focus:text-destructive"
         >
           <Trash2 className="mr-2 h-4 w-4" />
