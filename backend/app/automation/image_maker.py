@@ -10,7 +10,7 @@ import logging # for logging events
 from PIL import Image, ImageFilter, ImageDraw, ImageFont# for image processing
 from moviepy.editor import ( # for video editing
     VideoFileClip, VideoClip, TextClip, CompositeVideoClip,ImageClip,
-    AudioFileClip, concatenate_videoclips, ColorClip, CompositeAudioClip
+    AudioFileClip, concatenate_videoclips, ColorClip, CompositeAudioClip, AudioClip
 )
 from moviepy.config import change_settings
 change_settings({"IMAGEMAGICK_BINARY": "magick"}) # for windows users
@@ -667,7 +667,24 @@ class YTShortsCreator_I:
                     voice_style=style
                 )
                 logger.info(f"Successfully generated audio using Google Cloud TTS: {audio_path}")
-                return audio_path
+                
+                # Verify the audio file was created correctly
+                if os.path.exists(audio_path):
+                    try:
+                        # Verify the audio file can be loaded
+                        audio = AudioFileClip(audio_path)
+                        if audio.duration <= 0:
+                            logger.warning(f"Generated audio file has zero duration, will try another method")
+                            audio.close()
+                        else:
+                            logger.info(f"Verified audio has valid duration: {audio.duration:.2f}s")
+                            audio.close()
+                            return audio_path
+                    except Exception as e:
+                        logger.error(f"Error verifying Google TTS audio: {e}")
+                
+                # If verification failed, continue to next method
+                logger.warning("Google TTS verification failed, trying next method")
             except Exception as e:
                 logger.error(f"Google Cloud TTS failed: {str(e)}")
                 logger.error(f"Falling back to Azure TTS or gTTS")
@@ -691,7 +708,23 @@ class YTShortsCreator_I:
 
                 audio_path = self.azure_tts.generate_speech(text, output_filename=filename)
                 logger.info(f"Successfully generated audio using Azure TTS: {audio_path}")
-                return audio_path
+                
+                # Verify the audio file was created correctly
+                if os.path.exists(audio_path):
+                    try:
+                        audio = AudioFileClip(audio_path)
+                        if audio.duration <= 0:
+                            logger.warning(f"Generated audio file has zero duration, will try another method")
+                            audio.close()
+                        else:
+                            logger.info(f"Verified audio has valid duration: {audio.duration:.2f}s")
+                            audio.close()
+                            return audio_path
+                    except Exception as e:
+                        logger.error(f"Error verifying Azure TTS audio: {e}")
+                
+                # If verification failed, continue to next method
+                logger.warning("Azure TTS verification failed, trying next method")
             except Exception as e:
                 logger.error(f"Azure TTS failed: {str(e)}")
                 logger.error(f"Falling back to gTTS")
@@ -709,7 +742,23 @@ class YTShortsCreator_I:
                 tts = gTTS(text=text, lang='en', slow=False)
                 tts.save(filename)
                 logger.info(f"Successfully created TTS audio with gTTS: {filename}")
-                return filename
+                
+                # Verify the gTTS audio file
+                try:
+                    audio = AudioFileClip(filename)
+                    if audio.duration <= 0:
+                        logger.warning(f"gTTS audio file has zero duration, will try again")
+                        audio.close()
+                        retry_count += 1
+                        continue
+                    else:
+                        logger.info(f"Verified gTTS audio has valid duration: {audio.duration:.2f}s")
+                        audio.close()
+                        return filename
+                except Exception as e:
+                    logger.error(f"Error verifying gTTS audio: {e}")
+                    retry_count += 1
+                    continue
             except requests.exceptions.RequestException as e:
                 logger.error(f"Network error in gTTS (attempt {retry_count+1}/{max_retries}): {e}")
                 time.sleep(2)
@@ -728,14 +777,8 @@ class YTShortsCreator_I:
             duration = max(3, len(words) / 2.5)  # Minimum 3 seconds
 
             # Create a silent audio clip
-            from moviepy.audio.AudioClip import AudioClip
-            import numpy as np
-
-            def make_frame(t):
-                return np.zeros(2)  # Stereo silence
-
-            silent_clip = AudioClip(make_frame=make_frame, duration=duration)
-            silent_clip.write_audiofile(filename, fps=44100, nbytes=2, codec='libmp3lame')
+            silent_clip = AudioClip(lambda t: [0, 0], duration=duration)
+            silent_clip.write_audiofile(filename, fps=44100, nbytes=2, codec='libmp3lame', logger=None)
 
             logger.info(f"Created silent audio clip as fallback: {filename}")
             return filename
@@ -1154,18 +1197,41 @@ class YTShortsCreator_I:
                         if audio_path and os.path.exists(audio_path):
                             try:
                                 audio = AudioFileClip(audio_path)
-
-                                # Ensure audio doesn't extend beyond clip duration
+                                
+                                # Validate audio file was loaded correctly
+                                if audio is None or audio.duration <= 0:
+                                    logger.error(f"Invalid audio file for section {i+1}: {audio_path}")
+                                    # Create silent audio as fallback
+                                    audio = AudioClip(lambda t: [0, 0], duration=duration)
+                                
+                                # Verify audio duration against clip duration with some safety margin
                                 if audio.duration > duration:
-                                    audio = audio.subclip(0, duration)
-
-                                # Add audio to the clip with proper sync
-                                # Set start time to 0 to ensure it starts with the clip
+                                    logger.warning(f"Audio duration ({audio.duration:.2f}s) exceeds clip duration ({duration:.2f}s) for section {i+1}, trimming audio")
+                                    # Trim audio with a small safety margin to prevent boundary issues
+                                    safe_duration = max(0.1, duration - 0.1)
+                                    audio = audio.subclip(0, safe_duration)
+                                
+                                # Set start time to 0 to ensure sync and verify final duration
                                 audio = audio.set_start(0)
+                                
+                                # Double-check final audio duration
+                                if audio.duration <= 0 or audio.duration > duration:
+                                    logger.warning(f"Audio still has invalid duration after adjustment ({audio.duration:.2f}s), creating fallback audio")
+                                    # Create silent audio as fallback
+                                    audio = AudioClip(lambda t: [0, 0], duration=duration - 0.2)
+                                
+                                # Set the audio
                                 clip = clip.set_audio(audio)
-                                logger.info(f"Added audio to clip {i+1}")
+                                logger.info(f"Added audio to clip {i+1} (audio: {audio.duration:.2f}s, clip: {duration:.2f}s)")
                             except Exception as e:
                                 logger.error(f"Error adding audio to clip: {e}")
+                                logger.error(f"Using silent audio instead")
+                                try:
+                                    # Create silent audio as fallback
+                                    silent_audio = AudioClip(lambda t: [0, 0], duration=duration - 0.2)
+                                    clip = clip.set_audio(silent_audio)
+                                except Exception as e2:
+                                    logger.error(f"Failed to create silent audio: {e2}")
 
                         # Make sure clip has exactly the right duration
                         clip = clip.set_duration(duration)
@@ -1205,12 +1271,26 @@ class YTShortsCreator_I:
                         if audio_path and os.path.exists(audio_path):
                             try:
                                 audio = AudioFileClip(audio_path)
-                                if audio.duration > duration:
-                                    audio = audio.subclip(0, duration)
-                                audio = audio.set_start(0)
-                                clip = clip.set_audio(audio)
-                            except Exception as e:
-                                logger.error(f"Error adding audio to fallback clip: {e}")
+                                if audio.duration > 0:
+                                    # Ensure audio doesn't exceed clip duration with safety margin
+                                    safe_duration = max(0.1, duration - 0.2)
+                                    if audio.duration > safe_duration:
+                                        audio = audio.subclip(0, safe_duration)
+                                    audio = audio.set_start(0)
+                                    clip = clip.set_audio(audio)
+                                else:
+                                    logger.warning(f"Audio file has zero duration for section {i+1}")
+                                    # Create silent audio
+                                    silent_audio = AudioClip(lambda t: [0, 0], duration=duration - 0.2)
+                                    clip = clip.set_audio(silent_audio)
+                            except Exception as audio_error:
+                                logger.error(f"Failed to add audio to fallback clip: {audio_error}")
+                                # Try creating silent audio
+                                try:
+                                    silent_audio = AudioClip(lambda t: [0, 0], duration=duration - 0.2)
+                                    clip = clip.set_audio(silent_audio)
+                                except Exception as e:
+                                    logger.error(f"Failed to create silent audio: {e}")
                         
                         clip = clip.set_duration(duration)
                         video_clips.append(clip)
@@ -1232,12 +1312,26 @@ class YTShortsCreator_I:
                     if audio_path and os.path.exists(audio_path):
                         try:
                             audio = AudioFileClip(audio_path)
-                            if audio.duration > duration:
-                                audio = audio.subclip(0, duration)
-                            audio = audio.set_start(0)
-                            fallback_clip = fallback_clip.set_audio(audio)
+                            if audio.duration > 0:
+                                # Ensure audio doesn't exceed clip duration with safety margin
+                                safe_duration = max(0.1, duration - 0.2)
+                                if audio.duration > safe_duration:
+                                    audio = audio.subclip(0, safe_duration)
+                                audio = audio.set_start(0)
+                                fallback_clip = fallback_clip.set_audio(audio)
+                            else:
+                                logger.warning(f"Audio file has zero duration for section {i+1}")
+                                # Create silent audio
+                                silent_audio = AudioClip(lambda t: [0, 0], duration=duration - 0.2)
+                                fallback_clip = fallback_clip.set_audio(silent_audio)
                         except Exception as audio_error:
                             logger.error(f"Failed to add audio to fallback clip: {audio_error}")
+                            # Try creating silent audio
+                            try:
+                                silent_audio = AudioClip(lambda t: [0, 0], duration=duration - 0.2)
+                                fallback_clip = fallback_clip.set_audio(silent_audio)
+                            except Exception as e:
+                                logger.error(f"Failed to create silent audio: {e}")
                     
                     fallback_clip = fallback_clip.set_duration(duration)
                     video_clips.append(fallback_clip)
@@ -1261,6 +1355,32 @@ class YTShortsCreator_I:
 
                 # IMPORTANT: Make sure the final clips are in the correct order
                 logger.info("Ensuring clips are in correct order")
+                
+                # Verify all clips have valid durations before concatenation
+                valid_clips = []
+                for i, clip in enumerate(video_clips):
+                    try:
+                        if clip.duration <= 0:
+                            logger.warning(f"Clip {i+1} has invalid duration: {clip.duration}s, skipping")
+                            continue
+                            
+                        # Verify audio doesn't exceed clip duration
+                        if hasattr(clip, 'audio') and clip.audio is not None:
+                            if clip.audio.duration > clip.duration:
+                                logger.warning(f"Clip {i+1} audio ({clip.audio.duration}s) exceeds clip duration ({clip.duration}s), fixing")
+                                safe_duration = max(0.1, clip.duration - 0.1)
+                                new_audio = clip.audio.subclip(0, safe_duration)
+                                new_audio = new_audio.set_start(0)
+                                clip = clip.set_audio(new_audio)
+                                
+                        valid_clips.append(clip)
+                    except Exception as e:
+                        logger.error(f"Error validating clip {i+1}: {e}")
+                
+                # Only use valid clips for the final video
+                if len(valid_clips) < len(video_clips):
+                    logger.warning(f"Using {len(valid_clips)} valid clips out of {len(video_clips)} total clips")
+                    video_clips = valid_clips
                 
                 # Concatenate clips in order with proper audio handling
                 try:
@@ -1305,24 +1425,63 @@ class YTShortsCreator_I:
                         
                     return None  # Continue rendering
                 
-                final_clip.write_videofile(
-                    output_path,
-                    fps=self.fps,
-                    codec='libx264',
-                    audio_codec='aac',
-                    temp_audiofile=os.path.join(self.temp_dir, "temp_audio.m4a"),
-                    remove_temp=True,
-                    threads=max(4, min(8, os.cpu_count() or 4)),  # Use optimal thread count based on CPU
-                    preset='ultrafast',  # Use faster preset for quicker rendering
-                    ffmpeg_params=[
-                        "-pix_fmt", "yuv420p",  # For compatibility with all players
-                        "-profile:v", "main",   # Better compatibility with mobile devices
-                        "-crf", "28",           # Higher compression to save space and improve render speed
-                        "-maxrate", "2M",       # Limit bitrate for more efficient compression
-                        "-bufsize", "4M"        # Buffer size
-                    ],
-                    logger="bar"  # Enable progress bar
-                )
+                # Before writing the final clip, verify that all audio components have valid durations
+                try:
+                    if hasattr(final_clip, 'audio') and final_clip.audio is not None:
+                        logger.info(f"Verifying final audio: Duration = {final_clip.audio.duration:.2f}s")
+                        if final_clip.audio.duration > final_clip.duration:
+                            logger.warning(f"Final audio duration ({final_clip.audio.duration:.2f}s) exceeds clip duration ({final_clip.duration:.2f}s), fixing")
+                            # Apply a safety margin
+                            safe_duration = max(0.1, final_clip.duration - 0.2)
+                            final_clip = final_clip.set_audio(final_clip.audio.subclip(0, safe_duration))
+                except Exception as e:
+                    logger.error(f"Error verifying final audio: {e}")
+                    # If there's an error with the audio, try to create a version without audio
+                    try:
+                        logger.warning("Attempting to create a version without audio due to errors")
+                        final_clip = final_clip.without_audio()
+                    except Exception as e2:
+                        logger.error(f"Failed to remove audio: {e2}")
+                
+                # Ensure proper logger configuration for MoviePy
+                moviepy_logger = "bar"  # Use progress bar by default
+                
+                try:
+                    final_clip.write_videofile(
+                        output_path,
+                        fps=self.fps,
+                        codec='libx264',
+                        audio_codec='aac',
+                        temp_audiofile=os.path.join(self.temp_dir, "temp_audio.m4a"),
+                        remove_temp=True,
+                        threads=max(4, min(8, os.cpu_count() or 4)),  # Use optimal thread count based on CPU
+                        preset='ultrafast',  # Use faster preset for quicker rendering
+                        ffmpeg_params=[
+                            "-pix_fmt", "yuv420p",  # For compatibility with all players
+                            "-profile:v", "main",   # Better compatibility with mobile devices
+                            "-crf", "28",           # Higher compression to save space and improve render speed
+                            "-maxrate", "2M",       # Limit bitrate for more efficient compression
+                            "-bufsize", "4M"        # Buffer size
+                        ],
+                        logger=moviepy_logger  # Enable progress bar
+                    )
+                except Exception as e:
+                    logger.error(f"Error during video writing: {e}")
+                    # Try again with no progress bar and simplified settings
+                    try:
+                        logger.warning("Retrying video export with simplified settings")
+                        final_clip.write_videofile(
+                            output_path,
+                            fps=self.fps,
+                            codec='libx264',
+                            audio_codec='aac',
+                            preset='ultrafast',
+                            ffmpeg_params=["-crf", "28"],
+                            logger=None  # Disable progress bar for retry
+                        )
+                    except Exception as e2:
+                        logger.error(f"Second attempt at video export also failed: {e2}")
+                        return None
 
                 # Clean up
                 final_clip.close()
@@ -1358,6 +1517,155 @@ class YTShortsCreator_I:
                     shutil.rmtree(file_path)
         except Exception as e:
             logger.error(f"Error cleaning up temporary files: {e}")
+
+    @measure_time
+    def _create_section_video(self, text, background_path=None, section_style=None, duration=None, 
+                             audio_path=None, is_title=False, make_captions=False, voice_style=None, 
+                             background_query=None, blur_background=False, edge_blur=False, custom_background_path=None):
+        """
+        Create a video clip for a section of text with audio and background image.
+
+        Args:
+            text (str): Text for the section
+            background_path (str): Path to background image (or None to generate one)
+            section_style (str): Style for image generation
+            duration (float): Duration in seconds (or None to calculate from audio)
+            audio_path (str): Path to audio file (or None to generate TTS)
+            is_title (bool): Whether this is the title section
+            make_captions (bool): Whether to add captions
+            voice_style (str): Style for TTS voice
+            background_query (str): Query for background image generation
+            blur_background (bool): Whether to apply blur to background
+            edge_blur (bool): Whether to apply edge blur to background
+            custom_background_path (str): Path to custom background image
+
+        Returns:
+            VideoClip: Video clip for the section
+        """
+        from moviepy.audio.AudioClip import AudioClip
+
+        # Generate or use provided background image
+        if not background_path:
+            if custom_background_path and os.path.exists(custom_background_path):
+                logger.info(f"Using custom background: {custom_background_path}")
+                background_path = custom_background_path
+            else:
+                # Generate a background image using the query
+                query = background_query or "abstract colorful background"
+                background_path = self._get_or_generate_background(query, section_style)
+                if not background_path:
+                    # Fallback to a solid color background
+                    logger.warning("Failed to generate or find a background image, using fallback")
+                    background_path = self._create_solid_color_background(color=(25, 25, 112))
+
+        # Create text-to-speech audio if not provided
+        if not audio_path:
+            audio_path = self._create_tts_audio(text, voice_style=voice_style)
+        
+        # Load audio clip with robust error handling
+        audio = None
+        audio_duration = 0
+        
+        try:
+            if audio_path and os.path.exists(audio_path):
+                audio = AudioFileClip(audio_path)
+                audio_duration = audio.duration
+                logger.info(f"Loaded audio clip: {audio_path}, duration: {audio_duration:.2f}s")
+                
+                # Perform basic validation
+                if audio_duration <= 0:
+                    logger.warning("Audio has zero or negative duration, creating silent audio")
+                    audio.close()
+                    audio = AudioClip(lambda t: [0, 0], duration=max(duration or 5.0, 3.0))
+                    audio_duration = audio.duration
+            else:
+                logger.warning(f"Audio file not found or invalid: {audio_path}")
+                # Create a silent audio clip as fallback
+                audio = AudioClip(lambda t: [0, 0], duration=max(duration or 5.0, 3.0))
+                audio_duration = audio.duration
+                logger.info(f"Created silent audio clip with duration: {audio_duration:.2f}s")
+        except Exception as e:
+            logger.error(f"Error loading audio file: {e}")
+            # Create a silent audio clip
+            audio = AudioClip(lambda t: [0, 0], duration=max(duration or 5.0, 3.0))
+            audio_duration = audio.duration
+            logger.info(f"Created silent audio clip with duration: {audio_duration:.2f}s")
+
+        # Determine clip duration
+        if duration:
+            clip_duration = duration
+        else:
+            # Add padding to the audio duration for natural timing
+            clip_duration = audio_duration + (1.0 if audio_duration > 3.0 else 0.5)
+            
+        logger.info(f"Clip duration set to {clip_duration:.2f}s (audio: {audio_duration:.2f}s)")
+        
+        # Ensure clip has reasonable duration
+        clip_duration = max(clip_duration, 1.0)  # Minimum 1 second
+        
+        # If audio duration exceeds clip duration, trim the audio
+        if audio_duration > clip_duration:
+            logger.warning(f"Audio duration ({audio_duration:.2f}s) exceeds clip duration ({clip_duration:.2f}s), trimming audio")
+            # Add a small buffer to ensure we don't exceed the clip duration
+            safe_duration = clip_duration - 0.1
+            audio = audio.subclip(0, safe_duration)
+            audio_duration = audio.duration
+            logger.info(f"Trimmed audio to {audio_duration:.2f}s")
+
+        try:
+            # Create image clip from background
+            image_clip = self._create_image_clip(background_path, clip_duration)
+            
+            # Apply blur effect if requested
+            if blur_background or edge_blur:
+                image_clip = self._apply_background_effects(image_clip, blur_background, edge_blur)
+            
+            # Set audio for the clip
+            if audio:
+                # Double-check audio to ensure it's valid
+                if audio.duration <= 0:
+                    logger.warning("Audio duration is zero or negative, creating new silent audio")
+                    audio = AudioClip(lambda t: [0, 0], duration=clip_duration)
+                
+                # Final safety check to ensure audio doesn't exceed clip duration
+                if audio.duration > image_clip.duration:
+                    logger.warning(f"Final audio check: Audio ({audio.duration:.2f}s) longer than clip ({image_clip.duration:.2f}s), trimming")
+                    audio = audio.subclip(0, max(0.1, image_clip.duration - 0.1))
+                
+                image_clip = image_clip.set_audio(audio)
+            
+            # Add text overlay if this is the title or captions are requested
+            if is_title or make_captions:
+                text_clip = self._create_text_overlay(text, clip_duration, is_title=is_title)
+                if text_clip:
+                    # Composite the text onto the image
+                    video_clip = CompositeVideoClip([image_clip, text_clip])
+                    video_clip = video_clip.set_duration(clip_duration)
+                    
+                    # Make sure to transfer audio from image_clip to composite clip
+                    if image_clip.audio:
+                        video_clip = video_clip.set_audio(image_clip.audio)
+                else:
+                    video_clip = image_clip
+            else:
+                video_clip = image_clip
+            
+            # Final validation of the video clip
+            if not video_clip:
+                logger.error("Failed to create video clip")
+                return None
+                
+            if video_clip.duration <= 0:
+                logger.error(f"Video clip has invalid duration: {video_clip.duration}")
+                return None
+                
+            return video_clip
+            
+        except Exception as e:
+            logger.error(f"Error in _create_section_video: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
 
 
 
