@@ -21,6 +21,7 @@ import tempfile # for creating temporary files
 # Import text clip functions from shorts_maker_V with proper relative imports
 from .video_maker import YTShortsCreator_V
 from datetime import datetime # for more detailed time tracking
+import re # for regular expressions
 
 # Configure logging for easier debugging
 # Do NOT initialize basicConfig here - this will be handled by main.py
@@ -788,6 +789,16 @@ class YTShortsCreator_I:
             # Start timing the process
             start_time = time.time()
             
+            # Validate max_duration is in the acceptable range for shorts
+            if max_duration < 10:
+                logger.warning(f"Requested duration {max_duration}s is too short for a YouTube Short, increasing to 10s")
+                max_duration = 10
+            elif max_duration > 60:
+                logger.warning(f"Requested duration {max_duration}s exceeds maximum for a YouTube Short, limiting to 60s")
+                max_duration = 60
+                
+            logger.info(f"Creating short with target duration of {max_duration} seconds")
+            
             # Setup progress reporting if callback is provided
             last_progress_check = time.time()
             if progress_callback and callable(progress_callback):
@@ -812,6 +823,58 @@ class YTShortsCreator_I:
                 # No-op if no callback provided
                 def check_progress():
                     return False
+
+            # Adjust script sections if needed - break up long text for better timing
+            adjusted_script_sections = []
+            for section in script_sections:
+                # Handle both dict and string formats
+                if isinstance(section, dict):
+                    text = section.get('text', '')
+                    if len(text.split()) > 40:  # If more than ~40 words, split into smaller sections
+                        sentences = re.split(r'(?<=[.!?])\s+', text)
+                        current_text = ""
+                        
+                        for sentence in sentences:
+                            if len(current_text.split()) + len(sentence.split()) > 35:
+                                if current_text:  # Only add if we have content
+                                    new_section = section.copy()
+                                    new_section['text'] = current_text.strip()
+                                    adjusted_script_sections.append(new_section)
+                                    current_text = ""
+                            
+                            # Add the current sentence
+                            current_text += " " + sentence
+                        
+                        # Add any remaining text
+                        if current_text.strip():
+                            new_section = section.copy()
+                            new_section['text'] = current_text.strip()
+                            adjusted_script_sections.append(new_section)
+                    else:
+                        adjusted_script_sections.append(section)
+                else:
+                    # For string sections
+                    text = str(section)
+                    if len(text.split()) > 40:
+                        sentences = re.split(r'(?<=[.!?])\s+', text)
+                        current_text = ""
+                        
+                        for sentence in sentences:
+                            if len(current_text.split()) + len(sentence.split()) > 35:
+                                if current_text:
+                                    adjusted_script_sections.append(current_text.strip())
+                                    current_text = ""
+                            
+                            current_text += " " + sentence
+                        
+                        if current_text.strip():
+                            adjusted_script_sections.append(current_text.strip())
+                    else:
+                        adjusted_script_sections.append(section)
+            
+            if len(adjusted_script_sections) != len(script_sections):
+                logger.info(f"Adjusted script sections from {len(script_sections)} to {len(adjusted_script_sections)} sections for better timing")
+                script_sections = adjusted_script_sections
 
             # 1. Generate TTS audio and cards for each script section
             video_clips = []
@@ -880,8 +943,51 @@ class YTShortsCreator_I:
             else:
                 # Check if we have specific queries for each section
                 if not background_queries:
-                    # If no section-specific queries, use the main query for all
-                    background_queries = [background_query] * len(script_sections)
+                    # If no section-specific queries, generate more varied queries for visual interest
+                    if len(script_sections) > 1:
+                        logger.info("Generating varied background queries for better visual interest")
+                        
+                        # Extract key words from the title or script sections
+                        keywords = []
+                        if title:
+                            keywords.extend([word.lower() for word in title.split() if len(word) > 3])
+                        
+                        # Extract keywords from sections
+                        for section in script_sections:
+                            text = section.get('text', section) if isinstance(section, dict) else section
+                            words = [word.lower() for word in text.split() if len(word) > 3]
+                            keywords.extend(words[:3])  # Take first few substantial words
+                        
+                        # Create background queries with keywords for variety
+                        background_queries = []
+                        for i in range(len(script_sections)):
+                            # For short videos (10-30 sec), use fewer backgrounds to avoid too many transitions
+                            if total_duration < 30 and len(script_sections) > 2:
+                                # Use same query for related sections
+                                query_idx = min(i // 2, len(keywords) - 1) if keywords else 0
+                                keyword = keywords[query_idx] if keywords else ""
+                                query = f"{keyword} {background_query}" if keyword else background_query
+                            else:
+                                # For longer videos, use more varied backgrounds
+                                keyword = keywords[min(i, len(keywords) - 1)] if keywords else ""
+                                query = f"{keyword} {background_query}" if keyword else background_query
+                            
+                            background_queries.append(query)
+                        
+                        logger.info(f"Generated {len(background_queries)} background queries")
+                    else:
+                        # If just one section, use the main query
+                        background_queries = [background_query]
+                
+                # Ensure we have enough queries for all sections
+                while len(background_queries) < len(script_sections):
+                    background_queries.append(background_query)
+                
+                # For very short videos (10-15 sec), limit background diversity
+                if total_duration < 15 and len(background_queries) > 1:
+                    logger.info(f"Short video detected ({total_duration:.2f}s), reducing background changes for smoother experience")
+                    # Use the same background query for all sections
+                    background_queries = [background_queries[0]] * len(script_sections)
 
                 # Generate or fetch background images for each section
                 # Use parallel processing if available
@@ -989,6 +1095,29 @@ class YTShortsCreator_I:
                         # Get text for this card
                         text = script_sections[i].get('text', '') if isinstance(script_sections[i], dict) else str(script_sections[i])
 
+                        # Verify the image file exists and is readable
+                        if not os.path.exists(bg_image):
+                            logger.warning(f"Background image {bg_image} not found, using black background for section {i+1}")
+                            # Create a black background as fallback
+                            fallback_bg = os.path.join(self.temp_dir, f"black_bg_{i}.png")
+                            black_img = Image.new('RGB', (1080, 1920), (0, 0, 0))
+                            black_img.save(fallback_bg)
+                            bg_image = fallback_bg
+
+                        try:
+                            # Validate the image before creating the clip
+                            img = Image.open(bg_image)
+                            img.verify()  # Verify the image is not corrupted
+                            logger.info(f"Valid background image for section {i+1}: {bg_image}")
+                        except Exception as img_error:
+                            logger.error(f"Invalid image file for section {i+1}: {img_error}")
+                            # Create a fallback colored background
+                            fallback_bg = os.path.join(self.temp_dir, f"fallback_bg_{i}.png")
+                            color_img = Image.new('RGB', (1080, 1920), (random.randint(0, 100), random.randint(0, 100), random.randint(0, 100)))
+                            color_img.save(fallback_bg)
+                            bg_image = fallback_bg
+                            logger.info(f"Created fallback background for section {i+1}")
+
                         # Create a still image clip with text overlay if captions enabled
                         if add_captions:
                             # Create still image clip with text
@@ -1030,16 +1159,88 @@ class YTShortsCreator_I:
                                 if audio.duration > duration:
                                     audio = audio.subclip(0, duration)
 
-                                # Add audio to the clip
+                                # Add audio to the clip with proper sync
+                                # Set start time to 0 to ensure it starts with the clip
+                                audio = audio.set_start(0)
                                 clip = clip.set_audio(audio)
                                 logger.info(f"Added audio to clip {i+1}")
                             except Exception as e:
                                 logger.error(f"Error adding audio to clip: {e}")
 
+                        # Make sure clip has exactly the right duration
+                        clip = clip.set_duration(duration)
+                        
+                        # Verify clip is valid
+                        logger.info(f"Created clip {i+1} with duration {clip.duration:.2f}s")
+                        video_clips.append(clip)
+                    else:
+                        # Create a solid colored background with the text as fallback
+                        logger.warning(f"No background image for section {i+1}, creating solid color clip")
+                        
+                        # Create a solid color clip
+                        bg_color = (
+                            random.randint(10, 50),  # R
+                            random.randint(10, 50),  # G
+                            random.randint(10, 50)   # B
+                        )
+                        color_clip = ColorClip(size=self.resolution, color=bg_color, duration=duration)
+                        
+                        # Get text for this card
+                        text = script_sections[i].get('text', '') if isinstance(script_sections[i], dict) else str(script_sections[i])
+                        
+                        # Create text clip
+                        text_clip = self._create_text_clip(
+                            text,
+                            duration=duration,
+                            animation="fade",
+                            with_pill=True,
+                            font_size=70,
+                            position=('center', 'center')
+                        )
+                        
+                        # Combine color and text
+                        clip = CompositeVideoClip([color_clip, text_clip], size=self.resolution)
+                        
+                        # Add audio if available
+                        if audio_path and os.path.exists(audio_path):
+                            try:
+                                audio = AudioFileClip(audio_path)
+                                if audio.duration > duration:
+                                    audio = audio.subclip(0, duration)
+                                audio = audio.set_start(0)
+                                clip = clip.set_audio(audio)
+                            except Exception as e:
+                                logger.error(f"Error adding audio to fallback clip: {e}")
+                        
+                        clip = clip.set_duration(duration)
                         video_clips.append(clip)
                 except Exception as e:
                     logger.error(f"Error processing section {i+1}: {e}")
-                    return None
+                    # Create a fallback clip with solid color
+                    logger.warning(f"Creating fallback clip for section {i+1}")
+                    fallback_clip = ColorClip(size=self.resolution, color=(30, 30, 30), duration=duration)
+                    
+                    # Add text if possible
+                    try:
+                        text = script_sections[i].get('text', '') if isinstance(script_sections[i], dict) else str(script_sections[i])
+                        text_clip = TextClip(text, font=self.body_font_path, fontsize=60, color="white", size=(self.resolution[0] - 100, None), method='caption').set_position('center').set_duration(duration)
+                        fallback_clip = CompositeVideoClip([fallback_clip, text_clip], size=self.resolution)
+                    except Exception as text_error:
+                        logger.error(f"Failed to add text to fallback clip: {text_error}")
+                    
+                    # Add audio if available
+                    if audio_path and os.path.exists(audio_path):
+                        try:
+                            audio = AudioFileClip(audio_path)
+                            if audio.duration > duration:
+                                audio = audio.subclip(0, duration)
+                            audio = audio.set_start(0)
+                            fallback_clip = fallback_clip.set_audio(audio)
+                        except Exception as audio_error:
+                            logger.error(f"Failed to add audio to fallback clip: {audio_error}")
+                    
+                    fallback_clip = fallback_clip.set_duration(duration)
+                    video_clips.append(fallback_clip)
 
             # 4. Concatenate all clips
             if video_clips:
@@ -1058,7 +1259,24 @@ class YTShortsCreator_I:
                             duration=video_clips[i].duration
                         )
 
-                final_clip = self._safely_create_composite(video_clips, duration=total_duration)
+                # IMPORTANT: Make sure the final clips are in the correct order
+                logger.info("Ensuring clips are in correct order")
+                
+                # Concatenate clips in order with proper audio handling
+                try:
+                    # Use concatenate_videoclips with method="compose" for better audio handling
+                    final_clip = concatenate_videoclips(video_clips, method="compose")
+                    
+                    # Verify the total duration matches our expectation
+                    logger.info(f"Final clip duration: {final_clip.duration:.2f}s, Expected: {total_duration:.2f}s")
+                    
+                    if abs(final_clip.duration - total_duration) > 1.0:
+                        logger.warning(f"Duration mismatch! Expected {total_duration:.2f}s but got {final_clip.duration:.2f}s")
+                except Exception as e:
+                    logger.error(f"Error concatenating clips: {e}")
+                    # Fallback to safer compositing method if concatenation fails
+                    logger.info("Falling back to safer composite method")
+                    final_clip = self._safely_create_composite(video_clips, duration=total_duration)
 
                 # Export the final video
                 logger.info(f"Writing video to {output_path}")
@@ -1094,9 +1312,16 @@ class YTShortsCreator_I:
                     audio_codec='aac',
                     temp_audiofile=os.path.join(self.temp_dir, "temp_audio.m4a"),
                     remove_temp=True,
-                    threads=8,  # Increase threads for parallel rendering
+                    threads=max(4, min(8, os.cpu_count() or 4)),  # Use optimal thread count based on CPU
                     preset='ultrafast',  # Use faster preset for quicker rendering
-                    logger=None        # Disable MoviePy's default logger
+                    ffmpeg_params=[
+                        "-pix_fmt", "yuv420p",  # For compatibility with all players
+                        "-profile:v", "main",   # Better compatibility with mobile devices
+                        "-crf", "28",           # Higher compression to save space and improve render speed
+                        "-maxrate", "2M",       # Limit bitrate for more efficient compression
+                        "-bufsize", "4M"        # Buffer size
+                    ],
+                    logger="bar"  # Enable progress bar
                 )
 
                 # Clean up

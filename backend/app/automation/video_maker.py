@@ -1297,7 +1297,7 @@ class YTShortsCreator_V:
                             "-maxrate", "2M",       # Reduced bitrate to save memory
                             "-bufsize", "4M"        # Reduced buffer size
                         ],
-                        logger=None,        # Disable MoviePy's default logger
+                        logger="bar",        # Enable progress bar
                         callback=write_progress  # Use our custom progress function
                     )
                 finally:
