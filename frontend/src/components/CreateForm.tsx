@@ -54,6 +54,7 @@ const CreateForm = () => {
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   const [activeStep, setActiveStep] = useState(1);
   const [announcement, setAnnouncement] = useState<string>("");
+  const [isCustomPrompt, setIsCustomPrompt] = useState(false);
 
   const stepRefs = {
     step1: useRef<HTMLDivElement>(null),
@@ -130,12 +131,52 @@ const CreateForm = () => {
   }, [formSteps, activeStep]);
 
   const handlePromptChange = (value: string) => {
+    // Detect if this is likely a custom prompt (not matching any predefined ones)
+    const isPredefined = predefinedPrompts.some(p => p.prompt === value);
+    setIsCustomPrompt(!isPredefined);
+    
     setPrompt(value);
     // Immediately check if this step is now complete
     if (value) {
       setAnnouncement(`Step 1 completed: Content`);
     }
   };
+
+  // Predefined prompts for checking (same as in PromptSelector)
+  const predefinedPrompts = [
+    {
+      id: 1,
+      title: "Latest AI News",
+      prompt:
+        "Create a short about the most recent developments in artificial intelligence",
+    },
+    {
+      id: 2,
+      title: "Tech Gadget Review",
+      prompt:
+        "Review the latest smartphone features in a compelling short format",
+    },
+    {
+      id: 3,
+      title: "Coding Tips",
+      prompt: "Share 3 essential coding tips for beginners in a brief tutorial",
+    },
+    {
+      id: 4,
+      title: "Daily Motivation",
+      prompt: "Create an inspirational short about overcoming challenges",
+    },
+    {
+      id: 5,
+      title: "Productivity Hack",
+      prompt: "Explain a time-saving productivity technique in under 60 seconds",
+    },
+    {
+      id: 6,
+      title: "Life Hack",
+      prompt: "Demonstrate a clever everyday life hack that saves time or money",
+    },
+  ];
 
   const handleDurationChange = (value: number) => {
     setDuration(value);
@@ -225,6 +266,13 @@ const CreateForm = () => {
     // Check all steps are complete before proceeding
     if (!isStepComplete(1)) {
       toast.error("Please select or write a prompt");
+      goToStep(1);
+      return;
+    }
+
+    // Special check for custom prompt that might be empty
+    if (isCustomPrompt && (!prompt.trim() || prompt.trim().length < 3)) {
+      toast.error("Please enter your custom prompt before proceeding");
       goToStep(1);
       return;
     }
@@ -475,70 +523,83 @@ const CreateForm = () => {
       </div>
 
       <div className="space-y-8 pb-20">
-        <StepCard
-          ref={stepRefs.step1}
-          step={1}
-          title="Choose Your Content"
-          description="Select a template or write your own prompt"
-          isActive={activeStep === 1}
-          isCompleted={isStepComplete(1)}
-          onClick={() => goToStep(1)}
-          className="cursor-pointer transition-all duration-300"
-          aria-label={`Step 1: Choose Your Content ${
-            isStepComplete(1) ? "(Completed)" : ""
-          }`}
-        >
-          <PromptSelector
-            selectedPrompt={prompt}
-            onPromptChange={(value) => {
-              handlePromptChange(value);
-            }}
-          />
-        </StepCard>
+        {/* Apply CSS transitions for smoother step transitions */}
+        <div className="transition-all duration-300">
+          <StepCard
+            ref={stepRefs.step1}
+            step={1}
+            title="Choose Your Content"
+            description="Select a template or write your own prompt"
+            isActive={activeStep === 1}
+            isCompleted={isStepComplete(1)}
+            onClick={() => goToStep(1)}
+            className={`cursor-pointer transition-all duration-300 ${
+              activeStep !== 1 ? 'opacity-70 hover:opacity-100' : ''
+            }`}
+            aria-label={`Step 1: Choose Your Content ${
+              isStepComplete(1) ? "(Completed)" : ""
+            }`}
+          >
+            <PromptSelector
+              selectedPrompt={prompt}
+              onPromptChange={(value) => {
+                handlePromptChange(value);
+              }}
+            />
+          </StepCard>
+        </div>
 
-        <StepCard
-          ref={stepRefs.step2}
-          step={2}
-          title="Set Duration"
-          description="Choose the length of your Short"
-          isActive={activeStep === 2}
-          isCompleted={isStepComplete(2)}
-          onClick={() => goToStep(2)}
-          className="cursor-pointer transition-all duration-300"
-          aria-label={`Step 2: Set Duration ${
-            isStepComplete(2) ? "(Completed)" : ""
-          }`}
-        >
-          <DurationSlider
-            selectedDuration={duration}
-            onDurationChange={(value) => {
-              handleDurationChange(value);
-            }}
-          />
-        </StepCard>
+        <div className="transition-all duration-300">
+          <StepCard
+            ref={stepRefs.step2}
+            step={2}
+            title="Set Duration"
+            description="Choose the length of your Short"
+            isActive={activeStep === 2}
+            isCompleted={isStepComplete(2)}
+            onClick={() => goToStep(2)}
+            className={`cursor-pointer transition-all duration-300 ${
+              activeStep !== 2 ? 'opacity-70 hover:opacity-100' : ''
+            }`}
+            aria-label={`Step 2: Set Duration ${
+              isStepComplete(2) ? "(Completed)" : ""
+            }`}
+          >
+            <DurationSlider
+              selectedDuration={duration}
+              onDurationChange={(value) => {
+                handleDurationChange(value);
+              }}
+            />
+          </StepCard>
+        </div>
 
-        <StepCard
-          ref={stepRefs.step3}
-          step={3}
-          title="Choose Background"
-          description="Select your video or image background"
-          isActive={activeStep === 3}
-          isCompleted={isStepComplete(3)}
-          onClick={() => goToStep(3)}
-          className="cursor-pointer transition-all duration-300"
-          aria-label={`Step 3: Choose Background ${
-            isStepComplete(3) ? "(Completed)" : ""
-          }`}
-        >
-          <BackgroundSelector
-            selectedType={backgroundType}
-            selectedSource={backgroundSource}
-            customFile={backgroundFile}
-            onTypeChange={handleBackgroundTypeChange}
-            onSourceChange={handleBackgroundSourceChange}
-            onFileChange={handleBackgroundFileChange}
-          />
-        </StepCard>
+        <div className="transition-all duration-300">
+          <StepCard
+            ref={stepRefs.step3}
+            step={3}
+            title="Choose Background"
+            description="Select your video or image background"
+            isActive={activeStep === 3}
+            isCompleted={isStepComplete(3)}
+            onClick={() => goToStep(3)}
+            className={`cursor-pointer transition-all duration-300 ${
+              activeStep !== 3 ? 'opacity-70 hover:opacity-100' : ''
+            }`}
+            aria-label={`Step 3: Choose Background ${
+              isStepComplete(3) ? "(Completed)" : ""
+            }`}
+          >
+            <BackgroundSelector
+              selectedType={backgroundType}
+              selectedSource={backgroundSource}
+              customFile={backgroundFile}
+              onTypeChange={handleBackgroundTypeChange}
+              onSourceChange={handleBackgroundSourceChange}
+              onFileChange={handleBackgroundFileChange}
+            />
+          </StepCard>
+        </div>
       </div>
 
       <div className="sticky-bottom pt-6 pb-2 bg-gradient-to-t from-background via-background to-transparent">

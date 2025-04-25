@@ -59,8 +59,16 @@ const PromptSelector = ({
   useEffect(() => {
     if (!selectedPrompt && !isCustom) {
       onPromptChange(predefinedPrompts[0].prompt);
+      return;
     }
-  }, []);
+
+    const isPredefined = predefinedPrompts.some(p => p.prompt === selectedPrompt);
+    
+    if (selectedPrompt && !isPredefined) {
+      setIsCustom(true);
+      setCustomPrompt(selectedPrompt);
+    }
+  }, [selectedPrompt, isCustom]);
 
   const handlePredefinedPromptSelect = (prompt: string) => {
     onPromptChange(prompt);
@@ -81,8 +89,7 @@ const PromptSelector = ({
     if (customPrompt) {
       onPromptChange(customPrompt);
     } else {
-      setCustomPrompt("");
-      onPromptChange("");
+      setCustomPrompt(selectedPrompt || "");
     }
   };
 
