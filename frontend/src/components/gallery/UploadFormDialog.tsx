@@ -99,19 +99,36 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
       <div className="bg-card max-w-md w-full p-4 sm:p-6 rounded-2xl shadow-xl animate-scale-in border border-border my-4 sm:my-0">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-semibold">Upload to YouTube</h3>
-          <button 
+          <button
             onClick={onClose}
             className="p-1 rounded-full hover:bg-foreground/10"
             aria-label="Close"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </button>
         </div>
 
-        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1" style={{ scrollbarWidth: "thin" }}>
+        <div
+          className="space-y-6 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1"
+          style={{
+            scrollbarGutter: "stable",
+            paddingRight: "16px",
+            marginRight: "-4px",
+          }}
+        >
           {youtubeChannels.length > 1 && (
             <div>
               <label className="text-sm font-medium block mb-1">
@@ -120,7 +137,7 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
               <select
                 value={selectedChannel}
                 onChange={handleChannelChange}
-                className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+                className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none custom-scrollbar"
               >
                 {youtubeChannels.map((channel) => (
                   <option key={channel.id} value={channel.id}>
@@ -169,7 +186,7 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
                   description: e.target.value,
                 })
               }
-              className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+              className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none custom-scrollbar resize-y min-h-[80px]"
               rows={3}
             />
           </div>
@@ -258,7 +275,8 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
                 <p>
                   YouTube requires your channel to be verified with at least
                   Intermediate level features to use custom thumbnails. Without
-                  verification, YouTube will use a frame from your video instead.
+                  verification, YouTube will use a frame from your video
+                  instead.
                 </p>
               </div>
             )}

@@ -189,6 +189,33 @@
   .step-card:focus-visible {
     @apply ring-2 ring-[#E0115F] ring-opacity-50 scale-[1.01];
   }
+
+  .custom-scrollbar {
+    /* For Webkit browsers (Chrome, Safari) */
+    &::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+      border-radius: 100vh;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: hsl(var(--muted-foreground) / 0.3);
+      border-radius: 100vh;
+      transition: background-color 0.2s ease;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: hsl(var(--muted-foreground) / 0.5);
+    }
+
+    /* For Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
 }
 
 @layer components {
