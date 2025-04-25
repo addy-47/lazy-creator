@@ -1095,8 +1095,7 @@ class YTShortsCreator_I:
                     temp_audiofile=os.path.join(self.temp_dir, "temp_audio.m4a"),
                     remove_temp=True,
                     threads=8,  # Increase threads for parallel rendering
-                    preset='faster',  # Use faster preset for quicker rendering
-                    progress_bar=False,  # Disable MoviePy's default progress bar
+                    preset='ultrafast',  # Use faster preset for quicker rendering
                     logger=None,        # Disable MoviePy's default logger
                     callback=write_progress  # Use our custom progress function
                 )

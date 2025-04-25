@@ -14,7 +14,7 @@ const predefinedPrompts = [
     id: 1,
     title: "Latest AI News",
     prompt:
-      "Create a short about the most recent developments in artificial intelligence",
+      "Create a short about the latest developments in AI technology",
   },
   {
     id: 2,
@@ -67,9 +67,9 @@ const PromptSelector = ({
 
   // Effect to initialize the form on first load and handle selecting a predefined prompt
   useEffect(() => {
-    // Check if we're first loading with no prompt selected
+    // Check if we're first loading with no prompt selected and not in custom mode
     if (!selectedPrompt && !isCustom) {
-      // Set to the first predefined prompt by default
+      // Set to the first predefined prompt by default only if not in custom mode
       onPromptChange(predefinedPrompts[0].prompt);
       return;
     }
@@ -79,9 +79,12 @@ const PromptSelector = ({
       p => p.prompt === selectedPrompt
     );
 
-    // If we're in custom mode, update the custom prompt text field
+    // If we're in custom mode, update the custom prompt text field with existing value, if any
     if (isCustom) {
-      setCustomPrompt(selectedPrompt || "");
+      // Only set customPrompt if it's not being toggled to empty state
+      if (selectedPrompt && selectedPrompt !== "") {
+        setCustomPrompt(selectedPrompt);
+      }
     }
     // If we've got a predefined prompt selected, make sure we're not in custom mode
     else if (matchingPredefinedPrompt) {
@@ -111,10 +114,9 @@ const PromptSelector = ({
     // Always set to custom mode when toggling
     setIsCustom(true);
     
-    // If the custom prompt field isn't empty, use its value
-    if (customPrompt) {
-      onPromptChange(customPrompt);
-    }
+    // Always clear the custom prompt when switching to custom mode
+    setCustomPrompt("");
+    onPromptChange("");
   };
 
   return (
@@ -157,7 +159,7 @@ const PromptSelector = ({
           <Textarea
             id="custom-prompt"
             className="w-full p-3 min-h-[120px] rounded-lg resize-none focus:ring-2 focus:ring-primary/50"
-            placeholder="Be specific about what you want in your YouTube Short..."
+            placeholder="Write your custom prompt here..."
             value={customPrompt}
             onChange={handleCustomPromptChange}
             autoFocus

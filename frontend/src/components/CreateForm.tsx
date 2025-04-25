@@ -136,7 +136,7 @@ const CreateForm = () => {
       id: 1,
       title: "Latest AI News",
       prompt:
-        "Create a short about the most recent developments in artificial intelligence",
+        "Create a short about the latest developments in AI technology",
     },
     {
       id: 2,
@@ -169,6 +169,11 @@ const CreateForm = () => {
   // Handle custom prompt state change from PromptSelector
   const handleCustomPromptStateChange = (isCustom: boolean) => {
     setIsCustomPrompt(isCustom);
+    
+    // If switching to custom mode, stay on step 1
+    if (isCustom) {
+      setActiveStep(1);
+    }
   };
 
   const handlePromptChange = (value: string) => {

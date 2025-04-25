@@ -107,7 +107,7 @@ except Exception as e:
     logger.warning(f"Error setting up dill: {e}")
     USING_DILL = False
 
-def render_clip_segment(clip, output_path, fps=30, preset="veryfast", threads=2, show_progress=True):
+def render_clip_segment(clip, output_path, fps=30, preset="ultrafast", threads=2, show_progress=True):
     """
     Render a single clip segment to a file.
 
