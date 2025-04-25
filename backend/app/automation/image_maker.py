@@ -1096,8 +1096,7 @@ class YTShortsCreator_I:
                     remove_temp=True,
                     threads=8,  # Increase threads for parallel rendering
                     preset='ultrafast',  # Use faster preset for quicker rendering
-                    logger=None,        # Disable MoviePy's default logger
-                    progress_bar=False  # Disable progress bar (we track progress elsewhere)
+                    logger=None        # Disable MoviePy's default logger
                 )
 
                 # Clean up
