@@ -22,7 +22,8 @@ import tempfile # for creating temporary files
 from .video_maker import YTShortsCreator_V
 from datetime import datetime # for more detailed time tracking
 import re # for regular expressions
-from typing import List, Optional, Union, Enum
+from typing import List, Optional, Union
+from enum import Enum
 
 # Define VideoStyles enum for caption styling options
 class VideoStyles(Enum):
