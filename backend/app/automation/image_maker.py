@@ -19,10 +19,9 @@ from dotenv import load_dotenv
 import shutil # for file operations like moving and deleting files
 import tempfile # for creating temporary files
 # Import text clip functions from shorts_maker_V
-from shorts_maker_V import YTShortsCreator_V
+from video_maker import YTShortsCreator_V
 from datetime import datetime # for more detailed time tracking
 import concurrent.futures # for multithreading
-
 # Configure logging for easier debugging
 # Do NOT initialize basicConfig here - this will be handled by main.py
 logger = logging.getLogger(__name__)
