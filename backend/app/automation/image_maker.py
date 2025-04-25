@@ -583,7 +583,7 @@ class YTShortsCreator_I:
 
             # Set position to top right with some padding
             padding = 20
-            txt_clip = txt_clip.set_position((('right', padding), ('top', padding)))
+            txt_clip = txt_clip.set_position(('right', 'top'))
             txt_clip = txt_clip.set_opacity(self.watermark_opacity)
             txt_clip = txt_clip.set_duration(duration)
 
