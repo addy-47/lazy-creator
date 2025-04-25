@@ -454,3 +454,32 @@ Future Updates:
 1. add payment Integration with freemium plans
 2. the utimate sloth mode (auto everything)
 3. improve custom_maker
+4. "We have an application that generates videos using a multi-step process (content generation,
+script parsing, media rendering, etc.). Currently, the system handles video generation sequentially
+and updates the UI with approximated remaining time values. We need recommendations to handle edge cases
+and scalability for up to 1000 concurrent users without changing the core functionality or the UI.
+
+Please provide guidance and example implementations for the following enhancements:
+
+Queue System:
+
+Propose a job queue mechanism (e.g. using Celery or another Node/Python queue) to process video generation
+tasks asynchronously.
+Explain how to decouple API request handling from background processing to avoid blocking and timeouts.
+Redis Integration:
+
+Suggest how to integrate Redis for task queuing, caching progress, and managing state across distributed workers.
+Describe using Redis pub/sub or message brokers to inform the frontend about progress updates (like dynamic remaining time).
+Edge Case Handling & Scalability:
+
+Identify potential edge cases (e.g., tasks failing mid-process, long-running tasks, queue congestion)
+and provide mitigation strategies.
+Outline how to scale the system horizontally (e.g., using container orchestration) and monitor worker performance.
+Provide ideas on dynamically calculating and displaying remaining processing time more accurately based on real-time
+metrics without modifying existing UI components.
+Ensure all recommendations improve the robustness, fault tolerance, and performance under high load while
+ preserving the core functionalities.
+Please include example code snippets, potential Redis and queue configuration settings, and any best practices that could be applied in
+both the backend and frontend without altering the user interface."
+
+5.improve the remaining time in processing page to be realtime
