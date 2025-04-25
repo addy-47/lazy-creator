@@ -67,11 +67,11 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
 
   return (
     <div
-      className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50"
+      className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="bg-card w-full max-w-2xl p-5 rounded-2xl shadow-xl animate-scale-in border border-border flex flex-col relative max-h-[85vh] overflow-hidden"
+        className="bg-card w-full max-w-2xl p-3 sm:p-5 rounded-2xl shadow-xl animate-scale-in border border-border flex flex-col relative max-h-[95vh] sm:max-h-[85vh] my-4 sm:my-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -83,9 +83,9 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
           <X size={20} />
         </button>
 
-        <div className="flex flex-col md:flex-row gap-4 overflow-hidden p-1 h-full">
-          {/* Video container */}
-          <div className="w-full md:w-[45%] aspect-[9/16] bg-black rounded-xl overflow-hidden shrink-0">
+        <div className="flex flex-col md:flex-row gap-4 overflow-auto p-1 max-h-full">
+          {/* Video container - adjusted for better mobile display */}
+          <div className="w-full md:w-[45%] aspect-[9/16] bg-black rounded-xl overflow-hidden shrink-0 mx-auto md:mx-0" style={{ maxHeight: "70vh" }}>
             <video
               src={videoUrl}
               className="w-full h-full object-contain"
@@ -95,11 +95,11 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
             />
           </div>
 
-          {/* Info and buttons */}
+          {/* Info and buttons - with better scaling for small screens */}
           <div className="w-full flex flex-col overflow-hidden">
             <div
-              className="overflow-y-auto pr-2 flex-grow"
-              style={{ scrollbarWidth: "thin" }}
+              className="overflow-y-auto pr-2 flex-grow" 
+              style={{ scrollbarWidth: "thin", maxHeight: "calc(70vh - 100px)" }}
             >
               <h3 className="text-lg font-semibold mb-2">{title}</h3>
 
@@ -159,7 +159,8 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
               ) : null}
             </div>
 
-            <div className="space-y-3 pt-3 border-t border-border mt-3">
+            {/* Action buttons - better spacing for small screens */}
+            <div className="space-y-2 pt-3 border-t border-border mt-auto">
               <div className="w-full">
                 <button
                   onClick={() => onDownload(video.id)}

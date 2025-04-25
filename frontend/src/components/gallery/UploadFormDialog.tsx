@@ -95,20 +95,32 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-card max-w-md w-full p-6 rounded-2xl shadow-xl animate-scale-in border border-border">
-        <h3 className="text-xl font-semibold mb-6">Upload to YouTube</h3>
+    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-card max-w-md w-full p-4 sm:p-6 rounded-2xl shadow-xl animate-scale-in border border-border my-4 sm:my-0">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold">Upload to YouTube</h3>
+          <button 
+            onClick={onClose}
+            className="p-1 rounded-full hover:bg-foreground/10"
+            aria-label="Close"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
 
-        <div className="space-y-5">
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1" style={{ scrollbarWidth: "thin" }}>
           {youtubeChannels.length > 1 && (
             <div>
-              <label className="text-sm font-medium block mb-2">
+              <label className="text-sm font-medium block mb-1">
                 YouTube Channel
               </label>
               <select
                 value={selectedChannel}
                 onChange={handleChannelChange}
-                className="w-full p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+                className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
               >
                 {youtubeChannels.map((channel) => (
                   <option key={channel.id} value={channel.id}>
@@ -120,7 +132,7 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
           )}
 
           <div>
-            <div className="flex justify-between items-center mb-2">
+            <div className="flex justify-between items-center mb-1">
               <label className="text-sm font-medium">Title</label>
               {generatedContent?.title && (
                 <button
@@ -141,12 +153,12 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
                   title: e.target.value,
                 })
               }
-              className="w-full p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+              className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
             />
           </div>
 
           <div>
-            <label className="text-sm font-medium block mb-2">
+            <label className="text-sm font-medium block mb-1">
               Description
             </label>
             <textarea
@@ -157,13 +169,13 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
                   description: e.target.value,
                 })
               }
-              className="w-full p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
-              rows={4}
+              className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+              rows={3}
             />
           </div>
 
           <div>
-            <label className="text-sm font-medium block mb-2">
+            <label className="text-sm font-medium block mb-1">
               Tags (comma separated)
             </label>
             <input
@@ -175,56 +187,56 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
                   tags: e.target.value,
                 })
               }
-              className="w-full p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+              className="w-full p-2 sm:p-3 rounded-lg bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
             />
           </div>
 
           <div>
-            <label className="text-sm font-medium block mb-2">
+            <label className="text-sm font-medium block mb-1">
               Privacy Settings
             </label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => handlePrivacyChange("public")}
-                className={`p-3 rounded-lg flex flex-col items-center gap-1 border ${
+                className={`p-2 sm:p-3 rounded-lg flex flex-col items-center gap-1 border ${
                   uploadData.privacyStatus === "public"
                     ? "border-primary bg-primary/10"
                     : "border-input bg-background"
                 }`}
               >
-                <Globe size={18} />
+                <Globe size={16} />
                 <span className="text-xs">Public</span>
               </button>
               <button
                 type="button"
                 onClick={() => handlePrivacyChange("unlisted")}
-                className={`p-3 rounded-lg flex flex-col items-center gap-1 border ${
+                className={`p-2 sm:p-3 rounded-lg flex flex-col items-center gap-1 border ${
                   uploadData.privacyStatus === "unlisted"
                     ? "border-primary bg-primary/10"
                     : "border-input bg-background"
                 }`}
               >
-                <EyeOff size={18} />
+                <EyeOff size={16} />
                 <span className="text-xs">Unlisted</span>
               </button>
               <button
                 type="button"
                 onClick={() => handlePrivacyChange("private")}
-                className={`p-3 rounded-lg flex flex-col items-center gap-1 border ${
+                className={`p-2 sm:p-3 rounded-lg flex flex-col items-center gap-1 border ${
                   uploadData.privacyStatus === "private"
                     ? "border-primary bg-primary/10"
                     : "border-input bg-background"
                 }`}
               >
-                <Lock size={18} />
+                <Lock size={16} />
                 <span className="text-xs">Private</span>
               </button>
             </div>
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-1">
               <label className="text-sm font-medium">Thumbnail</label>
               <button
                 type="button"
@@ -239,15 +251,14 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
             </div>
 
             {showVerificationWarning && (
-              <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-xs p-3 rounded-lg mb-3">
+              <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-xs p-3 rounded-lg mb-2">
                 <p className="font-medium mb-1">
                   Channel Verification Required
                 </p>
                 <p>
                   YouTube requires your channel to be verified with at least
                   Intermediate level features to use custom thumbnails. Without
-                  verification, YouTube will use a frame from your video
-                  instead.
+                  verification, YouTube will use a frame from your video instead.
                 </p>
               </div>
             )}
@@ -266,15 +277,15 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
                   className="accent-primary"
                 />
                 <span className="text-sm">Use AI-generated thumbnail</span>
-                {generatedContent?.thumbnail_hf_prompt && (
-                  <span
-                    className="text-xs text-muted-foreground italic truncate max-w-[200px]"
-                    title={generatedContent.thumbnail_hf_prompt}
-                  >
-                    {generatedContent.thumbnail_hf_prompt}
-                  </span>
-                )}
               </label>
+              {generatedContent?.thumbnail_hf_prompt && (
+                <span
+                  className="text-xs text-muted-foreground italic truncate pl-5 -mt-1"
+                  title={generatedContent.thumbnail_hf_prompt}
+                >
+                  {generatedContent.thumbnail_hf_prompt}
+                </span>
+              )}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="radio"
@@ -295,7 +306,7 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-3 mt-8">
+        <div className="flex flex-wrap justify-end gap-3 mt-6">
           <Button variant="outline" onClick={onClose} className="rounded-full">
             Cancel
           </Button>

@@ -84,7 +84,7 @@ const CreateForm = () => {
   const isStepComplete = (step: number): boolean => {
     switch (step) {
       case 1:
-        return !!prompt;
+        return !!prompt && prompt.trim().length > 0;
       case 2:
         return duration >= 10 && duration <= 60; // Changed from 15 to 10
       case 3:

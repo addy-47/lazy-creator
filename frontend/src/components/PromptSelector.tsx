@@ -76,12 +76,13 @@ const PromptSelector = ({
   };
 
   const toggleCustomPrompt = () => {
-    if (!isCustom) {
-      setIsCustom(true);
-      if (!customPrompt) {
-        setCustomPrompt("");
-        onPromptChange("");
-      }
+    setIsCustom(true);
+    
+    if (customPrompt) {
+      onPromptChange(customPrompt);
+    } else {
+      setCustomPrompt("");
+      onPromptChange("");
     }
   };
 
