@@ -22,7 +22,16 @@ import tempfile # for creating temporary files
 from .video_maker import YTShortsCreator_V
 from datetime import datetime # for more detailed time tracking
 import re # for regular expressions
-from typing import List
+from typing import List, Optional, Union, Enum
+
+# Define VideoStyles enum for caption styling options
+class VideoStyles(Enum):
+    DEFAULT = "default"
+    MODERN = "modern"
+    MINIMAL = "minimal"
+    BOLD = "bold"
+    SUBTLE = "subtle"
+    NONE = "none"
 
 # Configure logging for easier debugging
 # Do NOT initialize basicConfig here - this will be handled by main.py
