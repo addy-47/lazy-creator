@@ -965,14 +965,50 @@ def youtube_auth_callback_new():
             error_msg = "Missing code or state parameter"
             logger.error(f"Auth callback error: {error_msg}")
 
-        # Get the frontend URL from environment
-        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
+            # Get the frontend URL from environment
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
 
+            # If no redirect_uri is provided, use default
+            if not redirect_uri:
+                redirect_uri = f"{frontend_url}/youtube-auth-success"
+
+            return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
+        
+        # Process the successful authentication
+        # Decode the state parameter to get the user ID
+        user_id = decode_state_param(state)
+        if not user_id:
+            error_msg = "Invalid state parameter"
+            logger.error(f"Auth callback error: {error_msg}")
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
+            if not redirect_uri:
+                redirect_uri = f"{frontend_url}/youtube-auth-success"
+            return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
+        
+        # Exchange the authorization code for credentials
+        logger.info(f"Exchanging code for credentials for user {user_id}")
+        credentials = get_credentials_from_code(code, state, redirect_uri)
+        
+        logger.info(f"YouTube auth successful for user {user_id}")
+        
         # If no redirect_uri is provided, use default
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
         if not redirect_uri:
             redirect_uri = f"{frontend_url}/youtube-auth-success"
-
-        return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
+            
+        # Generate a new token for the user to ensure session is valid
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        if user:
+            token = jwt.encode({
+                'user_id': str(user['_id']),
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
+            }, os.getenv('SECRET_KEY', 'dev_key'))
+            
+            # Add token to the redirect URL
+            return redirect(f"{redirect_uri}?youtube_auth=success&token={token}")
+        
+        # If we can't generate a token, just redirect with success
+        return redirect(f"{redirect_uri}?youtube_auth=success")
 
     except Exception as e:
         logger.error(f"Error in YouTube auth callback: {e}")

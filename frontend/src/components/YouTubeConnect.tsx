@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Info,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/Button";
 import { motion } from "framer-motion";
@@ -375,158 +376,191 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
     checkConnectionStatus();
   };
 
-  // Render the component
-  if (loadingStatus) {
-    return (
-      <div className="p-4 text-center">
-        <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
-        <p>Checking YouTube connection...</p>
-      </div>
-    );
-  }
-
-  if (isConnected) {
-    console.log("Rendering connected state, channels:", channels);
-    return (
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-4 text-green-500">
-          <Youtube size={20} />
-          <span className="font-medium">
-            Your YouTube account is connected!
-          </span>
+  // Modified render method with modal wrapper
+  // Wrap the entire component in a modal dialog
+  if (!visible) return null;
+  
+  // Content based on loading/connection state
+  const renderContent = () => {
+    if (loadingStatus) {
+      return (
+        <div className="p-6 text-center">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3" />
+          <p className="text-foreground">Checking YouTube connection...</p>
         </div>
+      );
+    }
 
-        {loadingChannels ? (
-          <div className="mt-4 p-4 text-center">
-            <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">Loading channels...</p>
+    if (isConnected) {
+      console.log("Rendering connected state, channels:", channels);
+      return (
+        <div className="p-6">
+          <div className="flex items-center gap-2 mb-4 text-green-500">
+            <Youtube size={20} />
+            <span className="font-medium">
+              Your YouTube account is connected!
+            </span>
           </div>
-        ) : channels.length > 0 ? (
-          <div className="mt-4">
-            <h3 className="text-sm font-semibold mb-2 flex items-center">
-              <span>Your YouTube Channels</span>
-              {channels.length > 1 && (
-                <span className="ml-2 text-xs text-muted-foreground">
-                  (Click to switch)
-                </span>
-              )}
-            </h3>
-            <ul className="space-y-2 rounded-lg overflow-hidden border border-border">
-              {channels.map((channel) => (
-                <motion.li
-                  key={channel.id}
-                  className={`flex items-center gap-2 p-3 rounded-md cursor-pointer transition-colors
-                    ${
-                      selectedChannel?.id === channel.id
-                        ? "bg-primary-foreground/10 border-l-2 border-primary"
-                        : "bg-background/30 hover:bg-primary-foreground/5"
-                    }`}
-                  onClick={() => handleChannelSelect(channel)}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="flex-shrink-0">
-                    {channel.thumbnailUrl ? (
-                      <img
-                        src={channel.thumbnailUrl}
-                        alt={channel.title}
-                        className="w-10 h-10 rounded-full border border-border"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Youtube size={16} className="text-primary" />
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="flex-grow min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium truncate">
-                        {channel.title}
-                      </p>
-                      {selectedChannel?.id === channel.id && (
-                        <CheckCircle2
-                          size={16}
-                          className="text-primary flex-shrink-0 ml-2"
-                        />
-                      )}
-                    </div>
-                    {channel.customUrl && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        @{channel.customUrl}
-                      </p>
-                    )}
-                  </div>
-
-                  {channels.length > 1 && (
-                    <ChevronRight
-                      size={14}
-                      className={`flex-shrink-0
+          {loadingChannels ? (
+            <div className="mt-4 p-4 text-center">
+              <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Loading channels...</p>
+            </div>
+          ) : channels.length > 0 ? (
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold mb-2 flex items-center">
+                <span>Your YouTube Channels</span>
+                {channels.length > 1 && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    (Click to switch)
+                  </span>
+                )}
+              </h3>
+              <ul className="space-y-2 rounded-lg overflow-hidden border border-border">
+                {channels.map((channel) => (
+                  <motion.li
+                    key={channel.id}
+                    className={`flex items-center gap-2 p-3 rounded-md cursor-pointer transition-colors
                       ${
                         selectedChannel?.id === channel.id
-                          ? "text-primary"
-                          : "text-muted-foreground"
+                          ? "bg-primary-foreground/10 border-l-2 border-primary"
+                          : "bg-background/30 hover:bg-primary-foreground/5"
                       }`}
-                    />
-                  )}
-                </motion.li>
-              ))}
-            </ul>
+                    onClick={() => handleChannelSelect(channel)}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <div className="flex-shrink-0">
+                      {channel.thumbnailUrl ? (
+                        <img
+                          src={channel.thumbnailUrl}
+                          alt={channel.title}
+                          className="w-10 h-10 rounded-full border border-border"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                          <Youtube size={16} className="text-primary" />
+                        </div>
+                      )}
+                    </div>
 
-            {selectedChannel && (
-              <div className="mt-3 p-2 text-xs text-center text-muted-foreground">
-                Selected channel:{" "}
-                <span className="font-medium">{selectedChannel.title}</span>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="mt-4 p-3 bg-amber-100/20 border border-amber-200/30 rounded-lg text-sm">
-            <p className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-              <Info size={16} />
-              <span>
-                No YouTube channels found. Make sure you have at least one
-                channel on your YouTube account.
-              </span>
-            </p>
+                    <div className="flex-grow min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium truncate">
+                          {channel.title}
+                        </p>
+                        {selectedChannel?.id === channel.id && (
+                          <CheckCircle2
+                            size={16}
+                            className="text-primary flex-shrink-0 ml-2"
+                          />
+                        )}
+                      </div>
+                      {channel.customUrl && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          @{channel.customUrl}
+                        </p>
+                      )}
+                    </div>
+
+                    {channels.length > 1 && (
+                      <ChevronRight
+                        size={14}
+                        className={`flex-shrink-0
+                        ${
+                          selectedChannel?.id === channel.id
+                            ? "text-primary"
+                            : "text-muted-foreground"
+                        }`}
+                      />
+                    )}
+                  </motion.li>
+                ))}
+              </ul>
+
+              {selectedChannel && (
+                <div className="mt-3 p-2 text-xs text-center text-muted-foreground">
+                  Selected channel:{" "}
+                  <span className="font-medium">{selectedChannel.title}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 p-3 bg-amber-100/20 border border-amber-200/30 rounded-lg text-sm">
+              <p className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
+                <Info size={16} />
+                <span>
+                  No YouTube channels found. Make sure you have at least one
+                  channel on your YouTube account.
+                </span>
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-6">
+        {errorMessage && (
+          <div className="text-red-500 mb-4 text-sm p-3 bg-red-500/5 rounded-lg border border-red-200/20">
+            <p className="mb-2">{errorMessage}</p>
+            <Button
+              onClick={forceRefresh}
+              variant="outline"
+              className="text-xs px-2 py-1 h-auto mt-1"
+            >
+              Retry Connection Check
+            </Button>
           </div>
         )}
+
+        <Button
+          size="lg"
+          variant="outline"
+          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#800000] to-[#E0115F] hover:from-[#800000]/90 hover:to-[#E0115F]/90 text-white border-transparent"
+          onClick={connectToYouTube}
+          disabled={isConnecting}
+        >
+          {isConnecting ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <Youtube className="h-5 w-5" />
+          )}
+          <span>{isConnecting ? "Connecting..." : "Connect to YouTube"}</span>
+        </Button>
+
+        <p className="mt-4 text-xs text-muted-foreground">
+          Connect your YouTube account to upload videos directly from this app.
+        </p>
       </div>
     );
-  }
+  };
 
+  // Return the modal dialog with the content inside
   return (
-    <div className="p-4">
-      {errorMessage && (
-        <div className="text-red-500 mb-4 text-sm p-3 bg-red-500/5 rounded-lg border border-red-200/20">
-          <p className="mb-2">{errorMessage}</p>
-          <Button
-            onClick={forceRefresh}
-            variant="outline"
-            className="text-xs px-2 py-1 h-auto mt-1"
-          >
-            Retry Connection Check
-          </Button>
-        </div>
-      )}
-
-      <Button
-        size="lg"
-        variant="outline"
-        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#800000] to-[#E0115F] hover:from-[#800000]/90 hover:to-[#E0115F]/90 text-white border-transparent"
-        onClick={connectToYouTube}
-        disabled={isConnecting}
+    <div
+      className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card w-full max-w-md p-4 rounded-2xl shadow-xl animate-scale-in border border-border flex flex-col relative"
+        onClick={(e) => e.stopPropagation()}
       >
-        {isConnecting ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
-        ) : (
-          <Youtube className="h-5 w-5" />
-        )}
-        <span>{isConnecting ? "Connecting..." : "Connect to YouTube"}</span>
-      </Button>
-
-      <p className="mt-4 text-xs text-muted-foreground">
-        Connect your YouTube account to upload videos directly from this app.
-      </p>
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 p-1 rounded-full hover:bg-foreground/10 transition-colors z-10"
+          aria-label="Close dialog"
+        >
+          <X size={20} />
+        </button>
+        
+        <div className="pt-2">
+          <h2 className="text-lg font-semibold mb-2">YouTube Connection</h2>
+          {renderContent()}
+        </div>
+      </div>
     </div>
   );
 };
