@@ -97,15 +97,22 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
         if (event.data.success) {
           toast.success("Successfully connected to YouTube!");
           setIsConnected(true);
+          setErrorMessage(null); // Clear any existing error messages
           if (onConnectionChange) onConnectionChange(true);
           // Fetch channels after successful connection
           fetchChannels();
         } else {
-          toast.error(
-            "YouTube connection failed: " +
-              (event.data.error || "Unknown error")
-          );
-          setErrorMessage(event.data.error || "Failed to connect to YouTube");
+          // Only show error if there's an explicit error message
+          if (event.data.error) {
+            toast.error(
+              "YouTube connection failed: " +
+                (event.data.error || "Unknown error")
+            );
+            setErrorMessage(event.data.error || "Failed to connect to YouTube");
+          } else {
+            // If no explicit error, don't show negative message
+            toast.info("YouTube connection process was interrupted.");
+          }
         }
 
         setIsConnecting(false);
@@ -160,11 +167,19 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
           if (shouldFetchChannels && channels.length === 0) {
             fetchChannels();
           }
+        } else {
+          // Don't show an error message for not being connected initially
+          // This is an expected state - only show errors on explicit connection attempts
+          console.log("Not connected to YouTube yet");
         }
       }
     } catch (error) {
       console.error("Error checking YouTube connection:", error);
-      setErrorMessage("Failed to check YouTube connection status");
+      // Don't show error message for initial connection check
+      // Only show if this was from an explicit user action
+      if (shouldFetchChannels) {
+        setErrorMessage("Failed to check YouTube connection status");
+      }
     } finally {
       setLoadingStatus(false);
     }
@@ -282,7 +297,7 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
     if (isConnecting) return;
 
     setIsConnecting(true);
-    setErrorMessage(null);
+    setErrorMessage(null); // Clear any existing error messages
     const toastId = toast.loading("Connecting to YouTube...");
 
     try {
@@ -321,6 +336,9 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
           localStorage.setItem("youtube_auth_state", state);
         }
 
+        // Set a flag to inform the gallery component to check auth status after redirect
+        localStorage.setItem("checkYouTubeAuth", "true");
+
         // Step 2: Open auth URL in a popup window
         const authPopup = window.open(
           response.data.auth_url,
@@ -338,10 +356,7 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
 
               // Wait a moment then check auth status
               setTimeout(() => {
-                checkConnectionStatus();
-                toast.success(
-                  "YouTube authentication window closed. Checking connection status..."
-                );
+                checkConnectionStatus(true);
               }, 2000);
             }
           }, 500);
@@ -518,16 +533,18 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
         <Button
           size="lg"
           variant="outline"
-          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#800000] to-[#E0115F] hover:from-[#800000]/90 hover:to-[#E0115F]/90 text-white border-transparent"
+          className="w-full flex flex-row items-center justify-center gap-2 bg-gradient-to-r from-[#800000] to-[#E0115F] hover:from-[#800000]/90 hover:to-[#E0115F]/90 text-white border-transparent"
           onClick={connectToYouTube}
           disabled={isConnecting}
         >
-          {isConnecting ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Youtube className="h-5 w-5" />
-          )}
-          <span>{isConnecting ? "Connecting..." : "Connect to YouTube"}</span>
+          <div className="flex flex-row items-center gap-2">
+            {isConnecting ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Youtube className="h-5 w-5" />
+            )}
+            <span className="inline-block">{isConnecting ? "Connecting..." : "Connect to YouTube"}</span>
+          </div>
         </Button>
 
         <p className="mt-4 text-xs text-muted-foreground">
@@ -540,11 +557,11 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
   // Return the modal dialog with the content inside
   return (
     <div
-      className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50"
+      className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-300"
       onClick={onClose}
     >
       <div
-        className="bg-card w-full max-w-md p-4 rounded-2xl shadow-xl animate-scale-in border border-border flex flex-col relative"
+        className="bg-card w-full max-w-md p-4 rounded-2xl shadow-xl border border-border flex flex-col relative animate-in fade-in-up duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}

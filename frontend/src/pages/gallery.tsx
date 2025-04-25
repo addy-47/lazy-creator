@@ -415,15 +415,21 @@ function GalleryPage() {
       setYouTubeConnected(true);
       toast.success("Successfully connected to YouTube!");
 
-      // Update URL to remove the query parameters without refreshing
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
-
       // Get new token if provided
       const token = params.get("token");
       if (token) {
         localStorage.setItem("token", token);
+        console.log("Updated auth token from YouTube auth success");
       }
+      
+      // Fetch channels after a short delay to ensure the server has processed the auth
+      setTimeout(() => {
+        fetchYouTubeChannels();
+      }, 1000);
+
+      // Update URL to remove the query parameters without refreshing
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
     }
 
     // Check for YouTube auth error
