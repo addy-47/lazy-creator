@@ -799,7 +799,7 @@ def download_video(current_user, video_id):
 
         # Create a temporary file
         # Create directory if it doesn't exist
-        storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{user_id}')
+        storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{current_user["_id"]}')
         os.makedirs(storage_dir, exist_ok=True)
 
         # Create temp file in the specified directory
@@ -1112,7 +1112,7 @@ def upload_video_to_youtube(current_user, video_id):
         # Download the video to a temporary file
         try:
             # Create directory if it doesn't exist
-            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{user_id}')
+            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{current_user["_id"]}')
             os.makedirs(storage_dir, exist_ok=True)
 
             # Create temp file in the specified directory
@@ -1665,7 +1665,7 @@ def upload_to_youtube(current_user, video_id):
         # Download the video to a temporary file
         try:
             # Create directory if it doesn't exist
-            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{user_id}')
+            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{current_user["_id"]}')
             os.makedirs(storage_dir, exist_ok=True)
 
             # Create temp file in the specified directory

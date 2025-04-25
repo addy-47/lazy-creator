@@ -39,10 +39,21 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
   };
 
   // Generic handler for menu items to prevent triggering background elements
-  const handleItemClick = (e: React.MouseEvent, callback: Function) => {
+  const handleItemClick = (e: React.MouseEvent, callback: Function, closeMenu: boolean = false) => {
     e.stopPropagation();
     e.preventDefault();
+    
+    // First call the callback
     callback();
+    
+    // Close the dropdown menu if requested
+    if (closeMenu) {
+      // Find and click the trigger button to close the menu
+      const triggerButton = document.querySelector('[data-state="open"]');
+      if (triggerButton instanceof HTMLElement) {
+        triggerButton.click();
+      }
+    }
   };
 
   // Stop propagation for mouse events
@@ -64,6 +75,12 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
       onOpenYouTube(youtubeId);
     } else if (isYouTubeConnected) {
       onShowUploadForm();
+      
+      // Close the menu after showing upload form
+      const triggerButton = document.querySelector('[data-state="open"]');
+      if (triggerButton instanceof HTMLElement) {
+        triggerButton.click();
+      }
     } else {
       onConnectYouTube();
     }
@@ -109,7 +126,7 @@ const VideoActionMenu: React.FC<VideoActionMenuProps> = ({
           </DropdownMenuItem>
         ) : isYouTubeConnected ? (
           <DropdownMenuItem
-            onClick={(e) => handleItemClick(e, onShowUploadForm)}
+            onClick={(e) => handleItemClick(e, onShowUploadForm, true)}
             className="cursor-pointer"
           >
             <Youtube className="mr-2 h-4 w-4" />
