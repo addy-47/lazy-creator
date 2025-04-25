@@ -48,15 +48,20 @@ interface PromptSelectorProps {
   selectedPrompt: string;
   onPromptChange: (prompt: string) => void;
   onCustomPromptStateChange?: (isCustom: boolean) => void;
+  isCustomPromptExternal?: boolean;
 }
 
 const PromptSelector = ({
   selectedPrompt,
   onPromptChange,
   onCustomPromptStateChange,
+  isCustomPromptExternal,
 }: PromptSelectorProps) => {
   const [customPrompt, setCustomPrompt] = useState("");
-  const [isCustom, setIsCustom] = useState(false);
+  const [isCustomInternal, setIsCustomInternal] = useState(false);
+  
+  // Use external custom state if provided, otherwise use internal state
+  const isCustom = isCustomPromptExternal !== undefined ? isCustomPromptExternal : isCustomInternal;
 
   // Effect to notify parent component when isCustom changes
   useEffect(() => {
@@ -79,6 +84,15 @@ const PromptSelector = ({
       p => p.prompt === selectedPrompt
     );
 
+    // If we're in custom mode and isCustomPromptExternal is true, we should preserve the custom state
+    if (isCustomPromptExternal === true) {
+      // Only set customPrompt if it's not being toggled to empty state
+      if (selectedPrompt && selectedPrompt !== "") {
+        setCustomPrompt(selectedPrompt);
+      }
+      return; // Skip the rest of the logic when externally controlled
+    }
+
     // If we're in custom mode, update the custom prompt text field with existing value, if any
     if (isCustom) {
       // Only set customPrompt if it's not being toggled to empty state
@@ -87,19 +101,23 @@ const PromptSelector = ({
       }
     }
     // If we've got a predefined prompt selected, make sure we're not in custom mode
-    else if (matchingPredefinedPrompt) {
-      setIsCustom(false);
+    else if (matchingPredefinedPrompt && isCustomPromptExternal === undefined) {
+      setIsCustomInternal(false);
     } 
     // If we have a prompt but it's not a predefined one, we must be in custom mode
-    else if (selectedPrompt) {
-      setIsCustom(true);
+    else if (selectedPrompt && isCustomPromptExternal === undefined) {
+      setIsCustomInternal(true);
       setCustomPrompt(selectedPrompt);
     }
-  }, [selectedPrompt, isCustom]);
+  }, [selectedPrompt, isCustom, isCustomPromptExternal]);
 
   const handlePredefinedPromptSelect = (prompt: string) => {
     onPromptChange(prompt);
-    setIsCustom(false);
+    if (isCustomPromptExternal === undefined) {
+      setIsCustomInternal(false);
+    } else if (onCustomPromptStateChange) {
+      onCustomPromptStateChange(false);
+    }
   };
 
   const handleCustomPromptChange = (
@@ -112,7 +130,11 @@ const PromptSelector = ({
 
   const toggleCustomPrompt = () => {
     // Always set to custom mode when toggling
-    setIsCustom(true);
+    if (isCustomPromptExternal === undefined) {
+      setIsCustomInternal(true);
+    } else if (onCustomPromptStateChange) {
+      onCustomPromptStateChange(true);
+    }
     
     // Always clear the custom prompt when switching to custom mode
     setCustomPrompt("");
@@ -160,7 +182,7 @@ const PromptSelector = ({
             id="custom-prompt"
             className="w-full p-3 min-h-[120px] rounded-lg resize-none focus:ring-2 focus:ring-primary/50"
             placeholder="Write your custom prompt here..."
-            value={customPrompt}
+            value={isCustomPromptExternal !== undefined ? selectedPrompt : customPrompt}
             onChange={handleCustomPromptChange}
             autoFocus
           />

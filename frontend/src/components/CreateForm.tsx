@@ -55,6 +55,7 @@ const CreateForm = () => {
   const [activeStep, setActiveStep] = useState(1);
   const [announcement, setAnnouncement] = useState<string>("");
   const [isCustomPrompt, setIsCustomPrompt] = useState(false);
+  const [customPromptText, setCustomPromptText] = useState("");
 
   const stepRefs = {
     step1: useRef<HTMLDivElement>(null),
@@ -183,6 +184,8 @@ const CreateForm = () => {
     const isPredefined = predefinedPrompts.some(p => p.prompt === value);
     if (!isPredefined && value.trim().length > 0) {
       setIsCustomPrompt(true);
+      // Save custom prompt text separately
+      setCustomPromptText(value);
     }
     
     // Immediately check if this step is now complete
@@ -197,6 +200,9 @@ const CreateForm = () => {
     if (value >= 10 && value <= 60) {
       setAnnouncement(`Step 2 completed: Duration`);
     }
+    
+    // When moving to step 2, make sure not to reset custom prompt state
+    // The user may return to step 1 later
   };
 
   const handleBackgroundTypeChange = (type: "image" | "video" | null) => {
@@ -554,9 +560,10 @@ const CreateForm = () => {
             }`}
           >
             <PromptSelector
-              selectedPrompt={prompt}
+              selectedPrompt={isCustomPrompt ? customPromptText : prompt}
               onPromptChange={handlePromptChange}
               onCustomPromptStateChange={handleCustomPromptStateChange}
+              isCustomPromptExternal={isCustomPrompt}
             />
           </StepCard>
         </div>
