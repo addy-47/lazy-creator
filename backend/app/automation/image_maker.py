@@ -812,7 +812,7 @@ class YTShortsCreator_I:
 
     @measure_time
     def create_youtube_short(self, title, script_sections, background_query="abstract background",
-                        output_filename=None, add_captions=False, style="photorealistic", voice_style=None, max_duration=30,
+                        output_filename=None, add_captions=False, style="ANIME", voice_style=None, max_duration=30,
                         background_queries=None, blur_background=False, edge_blur=False, add_watermark_text=None,
                         custom_background_path=None, progress_callback=None):
         """
