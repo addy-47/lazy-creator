@@ -218,7 +218,7 @@ const ProcessingPage: React.FC = () => {
         </div>
       </div>
 
-      <Navbar />
+      <Navbar disableNavigation={true} />
 
       <main className="flex-grow relative pt-24 md:pt-32 pb-16">
         <div className="container max-w-3xl mx-auto px-4 md:px-6 relative z-10">

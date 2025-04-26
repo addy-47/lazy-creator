@@ -110,6 +110,16 @@ const CreateForm = () => {
   const goToStep = (step: number) => {
     if (step === activeStep) return;
 
+    // When moving away from step 3 (background), check if the form is in a valid state
+    if (activeStep === 3 && backgroundSource === "custom" && !backgroundFile) {
+      // Only allow navigation away from step 3 when backgroundType is null (not yet selected)
+      // or when a custom background file has been uploaded
+      if (backgroundType !== null) {
+        toast.error("Please upload a background file or choose a different source");
+        return;
+      }
+    }
+
     // Set the active step immediately without transition animation
     setActiveStep(step);
     scrollToStep(stepRefs[`step${step}`].current);

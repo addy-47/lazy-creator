@@ -1,11 +1,10 @@
 import { useState, useEffect, useReducer, useCallback, useRef } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { Menu, X, Sun, Moon, LogIn, User, Youtube } from "lucide-react";
 import { Button } from "@/components/Button";
 import Logo from "./Logo";
 import { AUTH_CHANGE_EVENT } from "../App";
 import { useTheme } from "next-themes";
-import { useLocation } from "react-router-dom";
 import { setAuthToken } from "@/lib/socket";
 import axios from "axios";
 import { getAPIBaseURL } from "@/lib/socket";
@@ -13,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface NavbarProps {
   username?: string;
+  disableNavigation?: boolean;
 }
 
 // YouTube Connection Sphere component
@@ -57,7 +57,7 @@ const ConnectionSphere = ({ isConnected }: { isConnected: boolean }) => {
   );
 };
 
-const Navbar = ({ username }: NavbarProps) => {
+const Navbar = ({ username, disableNavigation }: NavbarProps) => {
   // Add forceUpdate function to force re-renders
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
@@ -331,17 +331,27 @@ const Navbar = ({ username }: NavbarProps) => {
         <div className="hidden md:flex items-center space-x-8">
           <div className="flex items-center space-x-6">
             {navItems.map((item) => (
-              <NavLink
-                key={item.name}
-                to={item.path}
-                className={({ isActive }) =>
-                  isActive
-                    ? "font-medium text-[#E0115F] dark:text-[#E0115F]"
-                    : "text-foreground/80 hover:text-foreground transition-colors"
-                }
-              >
-                {item.name}
-              </NavLink>
+              disableNavigation ? (
+                <span
+                  key={item.name}
+                  className="text-foreground/50 cursor-not-allowed"
+                  title="Navigation disabled during processing"
+                >
+                  {item.name}
+                </span>
+              ) : (
+                <NavLink
+                  key={item.name}
+                  to={item.path}
+                  className={({ isActive }) =>
+                    isActive
+                      ? "font-medium text-[#E0115F] dark:text-[#E0115F]"
+                      : "text-foreground/80 hover:text-foreground transition-colors"
+                  }
+                >
+                  {item.name}
+                </NavLink>
+              )
             ))}
           </div>
 
@@ -393,17 +403,32 @@ const Navbar = ({ username }: NavbarProps) => {
                 </div>
               </div>
             ) : (
-              <NavLink to="/auth">
-                <Button
-                  size="sm"
-                  className="bg-[#E0115F] hover:bg-[#E0115F]/90 rounded-full px-4 py-2 h-9"
-                >
-                  <div className="flex items-center space-x-2">
-                    <LogIn size={16} />
-                    <span>Sign In</span>
-                  </div>
-                </Button>
-              </NavLink>
+              disableNavigation ? (
+                <span className="cursor-not-allowed">
+                  <Button
+                    size="sm"
+                    className="bg-[#E0115F]/50 rounded-full px-4 py-2 h-9 cursor-not-allowed"
+                    disabled
+                  >
+                    <div className="flex items-center space-x-2">
+                      <LogIn size={16} />
+                      <span>Sign In</span>
+                    </div>
+                  </Button>
+                </span>
+              ) : (
+                <NavLink to="/auth">
+                  <Button
+                    size="sm"
+                    className="bg-[#E0115F] hover:bg-[#E0115F]/90 rounded-full px-4 py-2 h-9"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <LogIn size={16} />
+                      <span>Sign In</span>
+                    </div>
+                  </Button>
+                </NavLink>
+              )
             )}
           </div>
         </div>
@@ -435,20 +460,30 @@ const Navbar = ({ username }: NavbarProps) => {
         <div className="container-wide py-4 space-y-4">
           <div className="flex flex-col space-y-2">
             {navItems.map((item) => (
-              <NavLink
-                key={item.name}
-                to={item.path}
-                onClick={() => setIsMenuOpen(false)}
-                className={({ isActive }) =>
-                  `px-4 py-2 rounded-lg ${
-                    isActive
-                      ? "font-medium text-[#E0115F] dark:text-[#E0115F] bg-[#E0115F]/5 dark:bg-[#E0115F]/10"
-                      : "hover:bg-[#E0115F]/5 dark:hover:bg-gray-800/20"
-                  }`
-                }
-              >
-                {item.name}
-              </NavLink>
+              disableNavigation ? (
+                <span
+                  key={item.name}
+                  className="px-4 py-2 rounded-lg text-foreground/50 cursor-not-allowed"
+                  title="Navigation disabled during processing"
+                >
+                  {item.name}
+                </span>
+              ) : (
+                <NavLink
+                  key={item.name}
+                  to={item.path}
+                  onClick={() => setIsMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `px-4 py-2 rounded-lg ${
+                      isActive
+                        ? "font-medium text-[#E0115F] dark:text-[#E0115F] bg-[#E0115F]/5 dark:bg-[#E0115F]/10"
+                        : "hover:bg-[#E0115F]/5 dark:hover:bg-gray-800/20"
+                    }`
+                  }
+                >
+                  {item.name}
+                </NavLink>
+              )
             ))}
           </div>
 
@@ -499,16 +534,25 @@ const Navbar = ({ username }: NavbarProps) => {
                 </button>
               </>
             ) : (
-              <NavLink
-                to="/auth"
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-3 py-2"
-              >
-                <div className="flex items-center space-x-2">
-                  <LogIn className="h-5 w-5" />
-                  <span>Sign In</span>
+              disableNavigation ? (
+                <div className="flex items-center gap-3 py-2 text-foreground/50 cursor-not-allowed">
+                  <div className="flex items-center space-x-2">
+                    <LogIn className="h-5 w-5" />
+                    <span>Sign In (Disabled)</span>
+                  </div>
                 </div>
-              </NavLink>
+              ) : (
+                <NavLink
+                  to="/auth"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center gap-3 py-2"
+                >
+                  <div className="flex items-center space-x-2">
+                    <LogIn className="h-5 w-5" />
+                    <span>Sign In</span>
+                  </div>
+                </NavLink>
+              )
             )}
           </div>
         </div>
