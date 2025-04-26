@@ -508,17 +508,47 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
             # Never request abort from this callback
             return False
 
-        video_path = creator.create_youtube_short(
-            title=video_title,
-            script_sections=script_cards,
-            output_filename=output_filename,
-            max_duration=max_duration,
-            background_type=background_type,
-            background_source=background_source,
-            custom_background_path=background_path,
-            style=style,
-            progress_callback=rendering_progress_tracker
-        )
+        # Call create_youtube_short with appropriate parameters based on creator type
+        if isinstance(creator, YTShortsCreator_I):
+            # YTShortsCreator_I doesn't accept background_type or background_source parameters
+            video_path = creator.create_youtube_short(
+                title=video_title,
+                script_sections=script_cards,
+                output_filename=output_filename,
+                max_duration=max_duration,
+                background_query="abstract background",  # Default fallback query
+                custom_background_path=background_path,
+                style=style,
+                progress_callback=rendering_progress_tracker
+            )
+        elif isinstance(creator, YTShortsCreator_V) or isinstance(creator, CustomShortsCreator):
+            # These classes accept background_type parameter
+            video_path = creator.create_youtube_short(
+                title=video_title,
+                script_sections=script_cards,
+                output_filename=output_filename,
+                max_duration=max_duration,
+                background_type=background_type,
+                background_source=background_source,
+                custom_background_path=background_path,
+                style=style,
+                progress_callback=rendering_progress_tracker
+            )
+        else:
+            # Fallback, in case there's another creator type
+            logger.warning(f"Unknown creator type: {type(creator).__name__}. Attempting with standard parameters.")
+            try:
+                video_path = creator.create_youtube_short(
+                    title=video_title,
+                    script_sections=script_cards,
+                    output_filename=output_filename,
+                    max_duration=max_duration,
+                    style=style,
+                    progress_callback=rendering_progress_tracker
+                )
+            except Exception as e:
+                logger.error(f"Error calling create_youtube_short with standard parameters: {e}")
+                raise
 
         rendering_time = time.time() - rendering_start_time
         logger.info(f"Video rendering completed in {rendering_time:.1f} seconds")

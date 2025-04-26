@@ -65,7 +65,7 @@ class CustomShortsCreator:
                             script_sections,
                             background_query="abstract background",
                             output_filename=None,
-                            add_captions=True,
+                            add_captions=False,
                             style="photorealistic",
                             voice_style=None,
                             max_duration=25,
