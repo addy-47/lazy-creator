@@ -521,8 +521,8 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
                 style=style,
                 progress_callback=rendering_progress_tracker
             )
-        elif isinstance(creator, YTShortsCreator_V) or isinstance(creator, CustomShortsCreator):
-            # These classes accept background_type parameter
+        elif isinstance(creator, CustomShortsCreator):
+            # Only CustomShortsCreator accepts background_type parameter
             video_path = creator.create_youtube_short(
                 title=video_title,
                 script_sections=script_cards,
@@ -530,6 +530,18 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
                 max_duration=max_duration,
                 background_type=background_type,
                 background_source=background_source,
+                custom_background_path=background_path,
+                style=style,
+                progress_callback=rendering_progress_tracker
+            )
+        elif isinstance(creator, YTShortsCreator_V):
+            # YTShortsCreator_V doesn't accept background_type parameter
+            video_path = creator.create_youtube_short(
+                title=video_title,
+                script_sections=script_cards,
+                output_filename=output_filename,
+                max_duration=max_duration,
+                background_query="abstract background",  # Default fallback query
                 custom_background_path=background_path,
                 style=style,
                 progress_callback=rendering_progress_tracker
