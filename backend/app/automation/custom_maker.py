@@ -244,7 +244,8 @@ class CustomShortsCreator:
                 
                 # Time-based progress tracking
                 start_time = time.time()
-                def image_progress_tracker():
+                def image_progress_tracker(progress=None, message=None):
+                    # Ignore the provided progress and message, use our time-based tracking instead
                     elapsed = time.time() - start_time
                     track_rendering_progress(elapsed)
                     return False  # Return False to continue rendering
@@ -270,7 +271,8 @@ class CustomShortsCreator:
                 
                 # Time-based progress tracking
                 start_time = time.time()
-                def video_progress_tracker():
+                def video_progress_tracker(progress=None, message=None):
+                    # Ignore the provided progress and message, use our time-based tracking instead
                     elapsed = time.time() - start_time
                     track_rendering_progress(elapsed)
                     return False  # Return False to continue rendering
