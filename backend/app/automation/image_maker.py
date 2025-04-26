@@ -847,7 +847,14 @@ class YTShortsCreator_I:
             logger.info(f"Creating YouTube Short: {title}")
 
             # Ensure the output directory exists
-            os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+            output_dir = os.path.dirname(output_filename)
+            if output_dir:  # Only create directories if path is not empty
+                os.makedirs(output_dir, exist_ok=True)
+            else:
+                # If output directory is empty, use the default output directory
+                output_filename = os.path.join(self.output_dir, os.path.basename(output_filename))
+                os.makedirs(self.output_dir, exist_ok=True)
+                logger.info(f"Empty output directory path detected, using default: {output_filename}")
 
             # If custom background path is provided, validate it
             if custom_background_path:
