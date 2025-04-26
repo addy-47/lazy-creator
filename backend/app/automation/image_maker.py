@@ -672,8 +672,18 @@ class YTShortsCreator_I:
         Returns:
             str: Path to the audio file or None if all methods fail
         """
+        # Create a unique identifier for this text and voice style combination
+        # This enables proper caching to prevent duplicate generation
+        import hashlib
+        text_hash = hashlib.md5((text + str(voice_style)).encode()).hexdigest()
+        
         if not filename:
-            filename = os.path.join(self.temp_dir, f"tts_{int(time.time())}.mp3")
+            filename = os.path.join(self.temp_dir, f"tts_{text_hash}.mp3")
+        
+        # Check if this exact audio has already been generated
+        if os.path.exists(filename):
+            logger.info(f"Using cached audio file for: {text[:30]}...")
+            return filename
 
         # Make sure text is not empty and has minimum length
         if not text or len(text.strip()) == 0:
@@ -921,30 +931,48 @@ class YTShortsCreator_I:
                         if audio_path and os.path.exists(audio_path):
                             try:
                                 # Get actual audio duration
-                                audio_clip = AudioFileClip(audio_path)
-                                actual_duration = audio_clip.duration
+                                audio_clip = None
+                                try:
+                                    audio_clip = AudioFileClip(audio_path)
+                                    actual_duration = audio_clip.duration
 
-                                # Check if audio has valid duration
-                                if actual_duration <= 0:
-                                    logger.warning(f"Audio file for section {i} has zero duration, creating fallback silent audio")
-                                    # Create silent audio as fallback
-                                    from moviepy.audio.AudioClip import AudioClip
-                                    import numpy as np
+                                    # Check if audio has valid duration
+                                    if actual_duration <= 0:
+                                        logger.warning(f"Audio file for section {i} has zero duration, creating fallback silent audio")
+                                        # Make sure to close the current clip to prevent file handle leaks
+                                        try:
+                                            audio_clip.close()
+                                        except:
+                                            pass
+                                        
+                                        # Create silent audio as fallback
+                                        from moviepy.audio.AudioClip import AudioClip
+                                        import numpy as np
 
-                                    def make_frame(t):
-                                        return np.zeros(2)  # Stereo silence
+                                        def make_frame(t):
+                                            return np.zeros(2)  # Stereo silence
 
-                                    # Use minimum section duration for silent audio
-                                    audio_clip = AudioClip(make_frame=make_frame, duration=min_section_duration)
-                                    audio_clip = audio_clip.set_fps(44100)
-                                    actual_duration = min_section_duration
+                                        # Use minimum section duration for silent audio
+                                        audio_clip = AudioClip(make_frame=make_frame, duration=min_section_duration)
+                                        audio_clip = audio_clip.set_fps(44100)
+                                        actual_duration = min_section_duration
 
-                                # Ensure minimum duration
-                                actual_duration = max(actual_duration, min_section_duration)
+                                    # Ensure minimum duration
+                                    actual_duration = max(actual_duration, min_section_duration)
 
-                                # Store the final duration and clip
-                                section_durations.append((i, actual_duration))
-                                audio_clips.append((i, audio_clip, actual_duration))
+                                    # Store the final duration and clip
+                                    section_durations.append((i, actual_duration))
+                                    audio_clips.append((i, audio_clip, actual_duration))
+                                except Exception as e:
+                                    logger.error(f"Error processing audio for section {i}: {e}")
+                                    # Make sure to close the clip if it was created
+                                    if audio_clip:
+                                        try:
+                                            audio_clip.close()
+                                        except:
+                                            pass
+                                
+                                section_durations.append((i, min_section_duration))
                             except Exception as e:
                                 logger.error(f"Error processing audio for section {i}: {e}")
                                 section_durations.append((i, min_section_duration))
@@ -1022,7 +1050,11 @@ class YTShortsCreator_I:
                 for i, section in enumerate(script_sections):
                     # If using custom background for all, skip image generation
                     if custom_bg_for_all:
-                        section_images.append((i, custom_background_path))
+                        # Create a unique copy for each section to avoid reuse of same object
+                        section_image_path = os.path.join(self.temp_dir, f"section_{i}_custom_bg.jpg")
+                        shutil.copy(custom_background_path, section_image_path)
+                        section_images.append((i, section_image_path))
+                        logger.info(f"Created copy of custom background for section {i}")
                         continue
                         
                     # Get the appropriate query for this section
@@ -1031,10 +1063,14 @@ class YTShortsCreator_I:
                     else:
                         img_query = background_query
                     
+                    # Add some randomization to ensure different images even with similar queries
+                    diversified_query = f"{img_query} {random.choice(['view', 'scene', 'perspective', 'style', 'image'])} {i+1}"
+                    logger.info(f"Section {i} using query: {diversified_query}")
+                    
                     # Submit the image generation task
                     future = executor.submit(
                         self._generate_image_from_prompt,
-                        img_query,
+                        diversified_query,
                         style
                     )
                     section_futures.append((i, future))
@@ -1067,11 +1103,25 @@ class YTShortsCreator_I:
             
             # Now create video clips for each section
             for i, section in enumerate(script_sections):
+                if should_abort_processing():
+                    logger.info("Shutdown requested during section processing")
+                    return None
+                
                 section_text = section["text"]
                 section_duration = section["duration"]
+                logger.info(f"Processing section {i}: {section_text[:30]}... (duration: {section_duration:.2f}s)")
                 
                 # Get the image path for this section
                 _, image_path = section_images[i]
+                
+                # Ensure the image exists and is valid
+                if not os.path.exists(image_path):
+                    logger.error(f"Image path for section {i} does not exist: {image_path}")
+                    # Create a fallback image
+                    image_path = self._create_black_background(
+                        os.path.join(self.temp_dir, f"fallback_section_{i}.jpg")
+                    )
+                    logger.info(f"Created fallback background for section {i}")
                 
                 try:
                     # Apply blur to image if requested
@@ -1181,21 +1231,89 @@ class YTShortsCreator_I:
                     for idx, audio_clip, audio_duration in audio_clips:
                         if idx == i:
                             try:
+                                # Verify audio clip is valid and can be accessed
+                                try:
+                                    # Test accessing the audio to make sure it's valid
+                                    test_frame = audio_clip.get_frame(0)
+                                    if test_frame is None:
+                                        raise ValueError("Audio clip returned None frame")
+                                except Exception as audio_test_error:
+                                    logger.error(f"Audio clip validation failed: {audio_test_error}")
+                                    # Create a silent audio clip as fallback
+                                    from moviepy.audio.AudioClip import AudioClip
+                                    import numpy as np
+                                    def silent_frame(t):
+                                        return np.zeros(2)
+                                    audio_clip = AudioClip(make_frame=silent_frame, duration=section_duration)
+                                    audio_clip = audio_clip.set_fps(44100)
+                                    audio_duration = section_duration
+                                    logger.warning(f"Created fallback silent audio for section {i}")
+                                
+                                # Create a fresh copy of the audio to avoid shared references
+                                audio_clip = audio_clip.copy()
+                                
                                 # If audio duration doesn't match section duration, adjust
                                 if abs(audio_duration - section_duration) > 0.1:
-                                    # Cut audio if too long, or loop if too short
+                                    # Cut audio if too long
                                     if audio_duration > section_duration:
                                         audio_clip = audio_clip.subclip(0, section_duration)
+                                        logger.info(f"Trimmed audio from {audio_duration:.2f}s to {section_duration:.2f}s")
                                     else:
-                                        # Create a loop if needed
-                                        repeats = math.ceil(section_duration / audio_duration)
-                                        if repeats > 1:
-                                            audio_clip = audio_clip.fx(loop, duration=section_duration)
-                                audio_clip = audio_clip.set_duration(section_duration)
+                                        # Handle short audio by padding with silence
+                                        from moviepy.audio.AudioClip import AudioClip, CompositeAudioClip
+                                        import numpy as np
+                                        
+                                        # Calculate extension needed
+                                        extension_needed = section_duration - audio_duration
+                                        logger.info(f"Extending audio for section {i} by {extension_needed:.2f}s")
+                                        
+                                        # Create a silent clip for padding
+                                        def silent_frame(t):
+                                            return np.zeros(2)
+                                        
+                                        silence = AudioClip(make_frame=silent_frame, duration=extension_needed)
+                                        silence = silence.set_fps(44100 if not hasattr(audio_clip, 'fps') or audio_clip.fps is None else audio_clip.fps)
+                                        
+                                        # Set exact durations to avoid floating point issues
+                                        audio_clip = audio_clip.set_duration(audio_duration)
+                                        
+                                        # Create a composite audio with original followed by silence
+                                        extended_audio = CompositeAudioClip([
+                                            audio_clip,
+                                            silence.set_start(audio_duration)
+                                        ])
+                                        
+                                        # Explicitly set the duration of the composite audio
+                                        extended_audio = extended_audio.set_duration(section_duration)
+                                        audio_clip = extended_audio
+                                else:
+                                    # Even if durations are close, explicitly set to ensure exact match
+                                    audio_clip = audio_clip.set_duration(section_duration)
+                                
+                                # Verify the final audio duration before adding to clip
+                                final_audio_duration = audio_clip.duration
+                                if abs(final_audio_duration - section_duration) > 0.01:
+                                    logger.warning(f"Audio duration mismatch: audio={final_audio_duration:.2f}s, section={section_duration:.2f}s")
+                                    # Force the exact duration to avoid any floating point differences
+                                    audio_clip = audio_clip.set_duration(section_duration)
+                                
+                                # Set the audio on the section clip
                                 section_clip = section_clip.set_audio(audio_clip)
-                                logger.info(f"Added audio to section {i}")
+                                logger.info(f"Added audio to section {i} (duration: {section_duration:.2f}s)")
                             except Exception as e:
                                 logger.error(f"Error adding audio to section {i}: {e}")
+                                # Create a silent fallback audio if there was an error
+                                try:
+                                    from moviepy.audio.AudioClip import AudioClip
+                                    import numpy as np
+                                    def silent_frame(t):
+                                        return np.zeros(2)
+                                    silent_audio = AudioClip(make_frame=silent_frame, duration=section_duration)
+                                    silent_audio = silent_audio.set_fps(44100)
+                                    section_clip = section_clip.set_audio(silent_audio)
+                                    logger.warning(f"Added silent fallback audio to section {i}")
+                                except Exception as silent_error:
+                                    logger.error(f"Failed to add silent audio: {silent_error}")
                             break
                     
                     # Add section clip to list
@@ -1239,6 +1357,68 @@ class YTShortsCreator_I:
                 
             logger.info(f"Successfully processed {len(section_clips)}/{len(script_sections)} sections")
             
+            # Validate that each clip has unique content and valid audio
+            logger.info("Validating section clips to ensure uniqueness and valid audio...")
+            validated_clips = []
+            
+            for i, clip in enumerate(section_clips):
+                try:
+                    # Make sure each clip has proper duration
+                    if clip.duration <= 0:
+                        logger.error(f"Clip {i} has invalid duration: {clip.duration}s, skipping")
+                        continue
+                    
+                    # Ensure each clip has valid audio, or add silent audio
+                    if clip.audio is None:
+                        logger.warning(f"Clip {i} has no audio, adding silent audio")
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=clip.duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        clip = clip.set_audio(silent_audio)
+                    else:
+                        # Verify audio duration matches clip duration
+                        audio_duration = clip.audio.duration
+                        if abs(audio_duration - clip.duration) > 0.01:
+                            logger.warning(f"Clip {i} audio duration mismatch: {audio_duration:.2f}s vs {clip.duration:.2f}s, fixing")
+                            # Force audio duration to match clip duration exactly
+                            clip.audio = clip.audio.set_duration(clip.duration)
+                    
+                    # Test that the audio can be accessed at the clip's duration
+                    try:
+                        if clip.audio is not None:
+                            # Test accessing a frame at the start
+                            _ = clip.audio.get_frame(0)
+                            # Test accessing a frame near the end (but not exactly at the end)
+                            end_time = max(0, clip.duration - 0.1)
+                            _ = clip.audio.get_frame(end_time)
+                    except Exception as audio_test_error:
+                        logger.error(f"Clip {i} audio failed validation: {audio_test_error}, replacing with silent audio")
+                        # Replace with silent audio
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=clip.duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        clip = clip.set_audio(silent_audio)
+                    
+                    # If this is valid, add to our validated clips
+                    validated_clips.append(clip)
+                    logger.info(f"Validated clip {i}: duration={clip.duration:.2f}s, has_valid_audio={clip.audio is not None}")
+                except Exception as validation_error:
+                    logger.error(f"Error validating clip {i}: {validation_error}, skipping")
+            
+            # Replace our section clips with validated ones
+            if validated_clips:
+                section_clips = validated_clips
+                logger.info(f"Using {len(section_clips)} validated clips")
+            else:
+                logger.error("No valid clips found after validation")
+                return None
+                
             # Add captions at the bottom if requested
             if add_captions and section_clips:
                 for i, clip in enumerate(section_clips):
@@ -1275,8 +1455,81 @@ class YTShortsCreator_I:
                 parallel_temp_dir = os.path.join(self.temp_dir, "parallel_render")
                 os.makedirs(parallel_temp_dir, exist_ok=True)
                 
-                # Concatenate all clips
-                final_clip = concatenate_videoclips(section_clips)
+                # Log all clips before concatenation for debugging
+                for i, clip in enumerate(section_clips):
+                    logger.info(f"Clip {i} before concatenation: duration={clip.duration:.2f}s, " +
+                               f"has_audio={clip.audio is not None}")
+                
+                # Add extra safety for audio duration before concatenation
+                try:
+                    for i, clip in enumerate(section_clips):
+                        if clip.audio is not None and clip.audio.duration != clip.duration:
+                            logger.warning(f"Fixing duration mismatch for clip {i} before concatenation: " +
+                                          f"audio={clip.audio.duration:.2f}s, video={clip.duration:.2f}s")
+                            
+                            # Create a completely new audio clip with exact duration
+                            from moviepy.audio.AudioClip import AudioClip
+                            original_audio = clip.audio
+                            
+                            # Create a wrapper function that ensures we only access within the audio duration
+                            def safe_make_frame(t):
+                                if t < original_audio.duration:
+                                    return original_audio.get_frame(t)
+                                else:
+                                    # Return silence for time beyond audio duration
+                                    return np.zeros(2)  # Stereo silence
+                            
+                            # Create a new audio clip with the safe frame function
+                            safe_audio = AudioClip(make_frame=safe_make_frame, duration=clip.duration)
+                            if hasattr(original_audio, 'fps') and original_audio.fps:
+                                safe_audio = safe_audio.set_fps(original_audio.fps)
+                            else:
+                                safe_audio = safe_audio.set_fps(44100)
+                            
+                            # Replace the audio
+                            clip = clip.set_audio(safe_audio)
+                            section_clips[i] = clip
+                            logger.info(f"Created safe audio wrapper for clip {i}")
+                except Exception as safe_audio_error:
+                    logger.error(f"Error creating safe audio wrappers: {safe_audio_error}")
+                
+                # Now concatenate the clips
+                try:
+                    final_clip = concatenate_videoclips(section_clips, method="chain_together")
+                    
+                    # Log the final concatenated clip
+                    logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
+                               f"has_audio={final_clip.audio is not None}")
+                except Exception as concat_error:
+                    logger.error(f"Error during clip concatenation: {concat_error}")
+                    
+                    # If concatenation fails, try with a different method
+                    try:
+                        logger.warning("Trying alternative concatenation method")
+                        # Try simple method without audio
+                        temp_clips = []
+                        for clip in section_clips:
+                            # Remove audio temporarily
+                            temp_clip = clip.without_audio()
+                            temp_clips.append(temp_clip)
+                        
+                        # Concatenate videos without audio
+                        final_clip = concatenate_videoclips(temp_clips, method="compose")
+                        
+                        # Create silent audio for the final clip
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=final_clip.duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        
+                        # Add silent audio
+                        final_clip = final_clip.set_audio(silent_audio)
+                        logger.info("Created fallback silent video with simple concatenation")
+                    except Exception as fallback_error:
+                        logger.error(f"Alternative concatenation also failed: {fallback_error}")
+                        raise ValueError("Failed to concatenate video clips after multiple attempts")
                 
                 # Ensure we don't exceed maximum duration
                 if final_clip.duration > max_duration:
@@ -1310,7 +1563,18 @@ class YTShortsCreator_I:
                 concat_start_time = time.time()
                 logger.info(f"Starting standard video rendering")
                 
-                final_clip = concatenate_videoclips(section_clips)
+                # Log all clips before concatenation for debugging
+                for i, clip in enumerate(section_clips):
+                    logger.info(f"Clip {i} before concatenation: duration={clip.duration:.2f}s, " +
+                               f"has_audio={clip.audio is not None}")
+                
+                # Concatenate with the explicit method
+                logger.info(f"Concatenating {len(section_clips)} clips with method='chain_together'")
+                final_clip = concatenate_videoclips(section_clips, method="chain_together")
+                
+                # Log the final concatenated clip
+                logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
+                           f"has_audio={final_clip.audio is not None}")
                 
                 # Ensure we don't exceed maximum duration
                 if final_clip.duration > max_duration:
@@ -1323,6 +1587,61 @@ class YTShortsCreator_I:
                 
                 # Progress update
                 progress_callback(85, "Rendering final video")
+                
+                # Process concatenated video before writing to file
+                # This is a critical part to prevent audio access errors
+                try:
+                    # Log the concatenated clip details
+                    logger.info(f"Final clip details: duration={final_clip.duration:.2f}s, has_audio={final_clip.audio is not None}")
+                    
+                    # Verify the audio can be properly accessed
+                    if final_clip.audio is not None:
+                        # Create a completely new audio clip to replace any problematic composite audio
+                        audio_duration = final_clip.audio.duration
+                        
+                        # Rewrite the audio to ensure it's a clean, contiguous clip
+                        temp_audio_file = os.path.join(self.temp_dir, f"final_audio_{int(time.time())}.mp3")
+                        try:
+                            logger.info(f"Writing temporary audio file to ensure integrity: {temp_audio_file}")
+                            final_clip.audio.write_audiofile(temp_audio_file, fps=44100, nbytes=2, codec='libmp3lame', logger=None)
+                            
+                            # Load it back as a fresh audio clip
+                            fresh_audio = AudioFileClip(temp_audio_file)
+                            
+                            # Ensure its duration matches the video
+                            if abs(fresh_audio.duration - final_clip.duration) > 0.1:
+                                logger.warning(f"Reloaded audio has different duration: {fresh_audio.duration:.2f}s vs {final_clip.duration:.2f}s, adjusting")
+                                fresh_audio = fresh_audio.set_duration(final_clip.duration)
+                            
+                            # Replace the original audio
+                            final_clip = final_clip.set_audio(fresh_audio)
+                            logger.info(f"Audio reloaded successfully with duration {fresh_audio.duration:.2f}s")
+                        except Exception as audio_rewrite_error:
+                            logger.error(f"Failed to rewrite audio: {audio_rewrite_error}, creating silent audio")
+                            # Create a silent audio clip as fallback
+                            from moviepy.audio.AudioClip import AudioClip
+                            import numpy as np
+                            def silent_frame(t):
+                                return np.zeros(2)
+                            silent_audio = AudioClip(make_frame=silent_frame, duration=final_clip.duration)
+                            silent_audio = silent_audio.set_fps(44100)
+                            final_clip = final_clip.set_audio(silent_audio)
+                    else:
+                        logger.warning("Final clip has no audio, adding silent audio")
+                        # Add silent audio
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=final_clip.duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        final_clip = final_clip.set_audio(silent_audio)
+                    
+                    # Perform final duration check
+                    logger.info(f"Final clip ready for writing: duration={final_clip.duration:.2f}s, audio_duration={final_clip.audio.duration if final_clip.audio else 0:.2f}s")
+                    
+                except Exception as final_proc_error:
+                    logger.error(f"Error during final clip processing: {final_proc_error}")
                 
                 # Write the final video with improved settings
                 logger.info(f"Writing video to {output_filename} (duration: {final_clip.duration:.2f}s)")
@@ -1364,6 +1683,22 @@ class YTShortsCreator_I:
             logger.error(traceback.format_exc())
             # Clean up temporary files even on error
             try:
+                # Close any open audio clips before cleanup
+                for idx, audio_clip, _ in audio_clips:
+                    try:
+                        if audio_clip and hasattr(audio_clip, 'close'):
+                            audio_clip.close()
+                    except Exception as close_error:
+                        logger.warning(f"Error closing audio clip {idx}: {close_error}")
+                
+                # Close any section clips
+                for clip in section_clips:
+                    try:
+                        if clip and hasattr(clip, 'close'):
+                            clip.close()
+                    except Exception as close_error:
+                        logger.warning(f"Error closing section clip: {close_error}")
+                
                 self._cleanup()
             except:
                 pass
@@ -1373,12 +1708,51 @@ class YTShortsCreator_I:
     def _cleanup(self):
         """Clean up temporary files"""
         try:
+            logger.info("Starting cleanup of temporary files")
+            
+            # First close any open audio or video clips
+            # This is important for Windows which won't allow deleting files that are in use
+            try:
+                import gc
+                # Force garbage collection to close file handles
+                gc.collect()
+                time.sleep(0.5)  # Small delay to allow file handles to be properly released
+                logger.info("Garbage collection performed to close file handles")
+            except Exception as gc_error:
+                logger.warning(f"Error during garbage collection: {gc_error}")
+            
+            # List of files that couldn't be deleted
+            failed_files = []
+            
+            # Try to remove files with proper error handling
             for filename in os.listdir(self.temp_dir):
                 file_path = os.path.join(self.temp_dir, filename)
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
+                try:
+                    if os.path.isfile(file_path):
+                        try:
+                            os.unlink(file_path)
+                        except Exception as file_error:
+                            logger.warning(f"Could not delete file {file_path}: {file_error}")
+                            failed_files.append(file_path)
+                    elif os.path.isdir(file_path):
+                        try:
+                            shutil.rmtree(file_path)
+                        except Exception as dir_error:
+                            logger.warning(f"Could not delete directory {file_path}: {dir_error}")
+                except Exception as e:
+                    logger.warning(f"Error processing {file_path}: {e}")
+            
+            # Report on cleanup results
+            if failed_files:
+                logger.warning(f"Cleanup completed with {len(failed_files)} files that could not be deleted")
+                # Schedule these for deletion on exit
+                import atexit
+                for path in failed_files:
+                    atexit.register(lambda p=path: os.remove(p) if os.path.exists(p) else None)
+                logger.info("Scheduled remaining files for deletion on program exit")
+            else:
+                logger.info("All temporary files were successfully cleaned up")
+                
         except Exception as e:
             logger.error(f"Error cleaning up temporary files: {e}")
 
