@@ -10,7 +10,7 @@ import logging # for logging events
 from PIL import Image, ImageFilter, ImageDraw, ImageFont# for image processing
 from moviepy.editor import ( # for video editing
     VideoFileClip, VideoClip, TextClip, CompositeVideoClip, ImageClip,
-    AudioFileClip, concatenate_videoclips, ColorClip, CompositeAudioClip
+    AudioFileClip, concatenate_videoclips, ColorClip, CompositeAudioClip, concatenate_audioclips
 )
 from moviepy.config import change_settings
 change_settings({"IMAGEMAGICK_BINARY": "magick"}) # for windows users
@@ -2056,6 +2056,109 @@ class YTShortsCreator_I:
                 
         except Exception as e:
             logger.error(f"Error cleaning up temporary files: {e}")
+
+    @measure_time
+    def create_youtube_short_from_images(self, image_paths, texts=None, audio_clips=None, section_duration=5.0,
+                                       output_filename=None, add_watermark_text=None):
+        """
+        Create a YouTube short from a list of images with optional text overlays and audio clips.
+
+        Args:
+            image_paths (list): List of paths to images
+            texts (list, optional): List of text overlays for each image. Defaults to None.
+            audio_clips (list, optional): List of paths to audio clips for each section. Defaults to None.
+            section_duration (float): Duration for each section in seconds. Defaults to 5.0.
+            output_filename (str, optional): Name of the output file. Defaults to None.
+            add_watermark_text (str, optional): Text to add as watermark. Defaults to None.
+
+        Returns:
+            str: Path to the created video file
+        """
+        try:
+            # Validate inputs
+            if not image_paths:
+                raise ValueError("At least one image path must be provided")
+
+            # Initialize empty lists if not provided
+            texts = texts or [None] * len(image_paths)
+            audio_clips = audio_clips or [None] * len(image_paths)
+
+            # Ensure all lists have the same length
+            if len(texts) != len(image_paths) or len(audio_clips) != len(image_paths):
+                raise ValueError("The lengths of image_paths, texts, and audio_clips must match")
+
+            # Generate output filename if not provided
+            if output_filename is None:
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                output_filename = os.path.join(self.output_dir, f"short_{timestamp}.mp4")
+
+            # Create video clips for each section
+            video_clips = []
+            for i, (image_path, text, audio_path) in enumerate(zip(image_paths, texts, audio_clips)):
+                # Create image clip
+                image_clip = self._create_still_image_clip(
+                    image_path,
+                    duration=section_duration,
+                    text=text,
+                    text_position=('center', 'center'),
+                    with_zoom=True
+                )
+
+                # If audio is provided for this section, add it
+                if audio_path and os.path.exists(audio_path):
+                    audio_clip = AudioFileClip(audio_path)
+                    # Trim or extend audio to match section duration
+                    if audio_clip.duration > section_duration:
+                        audio_clip = audio_clip.subclip(0, section_duration)
+                    elif audio_clip.duration < section_duration:
+                        # Create silent audio for the remaining duration
+                        silence_duration = section_duration - audio_clip.duration
+                        def silent_frame(t):
+                            return np.zeros((2,))  # Stereo silence
+                        silence = AudioClip(make_frame=silent_frame, duration=silence_duration)
+                        audio_clip = concatenate_audioclips([audio_clip, silence])
+                    
+                    # Set the audio for the clip
+                    image_clip = image_clip.set_audio(audio_clip)
+
+                video_clips.append(image_clip)
+
+            # Concatenate all clips
+            final_clip = concatenate_videoclips(video_clips, method="compose")
+
+            # Add watermark if specified
+            if add_watermark_text:
+                final_clip = self.add_watermark(final_clip, watermark_text=add_watermark_text)
+
+            # Write the final video
+            final_clip.write_videofile(
+                output_filename,
+                fps=self.fps,
+                codec='libx264',
+                audio_codec='aac',
+                temp_audiofile=os.path.join(self.temp_dir, "temp_audio.m4a"),
+                remove_temp=True,
+                threads=4,
+                preset='ultrafast'
+            )
+
+            logger.info(f"Successfully created YouTube short: {output_filename}")
+            return output_filename
+
+        except Exception as e:
+            logger.error(f"Error creating YouTube short from images: {str(e)}")
+            raise
+        finally:
+            # Clean up any clips
+            for clip in video_clips:
+                try:
+                    clip.close()
+                except:
+                    pass
+            try:
+                final_clip.close()
+            except:
+                pass
 
 
 
