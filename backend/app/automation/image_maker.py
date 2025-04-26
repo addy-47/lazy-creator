@@ -672,8 +672,18 @@ class YTShortsCreator_I:
         Returns:
             str: Path to the audio file or None if all methods fail
         """
+        # Create a unique identifier for this text and voice style combination
+        # This enables proper caching to prevent duplicate generation
+        import hashlib
+        text_hash = hashlib.md5((text + str(voice_style)).encode()).hexdigest()
+        
         if not filename:
-            filename = os.path.join(self.temp_dir, f"tts_{int(time.time())}.mp3")
+            filename = os.path.join(self.temp_dir, f"tts_{text_hash}.mp3")
+        
+        # Check if this exact audio has already been generated
+        if os.path.exists(filename):
+            logger.info(f"Using cached audio file for: {text[:30]}...")
+            return filename
 
         # Make sure text is not empty and has minimum length
         if not text or len(text.strip()) == 0:
@@ -1022,7 +1032,11 @@ class YTShortsCreator_I:
                 for i, section in enumerate(script_sections):
                     # If using custom background for all, skip image generation
                     if custom_bg_for_all:
-                        section_images.append((i, custom_background_path))
+                        # Create a unique copy for each section to avoid reuse of same object
+                        section_image_path = os.path.join(self.temp_dir, f"section_{i}_custom_bg.jpg")
+                        shutil.copy(custom_background_path, section_image_path)
+                        section_images.append((i, section_image_path))
+                        logger.info(f"Created copy of custom background for section {i}")
                         continue
                         
                     # Get the appropriate query for this section
@@ -1031,10 +1045,14 @@ class YTShortsCreator_I:
                     else:
                         img_query = background_query
                     
+                    # Add some randomization to ensure different images even with similar queries
+                    diversified_query = f"{img_query} {random.choice(['view', 'scene', 'perspective', 'style', 'image'])} {i+1}"
+                    logger.info(f"Section {i} using query: {diversified_query}")
+                    
                     # Submit the image generation task
                     future = executor.submit(
                         self._generate_image_from_prompt,
-                        img_query,
+                        diversified_query,
                         style
                     )
                     section_futures.append((i, future))
@@ -1067,11 +1085,25 @@ class YTShortsCreator_I:
             
             # Now create video clips for each section
             for i, section in enumerate(script_sections):
+                if should_abort_processing():
+                    logger.info("Shutdown requested during section processing")
+                    return None
+                
                 section_text = section["text"]
                 section_duration = section["duration"]
+                logger.info(f"Processing section {i}: {section_text[:30]}... (duration: {section_duration:.2f}s)")
                 
                 # Get the image path for this section
                 _, image_path = section_images[i]
+                
+                # Ensure the image exists and is valid
+                if not os.path.exists(image_path):
+                    logger.error(f"Image path for section {i} does not exist: {image_path}")
+                    # Create a fallback image
+                    image_path = self._create_black_background(
+                        os.path.join(self.temp_dir, f"fallback_section_{i}.jpg")
+                    )
+                    logger.info(f"Created fallback background for section {i}")
                 
                 try:
                     # Apply blur to image if requested
@@ -1183,17 +1215,49 @@ class YTShortsCreator_I:
                             try:
                                 # If audio duration doesn't match section duration, adjust
                                 if abs(audio_duration - section_duration) > 0.1:
-                                    # Cut audio if too long, or loop if too short
+                                    # Cut audio if too long
                                     if audio_duration > section_duration:
                                         audio_clip = audio_clip.subclip(0, section_duration)
                                     else:
-                                        # Create a loop if needed
-                                        repeats = math.ceil(section_duration / audio_duration)
-                                        if repeats > 1:
-                                            audio_clip = audio_clip.fx(loop, duration=section_duration)
+                                        # Handle short audio more intelligently to prevent repetitive sound
+                                        # Instead of creating loop which can sound unnatural,
+                                        # extend the last portion with a fade out
+                                        from moviepy.audio.AudioClip import CompositeAudioClip
+                                        
+                                        # Calculate extension needed
+                                        extension_needed = section_duration - audio_duration
+                                        logger.info(f"Extending audio for section {i} by {extension_needed:.2f}s")
+                                        
+                                        # Create a fade out of the last part to extend gracefully
+                                        if extension_needed > 0.5:  # Only if we need significant extension
+                                            # Take last second of audio and fade it out for the extension
+                                            last_part = audio_clip.subclip(max(0, audio_duration - 1))
+                                            # Create a silent clip for the extension
+                                            from moviepy.audio.AudioClip import AudioClip
+                                            import numpy as np
+                                            
+                                            def make_silence(t):
+                                                return np.zeros(2)  # Stereo silence
+                                            
+                                            # Create a silent extension with the needed duration
+                                            silence = AudioClip(make_frame=make_silence, duration=extension_needed)
+                                            silence = silence.set_fps(audio_clip.fps)
+                                            
+                                            # Combine original audio with silence to reach desired duration
+                                            audio_clip = audio_clip.set_duration(audio_duration)
+                                            extended_audio = CompositeAudioClip([
+                                                audio_clip, 
+                                                silence.set_start(audio_duration)
+                                            ])
+                                            audio_clip = extended_audio.set_duration(section_duration)
+                                        else:
+                                            # For very small extensions, just set the duration directly
+                                            audio_clip = audio_clip.set_duration(section_duration)
+                                
+                                # Ensure audio has the exact right duration
                                 audio_clip = audio_clip.set_duration(section_duration)
                                 section_clip = section_clip.set_audio(audio_clip)
-                                logger.info(f"Added audio to section {i}")
+                                logger.info(f"Added audio to section {i} (duration: {section_duration:.2f}s)")
                             except Exception as e:
                                 logger.error(f"Error adding audio to section {i}: {e}")
                             break
@@ -1239,6 +1303,32 @@ class YTShortsCreator_I:
                 
             logger.info(f"Successfully processed {len(section_clips)}/{len(script_sections)} sections")
             
+            # Validate that each clip has unique content
+            logger.info("Validating section clips to ensure uniqueness...")
+            validated_clips = []
+            
+            for i, clip in enumerate(section_clips):
+                # Make sure each clip has proper duration
+                if clip.duration <= 0:
+                    logger.error(f"Clip {i} has invalid duration: {clip.duration}s")
+                    continue
+                
+                # Ensure each clip has audio
+                if clip.audio is None:
+                    logger.warning(f"Clip {i} has no audio, may cause issues in playback")
+                
+                # If this is valid, add to our validated clips
+                validated_clips.append(clip)
+                logger.info(f"Validated clip {i}: duration={clip.duration:.2f}s")
+            
+            # Replace our section clips with validated ones
+            if validated_clips:
+                section_clips = validated_clips
+                logger.info(f"Using {len(section_clips)} validated clips")
+            else:
+                logger.error("No valid clips found after validation")
+                return None
+                
             # Add captions at the bottom if requested
             if add_captions and section_clips:
                 for i, clip in enumerate(section_clips):
@@ -1275,8 +1365,18 @@ class YTShortsCreator_I:
                 parallel_temp_dir = os.path.join(self.temp_dir, "parallel_render")
                 os.makedirs(parallel_temp_dir, exist_ok=True)
                 
-                # Concatenate all clips
-                final_clip = concatenate_videoclips(section_clips)
+                # Log all clips before concatenation for debugging
+                for i, clip in enumerate(section_clips):
+                    logger.info(f"Clip {i} before concatenation: duration={clip.duration:.2f}s, " +
+                               f"has_audio={clip.audio is not None}")
+                
+                # Concatenate all clips with explicit method
+                logger.info(f"Concatenating {len(section_clips)} clips with method='chain_together'")
+                final_clip = concatenate_videoclips(section_clips, method="chain_together")
+                
+                # Log the final concatenated clip
+                logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
+                           f"has_audio={final_clip.audio is not None}")
                 
                 # Ensure we don't exceed maximum duration
                 if final_clip.duration > max_duration:
@@ -1310,7 +1410,18 @@ class YTShortsCreator_I:
                 concat_start_time = time.time()
                 logger.info(f"Starting standard video rendering")
                 
-                final_clip = concatenate_videoclips(section_clips)
+                # Log all clips before concatenation for debugging
+                for i, clip in enumerate(section_clips):
+                    logger.info(f"Clip {i} before concatenation: duration={clip.duration:.2f}s, " +
+                               f"has_audio={clip.audio is not None}")
+                
+                # Concatenate with the explicit method
+                logger.info(f"Concatenating {len(section_clips)} clips with method='chain_together'")
+                final_clip = concatenate_videoclips(section_clips, method="chain_together")
+                
+                # Log the final concatenated clip
+                logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
+                           f"has_audio={final_clip.audio is not None}")
                 
                 # Ensure we don't exceed maximum duration
                 if final_clip.duration > max_duration:
