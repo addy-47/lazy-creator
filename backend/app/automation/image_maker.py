@@ -668,7 +668,26 @@ class YTShortsCreator_I:
         # Check if this exact audio has already been generated
         if os.path.exists(filename):
             logger.info(f"Using cached audio file for: {text[:30]}...")
-            return filename
+            # Verify the file is valid and not corrupted
+            try:
+                test_audio = AudioFileClip(filename)
+                if test_audio.duration > 0:
+                    test_audio.close()
+                    return filename
+                test_audio.close()
+                logger.warning(f"Cached audio file has invalid duration, regenerating")
+                # Delete corrupted file
+                try:
+                    os.remove(filename)
+                except:
+                    pass
+            except Exception as e:
+                logger.warning(f"Cached audio file is invalid: {e}, regenerating")
+                # Delete corrupted file
+                try:
+                    os.remove(filename)
+                except:
+                    pass
 
         # Make sure text is not empty and has minimum length
         if not text or len(text.strip()) == 0:
@@ -829,10 +848,10 @@ class YTShortsCreator_I:
                 def update_progress(progress, message=""):
                     logger.info(f"Progress: {progress}%, {message}")
                 progress_callback = update_progress
-
+                
             # Initial progress report
             progress_callback(5, "Setting up for image-based short creation")
-
+            
             if not output_filename:
                 timestamp = int(time.time())
                 output_filename = os.path.join(self.output_dir, f"youtube_short_{timestamp}.mp4")
@@ -862,77 +881,194 @@ class YTShortsCreator_I:
             # Enforce maximum duration between 10-30 seconds
             max_duration = min(max(10, max_duration), 30)
             logger.info(f"Using maximum duration of {max_duration} seconds")
-
+            
             # Calculate total duration of script sections
             initial_total_duration = sum(section.get('duration', 5) for section in script_sections)
-
+            
             # If total exceeds max_duration, scale all sections proportionally
             if initial_total_duration > max_duration:
                 logger.info(f"Total duration ({initial_total_duration:.2f}s) exceeds max_duration ({max_duration}s), scaling sections")
                 scale_factor = max_duration / initial_total_duration
                 for section in script_sections:
                     section['duration'] = section.get('duration', 5) * scale_factor
-
+                
                 # Verify scaled durations
                 new_total = sum(section.get('duration', 5) for section in script_sections)
                 logger.info(f"After scaling: total duration = {new_total:.2f}s")
 
             # Progress update
-            progress_callback(10, "Generating TTS audio for each section")
-
-            # Generate audio clips with TTS for each section
+            progress_callback(10, "Generating TTS audio for all script sections")
+            
+            # Generate audio for the entire script at once
             tts_start_time = time.time()
-            logger.info(f"Starting TTS audio generation")
+            logger.info(f"Starting unified TTS audio generation")
 
+            # Combine all script sections into a single text with timestamps
+            combined_text = ""
+            section_starts = []
+            current_position = 0
+            
+            for section in script_sections:
+                section_text = section["text"]
+                section_duration = section.get("duration", 5)
+                
+                # Add to combined text with a pause marker (period and space if needed)
+                if combined_text and not combined_text.endswith('.'):
+                    combined_text += ". "
+                elif combined_text:
+                    combined_text += " "
+                
+                section_starts.append((current_position, section_text, section_duration))
+                combined_text += section_text
+                current_position += len(section_text) + 1  # +1 for the space or period
+            
+            # Generate a single audio file for the entire script
+            full_audio_path = None
             audio_clips = []
-            section_durations = []  # Store actual durations after TTS generation
-
-            # Use multithreading for audio generation to improve performance
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(script_sections))) as executor:
-                # Create a list to hold future objects
-                future_to_section = {}
-
-                # Submit TTS generation jobs to the executor
-                for i, section in enumerate(script_sections):
-                    section_text = section["text"]
-                    section_voice_style = section.get("voice_style", voice_style)
-                    future = executor.submit(
-                        self._create_tts_audio,
-                        section_text,
-                        None,
-                        section_voice_style
-                    )
-                    future_to_section[future] = (i, section)
-
-                # Process results as they complete
-                for future in concurrent.futures.as_completed(future_to_section):
-                    i, section = future_to_section[future]
-                    min_section_duration = section.get("duration", 5)
-
-                    try:
-                        audio_path = future.result()
-
-                        # Process the completed audio file
-                        if audio_path and os.path.exists(audio_path):
-                            try:
-                                # Get actual audio duration
-                                audio_clip = None
+            
+            try:
+                # Create a single audio file for all sections
+                full_audio_path = self._create_tts_audio(combined_text, voice_style=voice_style)
+                
+                if full_audio_path and os.path.exists(full_audio_path):
+                    full_audio = AudioFileClip(full_audio_path)
+                    total_audio_duration = full_audio.duration
+                    logger.info(f"Generated full audio with duration: {total_audio_duration:.2f}s")
+                    
+                    # If the audio is too short or too long, adjust it
+                    total_script_duration = sum(duration for _, _, duration in section_starts)
+                    
+                    if abs(total_audio_duration - total_script_duration) > 2.0:
+                        logger.warning(f"Audio duration ({total_audio_duration:.2f}s) doesn't match script duration ({total_script_duration:.2f}s)")
+                        
+                        # Scale the audio to match the expected duration
+                        if total_audio_duration > 0:
+                            scale_factor = total_script_duration / total_audio_duration
+                            # Instead of scaling, we'll distribute proportionally
+                        else:
+                            logger.error("Generated audio has zero duration, falling back to individual section generation")
+                            raise ValueError("Zero duration audio generated")
+                    
+                    # Divide the audio into sections based on proportional text length
+                    current_time = 0
+                    audio_sections = []
+                    
+                    for i, (_, section_text, section_duration) in enumerate(section_starts):
+                        # Calculate this section's proportion of the total audio
+                        if total_script_duration > 0:
+                            section_proportion = section_duration / total_script_duration
+                        else:
+                            section_proportion = 1.0 / len(section_starts)
+                        
+                        # Calculate audio duration for this section
+                        audio_section_duration = total_audio_duration * section_proportion
+                        
+                        # Extract this section of audio
+                        if current_time + audio_section_duration <= total_audio_duration:
+                            section_audio = full_audio.subclip(current_time, current_time + audio_section_duration)
+                        else:
+                            # Handle edge case for last section
+                            section_audio = full_audio.subclip(current_time, total_audio_duration)
+                        
+                        # Make sure the section matches the expected duration
+                        if abs(section_audio.duration - section_duration) > 0.1:
+                            # Either extend with silence or trim
+                            if section_audio.duration < section_duration:
+                                # Extend with silence
+                                silence_duration = section_duration - section_audio.duration
+                                def silent_frame(t):
+                                    return np.zeros((2,))
+                                silence = AudioClip(make_frame=silent_frame, duration=silence_duration)
+                                silence = silence.set_fps(44100 if not hasattr(section_audio, 'fps') or section_audio.fps is None else section_audio.fps)
+                                section_audio = concatenate_audioclips([section_audio, silence])
+                            else:
+                                # Trim
+                                section_audio = section_audio.subclip(0, section_duration)
+                        
+                        # Store the audio section
+                        audio_sections.append((i, section_audio, section_duration))
+                        current_time += audio_section_duration
+                    
+                    # Use the divided sections
+                    audio_clips = audio_sections
+                    logger.info(f"Successfully divided full audio into {len(audio_clips)} sections")
+                
+                else:
+                    logger.error("Failed to generate full audio file, falling back to per-section generation")
+                    raise ValueError("Full audio generation failed")
+                    
+            except Exception as e:
+                logger.warning(f"Error with unified audio approach: {e}. Falling back to per-section audio generation.")
+                
+                # Fall back to generating audio for each section individually (original approach)
+                audio_clips = []
+                section_durations = []
+                
+                # Use multithreading for audio generation to improve performance
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(script_sections))) as executor:
+                    # Create a list to hold future objects
+                    future_to_section = {}
+                    
+                    # Submit TTS generation jobs to the executor
+                    for i, section in enumerate(script_sections):
+                        section_text = section["text"]
+                        section_voice_style = section.get("voice_style", voice_style)
+                        future = executor.submit(
+                            self._create_tts_audio,
+                            section_text,
+                            None,
+                            section_voice_style
+                        )
+                        future_to_section[future] = (i, section)
+                    
+                    # Process results as they complete
+                    for future in concurrent.futures.as_completed(future_to_section):
+                        i, section = future_to_section[future]
+                        min_section_duration = section.get("duration", 5)
+                        
+                        try:
+                            audio_path = future.result()
+                            
+                            # Process the completed audio file
+                            if audio_path and os.path.exists(audio_path):
                                 try:
-                                    audio_clip = AudioFileClip(audio_path)
-                                    actual_duration = audio_clip.duration
-
-                                    # Check if audio has valid duration
-                                    if actual_duration <= 0:
-                                        logger.warning(f"Audio file for section {i} has zero duration, creating fallback silent audio")
-                                        # Make sure to close the current clip to prevent file handle leaks
-                                        try:
-                                            audio_clip.close()
-                                        except:
-                                            pass
-
+                                    # Get actual audio duration
+                                    audio_clip = None
+                                    try:
+                                        audio_clip = AudioFileClip(audio_path)
+                                        actual_duration = audio_clip.duration
+                                        
+                                        # Check if audio has valid duration
+                                        if actual_duration <= 0:
+                                            logger.warning(f"Audio file for section {i} has zero duration, creating fallback silent audio")
+                                            # Close the current clip to prevent file handle leaks
+                                            try:
+                                                audio_clip.close()
+                                            except:
+                                                pass
+                                            
+                                            # Create silent audio clip as fallback
+                                            def silent_frame(t):
+                                                return np.zeros(2)  # Stereo silence
+                                            silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
+                                            silent_audio = silent_audio.set_fps(44100)
+                                            audio_clips.append((i, silent_audio, min_section_duration))
+                                        else:
+                                            audio_clips.append((i, audio_clip, actual_duration))
+                                            section_durations.append((i, min(actual_duration, min_section_duration)))
+                                    except Exception as e:
+                                        logger.error(f"Error processing audio for section {i}: {e}")
+                                        # Close the clip if it was created
+                                        if audio_clip:
+                                            try:
+                                                audio_clip.close()
+                                            except:
+                                                pass
+                                        
+                                        # Add default duration since audio processing failed
+                                        section_durations.append((i, min_section_duration))
+                                        
                                         # Create silent audio clip as fallback
-                                        from moviepy.audio.AudioClip import AudioClip
-                                        import numpy as np
                                         def silent_frame(t):
                                             return np.zeros(2)  # Stereo silence
                                         silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
@@ -940,96 +1076,70 @@ class YTShortsCreator_I:
                                         audio_clips.append((i, silent_audio, min_section_duration))
                                 except Exception as e:
                                     logger.error(f"Error processing audio for section {i}: {e}")
-                                    # Make sure to close the clip if it was created
-                                    if audio_clip:
-                                        try:
-                                            audio_clip.close()
-                                        except:
-                                            pass
-
-                                    # Add default duration since audio processing failed
                                     section_durations.append((i, min_section_duration))
-
+                                    
                                     # Create silent audio clip as fallback
-                                    from moviepy.audio.AudioClip import AudioClip
-                                    import numpy as np
                                     def silent_frame(t):
                                         return np.zeros(2)  # Stereo silence
                                     silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
                                     silent_audio = silent_audio.set_fps(44100)
                                     audio_clips.append((i, silent_audio, min_section_duration))
-                            except Exception as e:
-                                logger.error(f"Error processing audio for section {i}: {e}")
+                            else:
+                                # If no audio was created, use minimum duration and create silent audio
                                 section_durations.append((i, min_section_duration))
-
+                                
                                 # Create silent audio clip as fallback
-                                from moviepy.audio.AudioClip import AudioClip
-                                import numpy as np
                                 def silent_frame(t):
                                     return np.zeros(2)  # Stereo silence
                                 silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
                                 silent_audio = silent_audio.set_fps(44100)
                                 audio_clips.append((i, silent_audio, min_section_duration))
-                        else:
-                            # If no audio was created, use minimum duration and create silent audio
+                        except Exception as e:
+                            logger.error(f"Error getting TTS result for section {i}: {e}")
                             section_durations.append((i, min_section_duration))
-
+                            
                             # Create silent audio clip as fallback
-                            from moviepy.audio.AudioClip import AudioClip
-                            import numpy as np
                             def silent_frame(t):
                                 return np.zeros(2)  # Stereo silence
                             silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
                             silent_audio = silent_audio.set_fps(44100)
                             audio_clips.append((i, silent_audio, min_section_duration))
-                    except Exception as e:
-                        logger.error(f"Error getting TTS result for section {i}: {e}")
-                        section_durations.append((i, min_section_duration))
-
-                        # Create silent audio clip as fallback
-                        from moviepy.audio.AudioClip import AudioClip
-                        import numpy as np
-                        def silent_frame(t):
-                            return np.zeros(2)  # Stereo silence
-                        silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
-                        silent_audio = silent_audio.set_fps(44100)
-                        audio_clips.append((i, silent_audio, min_section_duration))
-
-            # Sort durations by section index
-            section_durations.sort(key=lambda x: x[0])
-
-            # Update script sections with actual durations
-            for i, duration in section_durations:
-                if i < len(script_sections):
-                    script_sections[i]['duration'] = duration
-
-            # Recalculate total duration based on actual audio lengths
-            total_duration = sum(duration for _, duration in section_durations)
-
-            # Enforce max duration again if needed
-            if total_duration > max_duration:
-                scale_factor = max_duration / total_duration
-                logger.info(f"Scaling sections again to fit max_duration (factor: {scale_factor:.3f})")
-
-                # Scale all durations
-                for i, (idx, duration) in enumerate(section_durations):
-                    scaled_duration = duration * scale_factor
-                    section_durations[i] = (idx, scaled_duration)
-
-                    # Also update the script sections
-                    if idx < len(script_sections):
-                        script_sections[idx]['duration'] = scaled_duration
-
-                # Scale audio clips
-                for i, (idx, clip, _) in enumerate(audio_clips):
-                    new_duration = section_durations[i][1]
-                    audio_clips[i] = (idx, clip, new_duration)
-
-                # Update total duration
+                
+                # Sort durations by section index
+                section_durations.sort(key=lambda x: x[0])
+                
+                # Update script sections with actual durations
+                for i, duration in section_durations:
+                    if i < len(script_sections):
+                        script_sections[i]['duration'] = duration
+                
+                # Recalculate total duration based on actual audio lengths
                 total_duration = sum(duration for _, duration in section_durations)
-
-            logger.info(f"Completed TTS audio generation in {time.time() - tts_start_time:.2f} seconds")
-            logger.info(f"Final total duration: {total_duration:.1f}s")
+                
+                # Enforce max duration again if needed
+                if total_duration > max_duration:
+                    scale_factor = max_duration / total_duration
+                    logger.info(f"Scaling sections again to fit max_duration (factor: {scale_factor:.3f})")
+                    
+                    # Scale all durations
+                    for i, (idx, duration) in enumerate(section_durations):
+                        scaled_duration = duration * scale_factor
+                        section_durations[i] = (idx, scaled_duration)
+                        
+                        # Also update the script sections
+                        if idx < len(script_sections):
+                            script_sections[idx]['duration'] = scaled_duration
+                    
+                    # Scale audio clips
+                    for i, (idx, clip, _) in enumerate(audio_clips):
+                        new_duration = section_durations[i][1]
+                        audio_clips[i] = (idx, clip, new_duration)
+                    
+                    # Update total duration
+                    total_duration = sum(duration for _, duration in section_durations)
+            
+            logger.info(f"Completed audio generation in {time.time() - tts_start_time:.2f} seconds")
+            logger.info(f"Final total audio duration: {total_duration:.1f}s")
 
             # Progress update
             progress_callback(25, "Generating background images")
@@ -1194,6 +1304,8 @@ class YTShortsCreator_I:
                         )
                         components.append(title_clip)
 
+                    # Add text overlay for content ONLY if caption is required
+                    # Text overlays in the middle should NOT be treated as captions
                     # For the first and last sections, use simple text
                     if i == 0 or i == len(script_sections) - 1:
                         # Create text overlay
@@ -1398,8 +1510,6 @@ class YTShortsCreator_I:
                                 logger.error(f"Error adding text to fallback clip: {e}")
 
                         # Add silent audio
-                        from moviepy.audio.AudioClip import AudioClip
-                        import numpy as np
                         def silent_frame(t):
                             return np.zeros(2)
                         silent_audio = AudioClip(make_frame=silent_frame, duration=section_duration)
@@ -1472,8 +1582,6 @@ class YTShortsCreator_I:
                             logger.error(f"Error adding text to fallback clip: {e}")
 
                     # Add silent audio
-                    from moviepy.audio.AudioClip import AudioClip
-                    import numpy as np
                     def silent_frame(t):
                         return np.zeros(2)
                     silent_audio = AudioClip(make_frame=silent_frame, duration=section_duration)
@@ -1524,6 +1632,7 @@ class YTShortsCreator_I:
                 section_clips = [fallback_clip]
 
             # Add captions at the bottom if requested
+            # This is the ONLY place captions should be added at the bottom when add_captions=True
             if add_captions and section_clips:
                 for i, clip in enumerate(section_clips):
                     if i < len(script_sections):
@@ -2106,20 +2215,42 @@ class YTShortsCreator_I:
 
                 # If audio is provided for this section, add it
                 if audio_path and os.path.exists(audio_path):
-                    audio_clip = AudioFileClip(audio_path)
-                    # Trim or extend audio to match section duration
-                    if audio_clip.duration > section_duration:
-                        audio_clip = audio_clip.subclip(0, section_duration)
-                    elif audio_clip.duration < section_duration:
-                        # Create silent audio for the remaining duration
-                        silence_duration = section_duration - audio_clip.duration
+                    try:
+                        audio_clip = AudioFileClip(audio_path)
+                        
+                        # Verify audio is valid
+                        if audio_clip.duration <= 0:
+                            logger.warning(f"Audio file for section {i} has invalid duration: {audio_clip.duration}s")
+                            raise ValueError("Invalid audio duration")
+                            
+                        # Trim or extend audio to match section duration
+                        if audio_clip.duration > section_duration:
+                            audio_clip = audio_clip.subclip(0, section_duration)
+                        elif audio_clip.duration < section_duration:
+                            # Create silent audio for the remaining duration
+                            silence_duration = section_duration - audio_clip.duration
+                            def silent_frame(t):
+                                return np.zeros((2,))  # Stereo silence
+                            silence = AudioClip(make_frame=silent_frame, duration=silence_duration)
+                            if hasattr(audio_clip, 'fps') and audio_clip.fps:
+                                silence = silence.set_fps(audio_clip.fps)
+                            else:
+                                silence = silence.set_fps(44100)
+                            audio_clip = concatenate_audioclips([audio_clip, silence])
+                        
+                        # Ensure audio has correct duration
+                        audio_clip = audio_clip.set_duration(section_duration)
+                        
+                        # Set the audio for the clip
+                        image_clip = image_clip.set_audio(audio_clip)
+                    except Exception as e:
+                        logger.error(f"Error processing audio for section {i}: {e}")
+                        # Create silent audio as fallback
                         def silent_frame(t):
                             return np.zeros((2,))  # Stereo silence
-                        silence = AudioClip(make_frame=silent_frame, duration=silence_duration)
-                        audio_clip = concatenate_audioclips([audio_clip, silence])
-
-                    # Set the audio for the clip
-                    image_clip = image_clip.set_audio(audio_clip)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=section_duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        image_clip = image_clip.set_audio(silent_audio)
 
                 video_clips.append(image_clip)
 
@@ -2150,13 +2281,19 @@ class YTShortsCreator_I:
             raise
         finally:
             # Clean up any clips
-            for clip in video_clips:
-                try:
-                    clip.close()
-                except:
-                    pass
             try:
-                final_clip.close()
+                for clip in video_clips:
+                    if clip and hasattr(clip, 'close'):
+                        try:
+                            clip.close()
+                        except:
+                            pass
+                
+                if 'final_clip' in locals() and final_clip and hasattr(final_clip, 'close'):
+                    try:
+                        final_clip.close()
+                    except:
+                        pass
             except:
                 pass
 

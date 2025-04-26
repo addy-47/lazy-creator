@@ -231,19 +231,19 @@ def create_youtube_short(
 
 def generate_youtube_short(topic, max_duration=25, background_type='video', background_source='provided', background_path=None, style="photorealistic", progress_callback=None):
     """
-    Generate a YouTube Short video based on a topic.
+    Generate a YouTube short on a given topic
 
     Args:
-        topic (str): The topic for the short video
-        max_duration (int): Maximum duration in seconds (default: 25)
-        background_type (str): Type of background - 'video' or 'image'
-        background_source (str): Source of background - 'provided', 'custom'
-        background_path (str): Path to custom background file if background_source is 'custom'
-        style (str): Style for images if background_type is 'image'
-        progress_callback (callable): Optional callback function for progress updates
+        topic (str): The topic to create a short about
+        max_duration (int): Maximum duration of the short in seconds
+        background_type (str): Type of background (video or image)
+        background_source (str): Source of background (provided, custom, unsplash)
+        background_path (str): Path to custom background if provided
+        style (str): Style for image generation
+        progress_callback (callable): Optional callback for progress reporting
 
     Returns:
-        dict: Information about the generated video including path and metadata
+        tuple: (path to the generated video, comprehensive content package)
     """
     try:
         # Ensure we have the correct storage credentials
@@ -290,9 +290,19 @@ def generate_youtube_short(topic, max_duration=25, background_type='video', back
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Created temporary directory: {temp_dir}")
 
-        # Create CustomShortsCreator instance
-        logger.info(f"Initializing CustomShortsCreator with output_dir={temp_dir}")
-        creator = CustomShortsCreator(output_dir=temp_dir)
+        # Choose the appropriate creator based on background source and type
+        if background_source == 'custom':
+            # Only use CustomShortsCreator for custom backgrounds (user uploads)
+            logger.info(f"Initializing CustomShortsCreator for custom background with output_dir={temp_dir}")
+            creator = CustomShortsCreator(output_dir=temp_dir)
+        elif background_type == 'video':
+            # Use video creator for provided or unsplash video backgrounds
+            logger.info(f"Initializing YTShortsCreator_V for video background with output_dir={temp_dir}")
+            creator = YTShortsCreator_V(output_dir=temp_dir)
+        else:
+            # Use image creator for provided or unsplash image backgrounds
+            logger.info(f"Initializing YTShortsCreator_I for image background with output_dir={temp_dir}")
+            creator = YTShortsCreator_I(output_dir=temp_dir)
 
         # Handle latest AI news topic
         if topic == "latest_ai_news":
