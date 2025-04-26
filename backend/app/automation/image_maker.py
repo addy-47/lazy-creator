@@ -26,7 +26,7 @@ from datetime import datetime # for more detailed time tracking
 import concurrent.futures # for multithreading
 import sys  # for path manipulation
 import math  # for math operations in duration calculations
-from .parallel_renderer import is_shutdown_requested
+from .parallel_renderer import is_shutdown_requested, render_clips_in_parallel
 
 # Configure logging for easier debugging
 # Do NOT initialize basicConfig here - this will be handled by main.py
@@ -945,24 +945,14 @@ class YTShortsCreator_I:
                                         except:
                                             pass
                                         
-                                        # Create silent audio as fallback
+                                        # Create silent audio clip as fallback
                                         from moviepy.audio.AudioClip import AudioClip
                                         import numpy as np
-
-                                        def make_frame(t):
+                                        def silent_frame(t):
                                             return np.zeros(2)  # Stereo silence
-
-                                        # Use minimum section duration for silent audio
-                                        audio_clip = AudioClip(make_frame=make_frame, duration=min_section_duration)
-                                        audio_clip = audio_clip.set_fps(44100)
-                                        actual_duration = min_section_duration
-
-                                    # Ensure minimum duration
-                                    actual_duration = max(actual_duration, min_section_duration)
-
-                                    # Store the final duration and clip
-                                    section_durations.append((i, actual_duration))
-                                    audio_clips.append((i, audio_clip, actual_duration))
+                                        silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
+                                        silent_audio = silent_audio.set_fps(44100)
+                                        audio_clips.append((i, silent_audio, min_section_duration))
                                 except Exception as e:
                                     logger.error(f"Error processing audio for section {i}: {e}")
                                     # Make sure to close the clip if it was created
@@ -971,17 +961,54 @@ class YTShortsCreator_I:
                                             audio_clip.close()
                                         except:
                                             pass
-                                
-                                section_durations.append((i, min_section_duration))
+                                    
+                                    # Add default duration since audio processing failed
+                                    section_durations.append((i, min_section_duration))
+                                    
+                                    # Create silent audio clip as fallback
+                                    from moviepy.audio.AudioClip import AudioClip
+                                    import numpy as np
+                                    def silent_frame(t):
+                                        return np.zeros(2)  # Stereo silence
+                                    silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
+                                    silent_audio = silent_audio.set_fps(44100)
+                                    audio_clips.append((i, silent_audio, min_section_duration))
                             except Exception as e:
                                 logger.error(f"Error processing audio for section {i}: {e}")
                                 section_durations.append((i, min_section_duration))
+                                
+                                # Create silent audio clip as fallback
+                                from moviepy.audio.AudioClip import AudioClip
+                                import numpy as np
+                                def silent_frame(t):
+                                    return np.zeros(2)  # Stereo silence
+                                silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
+                                silent_audio = silent_audio.set_fps(44100)
+                                audio_clips.append((i, silent_audio, min_section_duration))
                         else:
-                            # If no audio was created, use minimum duration
+                            # If no audio was created, use minimum duration and create silent audio
                             section_durations.append((i, min_section_duration))
+                            
+                            # Create silent audio clip as fallback
+                            from moviepy.audio.AudioClip import AudioClip
+                            import numpy as np
+                            def silent_frame(t):
+                                return np.zeros(2)  # Stereo silence
+                            silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
+                            silent_audio = silent_audio.set_fps(44100)
+                            audio_clips.append((i, silent_audio, min_section_duration))
                     except Exception as e:
                         logger.error(f"Error getting TTS result for section {i}: {e}")
                         section_durations.append((i, min_section_duration))
+                        
+                        # Create silent audio clip as fallback
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)  # Stereo silence
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        audio_clips.append((i, silent_audio, min_section_duration))
 
             # Sort durations by section index
             section_durations.sort(key=lambda x: x[0])
@@ -1365,8 +1392,37 @@ class YTShortsCreator_I:
                 try:
                     # Make sure each clip has proper duration
                     if clip.duration <= 0:
-                        logger.error(f"Clip {i} has invalid duration: {clip.duration}s, skipping")
-                        continue
+                        logger.error(f"Clip {i} has invalid duration: {clip.duration}s, creating fallback")
+                        # Create fallback clip with proper duration
+                        section_duration = script_sections[i]['duration'] if i < len(script_sections) else 5
+                        fallback_clip = ColorClip(size=self.resolution, color=(33, 33, 33)).set_duration(section_duration)
+                        
+                        # Add text if available
+                        if i < len(script_sections):
+                            section_text = script_sections[i]['text']
+                            try:
+                                txt_clip = self.v_creator._create_text_clip(
+                                    section_text,
+                                    duration=section_duration,
+                                    font_size=60,
+                                    position=('center', 'center'),
+                                    with_pill=True
+                                )
+                                fallback_clip = CompositeVideoClip([fallback_clip, txt_clip], size=self.resolution)
+                            except Exception as e:
+                                logger.error(f"Error adding text to fallback clip: {e}")
+                        
+                        # Add silent audio
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=section_duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        fallback_clip = fallback_clip.set_audio(silent_audio)
+                        
+                        # Use fallback clip
+                        clip = fallback_clip
                     
                     # Ensure each clip has valid audio, or add silent audio
                     if clip.audio is None:
@@ -1409,16 +1465,79 @@ class YTShortsCreator_I:
                     validated_clips.append(clip)
                     logger.info(f"Validated clip {i}: duration={clip.duration:.2f}s, has_valid_audio={clip.audio is not None}")
                 except Exception as validation_error:
-                    logger.error(f"Error validating clip {i}: {validation_error}, skipping")
+                    logger.error(f"Error validating clip {i}: {validation_error}, creating fallback clip")
+                    
+                    # Create fallback clip with proper duration
+                    section_duration = script_sections[i]['duration'] if i < len(script_sections) else 5
+                    fallback_clip = ColorClip(size=self.resolution, color=(33, 33, 33)).set_duration(section_duration)
+                    
+                    # Add text if available
+                    if i < len(script_sections):
+                        section_text = script_sections[i]['text']
+                        try:
+                            txt_clip = self.v_creator._create_text_clip(
+                                section_text,
+                                duration=section_duration,
+                                font_size=60,
+                                position=('center', 'center'),
+                                with_pill=True
+                            )
+                            fallback_clip = CompositeVideoClip([fallback_clip, txt_clip], size=self.resolution)
+                        except Exception as e:
+                            logger.error(f"Error adding text to fallback clip: {e}")
+                    
+                    # Add silent audio
+                    from moviepy.audio.AudioClip import AudioClip
+                    import numpy as np
+                    def silent_frame(t):
+                        return np.zeros(2)
+                    silent_audio = AudioClip(make_frame=silent_frame, duration=section_duration)
+                    silent_audio = silent_audio.set_fps(44100)
+                    fallback_clip = fallback_clip.set_audio(silent_audio)
+                    
+                    # Add to validated clips
+                    validated_clips.append(fallback_clip)
+                    logger.info(f"Added fallback clip for section {i} with duration {section_duration}s")
             
             # Replace our section clips with validated ones
             if validated_clips:
                 section_clips = validated_clips
                 logger.info(f"Using {len(section_clips)} validated clips")
             else:
-                logger.error("No valid clips found after validation")
-                return None
+                logger.error("No valid clips found after validation, creating basic fallback video")
                 
+                # Create basic fallback video with the proper duration
+                fallback_duration = min(15, max_duration)  # Default to 15 seconds or max_duration if shorter
+                logger.info(f"Creating fallback video of {fallback_duration} seconds")
+                
+                fallback_clip = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(fallback_duration)
+                
+                # Add title text if available
+                if title:
+                    try:
+                        title_txt = self.v_creator._create_text_clip(
+                            title,
+                            duration=fallback_duration,
+                            font_size=70,
+                            position=('center', 'center'),
+                            with_pill=True
+                        )
+                        fallback_clip = CompositeVideoClip([fallback_clip, title_txt], size=self.resolution)
+                    except Exception as e:
+                        logger.error(f"Error adding title to fallback clip: {e}")
+                
+                # Add silent audio
+                from moviepy.audio.AudioClip import AudioClip
+                import numpy as np
+                def silent_frame(t):
+                    return np.zeros(2)
+                silent_audio = AudioClip(make_frame=silent_frame, duration=fallback_duration)
+                silent_audio = silent_audio.set_fps(44100)
+                fallback_clip = fallback_clip.set_audio(silent_audio)
+                
+                # Set as single section clip
+                section_clips = [fallback_clip]
+            
             # Add captions at the bottom if requested
             if add_captions and section_clips:
                 for i, clip in enumerate(section_clips):
@@ -1456,9 +1575,43 @@ class YTShortsCreator_I:
                 os.makedirs(parallel_temp_dir, exist_ok=True)
                 
                 # Log all clips before concatenation for debugging
+                total_clip_duration = 0
                 for i, clip in enumerate(section_clips):
+                    total_clip_duration += clip.duration
                     logger.info(f"Clip {i} before concatenation: duration={clip.duration:.2f}s, " +
                                f"has_audio={clip.audio is not None}")
+                               
+                logger.info(f"Total duration of all clips: {total_clip_duration:.2f}s (target: {max_duration}s)")
+                
+                # Verify we have enough duration
+                if total_clip_duration < max_duration * 0.5:  # If we have less than 50% of target duration
+                    logger.warning(f"Total clip duration ({total_clip_duration:.2f}s) is much less than target ({max_duration}s)")
+                    
+                    # Add padding to reach at least 75% of the target duration
+                    min_acceptable_duration = max_duration * 0.75
+                    if total_clip_duration < min_acceptable_duration:
+                        padding_needed = min_acceptable_duration - total_clip_duration
+                        logger.info(f"Adding padding clip of {padding_needed:.2f}s to reach minimum duration")
+                        
+                        # Create a simple padding clip
+                        padding_clip = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(padding_needed)
+                        
+                        # Add audio silence
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=padding_needed)
+                        silent_audio = silent_audio.set_fps(44100)
+                        padding_clip = padding_clip.set_audio(silent_audio)
+                        
+                        # Add to section clips
+                        section_clips.append(padding_clip)
+                        logger.info(f"Added padding clip with duration {padding_needed:.2f}s")
+                        
+                        # Update total duration
+                        total_clip_duration = sum(clip.duration for clip in section_clips)
+                        logger.info(f"New total duration after padding: {total_clip_duration:.2f}s")
                 
                 # Add extra safety for audio duration before concatenation
                 try:
@@ -1495,11 +1648,20 @@ class YTShortsCreator_I:
                 
                 # Now concatenate the clips
                 try:
+                    # Log what we're about to do
+                    logger.info(f"Concatenating {len(section_clips)} clips with method='chain_together'")
+                    
+                    # Concatenate all clips
                     final_clip = concatenate_videoclips(section_clips, method="chain_together")
                     
                     # Log the final concatenated clip
                     logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
                                f"has_audio={final_clip.audio is not None}")
+                               
+                    # Verify the concatenated duration is correct
+                    if abs(final_clip.duration - total_clip_duration) > 0.5:  # More than half second difference
+                        logger.warning(f"Concatenated duration ({final_clip.duration:.2f}s) doesn't match " +
+                                      f"expected total duration ({total_clip_duration:.2f}s)")
                 except Exception as concat_error:
                     logger.error(f"Error during clip concatenation: {concat_error}")
                     
@@ -1507,6 +1669,153 @@ class YTShortsCreator_I:
                     try:
                         logger.warning("Trying alternative concatenation method")
                         # Try simple method without audio
+                        temp_clips = []
+                        for clip in section_clips:
+                            # Remove audio temporarily
+                            temp_clip = clip.without_audio()
+                            temp_clips.append(temp_clip)
+                        
+                        # Concatenate videos without audio
+                        logger.info(f"Trying alternative concatenation with {len(temp_clips)} clips using method='compose'")
+                        final_clip = concatenate_videoclips(temp_clips, method="compose")
+                        
+                        # Create silent audio for the final clip
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=final_clip.duration)
+                        silent_audio = silent_audio.set_fps(44100)
+                        
+                        # Add silent audio
+                        final_clip = final_clip.set_audio(silent_audio)
+                        logger.info(f"Created fallback silent video with simple concatenation, duration={final_clip.duration:.2f}s")
+                    except Exception as fallback_error:
+                        logger.error(f"Alternative concatenation also failed: {fallback_error}")
+                        
+                        # Last resort: create a single clip with the desired duration
+                        try:
+                            logger.warning("All concatenation methods failed. Creating single clip with target duration.")
+                            final_duration = min(15, max_duration)  # Default to 15 seconds or max_duration if shorter
+                            
+                            # Create a basic clip
+                            final_clip = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(final_duration)
+                            
+                            # Add text if we have a title
+                            if title:
+                                title_txt = self.v_creator._create_text_clip(
+                                    title,
+                                    duration=final_duration,
+                                    font_size=70,
+                                    position=('center', 'center'),
+                                    with_pill=True
+                                )
+                                final_clip = CompositeVideoClip([final_clip, title_txt], size=self.resolution)
+                            
+                            # Add silent audio
+                            from moviepy.audio.AudioClip import AudioClip
+                            import numpy as np
+                            def silent_frame(t):
+                                return np.zeros(2)
+                            silent_audio = AudioClip(make_frame=silent_frame, duration=final_duration)
+                            silent_audio = silent_audio.set_fps(44100)
+                            final_clip = final_clip.set_audio(silent_audio)
+                            
+                            logger.info(f"Created last-resort clip with duration {final_duration:.2f}s")
+                        except Exception as e:
+                            logger.error(f"Failed to create even a basic clip: {e}")
+                            raise ValueError("Failed to create any usable video after multiple attempts")
+                
+                # Ensure we don't exceed maximum duration
+                if final_clip.duration > max_duration:
+                    logger.warning(f"Video exceeds maximum duration ({final_clip.duration}s > {max_duration}s), trimming")
+                    final_clip = final_clip.subclip(0, max_duration)
+                
+                # Log final duration after any trimming
+                logger.info(f"Final video duration: {final_clip.duration:.2f}s")
+                
+                # Add watermark if requested
+                if add_watermark_text:
+                    final_clip = self.add_watermark(final_clip, watermark_text=add_watermark_text)
+                    
+                # Progress update
+                progress_callback(85, "Rendering final video")
+                
+                # Render clips in parallel
+                render_start_time = time.time()
+                logger.info(f"Starting parallel video rendering")
+                
+                # Make sure the final clip has the proper duration before rendering
+                logger.info(f"Final clip duration before rendering: {final_clip.duration:.2f}s")
+                if final_clip.duration < max_duration * 0.75:
+                    logger.warning(f"Final duration ({final_clip.duration:.2f}s) is significantly less than target ({max_duration}s)")
+                
+                output_filename = render_clips_in_parallel(
+                    [final_clip],
+                    output_filename,
+                    temp_dir=parallel_temp_dir,
+                    fps=self.fps,
+                    preset="veryfast"
+                )
+                
+                logger.info(f"Completed video rendering in {time.time() - render_start_time:.2f} seconds")
+                
+            except Exception as e:
+                logger.warning(f"Parallel renderer failed: {e}. Using standard rendering.")
+                
+                # Concatenate all clips
+                concat_start_time = time.time()
+                logger.info(f"Starting standard video rendering")
+                
+                # Log all clips before concatenation for debugging
+                for i, clip in enumerate(section_clips):
+                    logger.info(f"Clip {i} before concatenation: duration={clip.duration:.2f}s, " +
+                               f"has_audio={clip.audio is not None}")
+                
+                # Calculate total expected duration
+                expected_duration = sum(clip.duration for clip in section_clips)
+                logger.info(f"Expected total duration: {expected_duration:.2f}s (target: {max_duration}s)")
+                
+                # Add padding if needed
+                if expected_duration < max_duration * 0.75:
+                    padding_needed = max_duration * 0.75 - expected_duration
+                    logger.info(f"Adding padding clip of {padding_needed:.2f}s to reach minimum duration")
+                    
+                    # Create a simple padding clip
+                    padding_clip = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(padding_needed)
+                    
+                    # Add audio silence
+                    from moviepy.audio.AudioClip import AudioClip
+                    import numpy as np
+                    def silent_frame(t):
+                        return np.zeros(2)
+                    silent_audio = AudioClip(make_frame=silent_frame, duration=padding_needed)
+                    silent_audio = silent_audio.set_fps(44100)
+                    padding_clip = padding_clip.set_audio(silent_audio)
+                    
+                    # Add to section clips
+                    section_clips.append(padding_clip)
+                    expected_duration += padding_needed
+                    logger.info(f"Added padding clip, new expected duration: {expected_duration:.2f}s")
+                
+                # Concatenate with the explicit method
+                logger.info(f"Concatenating {len(section_clips)} clips with method='chain_together'")
+                try:
+                    final_clip = concatenate_videoclips(section_clips, method="chain_together")
+                    
+                    # Log the final concatenated clip
+                    logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
+                              f"has_audio={final_clip.audio is not None}")
+                    
+                    # Verify the concat duration is close to expected
+                    if abs(final_clip.duration - expected_duration) > 0.5:
+                        logger.warning(f"Concatenated duration ({final_clip.duration:.2f}s) doesn't match " +
+                                    f"expected duration ({expected_duration:.2f}s)")
+                except Exception as concat_error:
+                    logger.error(f"Standard concatenation failed: {concat_error}, trying fallback method")
+                    
+                    try:
+                        # Try alternative concatenation method
                         temp_clips = []
                         for clip in section_clips:
                             # Remove audio temporarily
@@ -1523,63 +1832,48 @@ class YTShortsCreator_I:
                             return np.zeros(2)
                         silent_audio = AudioClip(make_frame=silent_frame, duration=final_clip.duration)
                         silent_audio = silent_audio.set_fps(44100)
+                        final_clip = final_clip.set_audio(silent_audio)
+                        
+                        logger.info(f"Used fallback concatenation, duration: {final_clip.duration:.2f}s")
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback concatenation also failed: {fallback_error}")
+                        
+                        # Create a simple duration-guaranteed clip as last resort
+                        final_duration = min(15, max_duration)
+                        logger.warning(f"Creating simple {final_duration}s clip as last resort")
+                        
+                        final_clip = ColorClip(size=self.resolution, color=(0, 0, 0)).set_duration(final_duration)
+                        if title:
+                            try:
+                                txt_clip = self.v_creator._create_text_clip(
+                                    title,
+                                    duration=final_duration,
+                                    font_size=70,
+                                    position=('center', 'center'),
+                                    with_pill=True
+                                )
+                                final_clip = CompositeVideoClip([final_clip, txt_clip], size=self.resolution)
+                            except:
+                                logger.error("Failed to add text to last resort clip")
                         
                         # Add silent audio
+                        from moviepy.audio.AudioClip import AudioClip
+                        import numpy as np
+                        def silent_frame(t):
+                            return np.zeros(2)
+                        silent_audio = AudioClip(make_frame=silent_frame, duration=final_duration)
+                        silent_audio = silent_audio.set_fps(44100)
                         final_clip = final_clip.set_audio(silent_audio)
-                        logger.info("Created fallback silent video with simple concatenation")
-                    except Exception as fallback_error:
-                        logger.error(f"Alternative concatenation also failed: {fallback_error}")
-                        raise ValueError("Failed to concatenate video clips after multiple attempts")
                 
                 # Ensure we don't exceed maximum duration
                 if final_clip.duration > max_duration:
                     logger.warning(f"Video exceeds maximum duration ({final_clip.duration}s > {max_duration}s), trimming")
                     final_clip = final_clip.subclip(0, max_duration)
                 
-                # Add watermark if requested
-                if add_watermark_text:
-                    final_clip = self.add_watermark(final_clip, watermark_text=add_watermark_text)
-                
-                # Progress update
-                progress_callback(85, "Rendering final video")
-                
-                # Render clips in parallel
-                render_start_time = time.time()
-                logger.info(f"Starting parallel video rendering")
-                
-                output_filename = render_clips_in_parallel(
-                    [final_clip],
-                    output_filename,
-                    temp_dir=parallel_temp_dir,
-                    fps=self.fps,
-                    preset="veryfast"
-                )
-                
-                logger.info(f"Completed video rendering in {time.time() - render_start_time:.2f} seconds")
-            except Exception as e:
-                logger.warning(f"Parallel renderer failed: {e}. Using standard rendering.")
-                
-                # Concatenate all clips
-                concat_start_time = time.time()
-                logger.info(f"Starting standard video rendering")
-                
-                # Log all clips before concatenation for debugging
-                for i, clip in enumerate(section_clips):
-                    logger.info(f"Clip {i} before concatenation: duration={clip.duration:.2f}s, " +
-                               f"has_audio={clip.audio is not None}")
-                
-                # Concatenate with the explicit method
-                logger.info(f"Concatenating {len(section_clips)} clips with method='chain_together'")
-                final_clip = concatenate_videoclips(section_clips, method="chain_together")
-                
-                # Log the final concatenated clip
-                logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
-                           f"has_audio={final_clip.audio is not None}")
-                
-                # Ensure we don't exceed maximum duration
-                if final_clip.duration > max_duration:
-                    logger.warning(f"Video exceeds maximum duration ({final_clip.duration}s > {max_duration}s), trimming")
-                    final_clip = final_clip.subclip(0, max_duration)
+                # Verify the final duration
+                logger.info(f"Final video duration before writing: {final_clip.duration:.2f}s")
+                if final_clip.duration < max_duration * 0.5:
+                    logger.warning(f"Final video duration ({final_clip.duration:.2f}s) is much less than target ({max_duration}s)")
                 
                 # Add watermark if requested
                 if add_watermark_text:
@@ -1591,9 +1885,6 @@ class YTShortsCreator_I:
                 # Process concatenated video before writing to file
                 # This is a critical part to prevent audio access errors
                 try:
-                    # Log the concatenated clip details
-                    logger.info(f"Final clip details: duration={final_clip.duration:.2f}s, has_audio={final_clip.audio is not None}")
-                    
                     # Verify the audio can be properly accessed
                     if final_clip.audio is not None:
                         # Create a completely new audio clip to replace any problematic composite audio
@@ -1748,7 +2039,17 @@ class YTShortsCreator_I:
                 # Schedule these for deletion on exit
                 import atexit
                 for path in failed_files:
-                    atexit.register(lambda p=path: os.remove(p) if os.path.exists(p) else None)
+                    # Use a function definition instead of a lambda to correctly capture the path
+                    def create_deletion_callback(file_path):
+                        def deletion_callback():
+                            if os.path.exists(file_path):
+                                try:
+                                    os.remove(file_path)
+                                except Exception as e:
+                                    logger.warning(f"Failed to delete {file_path} during exit: {e}")
+                        return deletion_callback
+                        
+                    atexit.register(create_deletion_callback(path))
                 logger.info("Scheduled remaining files for deletion on program exit")
             else:
                 logger.info("All temporary files were successfully cleaned up")
