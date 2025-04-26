@@ -14,7 +14,8 @@ from moviepy.editor import ( # for video editing
 )
 from moviepy.config import change_settings
 change_settings({"IMAGEMAGICK_BINARY": "magick"}) # for windows users
-from moviepy.video.fx import vfx  # Import video effects for looping and other transformations
+# Individual effects imports instead of the entire vfx module
+from moviepy.video.fx.loop import loop  # Import the loop effect specifically
 from gtts import gTTS
 from dotenv import load_dotenv
 import shutil # for file operations like moving and deleting files
@@ -1182,7 +1183,7 @@ class YTShortsCreator_I:
                                         # Create a loop if needed
                                         repeats = math.ceil(section_duration / audio_duration)
                                         if repeats > 1:
-                                            audio_clip = audio_clip.fx(vfx.loop, duration=section_duration)
+                                            audio_clip = audio_clip.fx(loop, duration=section_duration)
                                 audio_clip = audio_clip.set_duration(section_duration)
                                 section_clip = section_clip.set_audio(audio_clip)
                                 logger.info(f"Added audio to section {i}")
