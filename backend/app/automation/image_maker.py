@@ -487,39 +487,27 @@ class YTShortsCreator_I:
                                font_size=60, with_zoom=True, zoom_factor=0.05):
         """
         Create a still image clip with optional text and zoom effect
-
-        Args:
-            image_path (str): Path to the image
-            duration (float): Duration of the clip in seconds
-            text (str): Optional text overlay
-            text_position (str): Position of text ('top', 'center', ('center','center'))
-            font_size (int): Font size for text
-            with_zoom (bool): Whether to add a subtle zoom effect
-            zoom_factor (float): Rate of zoom (higher = faster zoom)
-
-        Returns:
-            VideoClip: MoviePy clip containing the image and effects
         """
-        # Check if the image exists
-        if not os.path.exists(image_path):
-            logger.error(f"Image not found at {image_path}, creating fallback")
-            # Create a simple colored background as fallback
-            color_clip = ColorClip(size=self.resolution, color=(33, 33, 33))
-            color_clip = color_clip.set_duration(duration)
-            
-            # Add text if provided
-            if text:
-                txt_clip = self.v_creator._create_text_clip(
-                    text, 
-                    duration=duration,
-                    font_size=font_size,
-                    position=text_position,
-                    with_pill=True
-                )
-                return CompositeVideoClip([color_clip, txt_clip], size=self.resolution)
-            return color_clip
-        
         try:
+            # Check if the image exists
+            if not os.path.exists(image_path):
+                logger.error(f"Image not found at {image_path}, creating fallback")
+                # Create a simple colored background as fallback
+                color_clip = ColorClip(size=self.resolution, color=(33, 33, 33))
+                color_clip = color_clip.set_duration(duration)
+                
+                # Add text if provided
+                if text:
+                    txt_clip = self.v_creator._create_text_clip(
+                        text, 
+                        duration=duration,
+                        font_size=font_size,
+                        position=text_position,
+                        with_pill=True
+                    )
+                    return CompositeVideoClip([color_clip, txt_clip], size=self.resolution)
+                return color_clip
+            
             # Load image
             image = ImageClip(image_path)
 
@@ -551,11 +539,7 @@ class YTShortsCreator_I:
                     zoom_level = 1 + (t / duration) * zoom_factor
                     return zoom_level
 
-                # Function to resize based on zoom level
-                def zoom_func(t):
-                    return zoom(t)
-
-                image = image.resize(zoom_func)
+                image = image.resize(zoom)
 
             # Set the duration
             image = image.set_duration(duration)
@@ -563,44 +547,45 @@ class YTShortsCreator_I:
             # Add text if provided
             if text:
                 try:
-                    # Try using the text clip function from YTShortsCreator_V
+                    # Calculate safe text position
+                    if isinstance(text_position, tuple):
+                        x_pos, y_pos = text_position
+                    else:
+                        x_pos = y_pos = text_position
+
+                    # Convert string positions to numeric with safe margins
+                    margin = int(font_size * 1.5)
+                    screen_w, screen_h = self.resolution
+
+                    if x_pos == 'center':
+                        x_pos = screen_w // 2
+                    elif x_pos == 'left':
+                        x_pos = margin
+                    elif x_pos == 'right':
+                        x_pos = screen_w - margin
+
+                    if y_pos == 'center':
+                        y_pos = screen_h // 2
+                    elif y_pos == 'top':
+                        y_pos = margin
+                    elif y_pos == 'bottom':
+                        y_pos = screen_h - margin * 2  # Extra margin for bottom
+
+                    # Create text clip with safe positioning
                     txt_clip = self.v_creator._create_text_clip(
                         text,
                         duration=duration,
                         font_size=font_size,
-                        position=text_position,
+                        position=(x_pos, y_pos),
                         with_pill=True
                     )
+
                     # Combine image and text
                     return CompositeVideoClip([image, txt_clip], size=self.resolution)
                 except Exception as e:
-                    logger.error(f"Error creating text clip using V creator: {e}")
-                    # Fallback to a simple text implementation if the V creator fails
-                    try:
-                        # Use the simpler built-in MoviePy TextClip without fancy effects
-                        simple_txt_clip = TextClip(
-                            txt=text,
-                            fontsize=font_size,
-                            color='white',
-                            align='center',
-                            method='caption',
-                            size=(int(self.resolution[0] * 0.9), None)
-                        ).set_position(('center', int(self.resolution[1] * 0.85))).set_duration(duration)
-
-                        # Create a semi-transparent background for better readability
-                        txt_w, txt_h = simple_txt_clip.size
-                        bg_width = txt_w + 40
-                        bg_height = txt_h + 40
-                        bg_clip = ColorClip(size=(bg_width, bg_height), color=(0, 0, 0))
-                        bg_clip = bg_clip.set_position(('center', int(self.resolution[1] * 0.85) - 20)).set_duration(duration).set_opacity(0.7)
-
-                        # Combine all elements
-                        return CompositeVideoClip([image, bg_clip, simple_txt_clip], size=self.resolution)
-                    except Exception as e2:
-                        logger.error(f"Fallback text clip also failed: {e2}")
-                        # If all text methods fail, just return the image without text
-                        logger.warning("Returning image without text overlay due to text rendering failures")
-                        return image
+                    logger.error(f"Error creating text clip: {e}")
+                    # Return just the image if text creation fails
+                    return image
             return image
         except Exception as e:
             logger.error(f"Error creating still image clip: {e}")
@@ -1649,10 +1634,10 @@ class YTShortsCreator_I:
                 # Now concatenate the clips
                 try:
                     # Log what we're about to do
-                    logger.info(f"Concatenating {len(section_clips)} clips with method='chain_together'")
+                    logger.info(f"Concatenating {len(section_clips)} clips with method='compose'")
                     
                     # Concatenate all clips
-                    final_clip = concatenate_videoclips(section_clips, method="chain_together")
+                    final_clip = concatenate_videoclips(section_clips, method="compose")
                     
                     # Log the final concatenated clip
                     logger.info(f"Final concatenated clip: duration={final_clip.duration:.2f}s, " +
@@ -1668,7 +1653,7 @@ class YTShortsCreator_I:
                     # If concatenation fails, try with a different method
                     try:
                         logger.warning("Trying alternative concatenation method")
-                        # Try simple method without audio
+                        # Try simple method without audio first
                         temp_clips = []
                         for clip in section_clips:
                             # Remove audio temporarily
@@ -1676,20 +1661,35 @@ class YTShortsCreator_I:
                             temp_clips.append(temp_clip)
                         
                         # Concatenate videos without audio
-                        logger.info(f"Trying alternative concatenation with {len(temp_clips)} clips using method='compose'")
+                        logger.info(f"Trying alternative concatenation with {len(temp_clips)} clips")
                         final_clip = concatenate_videoclips(temp_clips, method="compose")
                         
-                        # Create silent audio for the final clip
-                        from moviepy.audio.AudioClip import AudioClip
-                        import numpy as np
-                        def silent_frame(t):
-                            return np.zeros(2)
-                        silent_audio = AudioClip(make_frame=silent_frame, duration=final_clip.duration)
-                        silent_audio = silent_audio.set_fps(44100)
+                        # Now create a composite audio from all the original audio clips
+                        audio_clips = []
+                        current_time = 0
+                        for clip in section_clips:
+                            if clip.audio is not None:
+                                # Set the start time for this audio clip
+                                audio_clip = clip.audio.set_start(current_time)
+                                audio_clips.append(audio_clip)
+                            current_time += clip.duration
                         
-                        # Add silent audio
-                        final_clip = final_clip.set_audio(silent_audio)
-                        logger.info(f"Created fallback silent video with simple concatenation, duration={final_clip.duration:.2f}s")
+                        if audio_clips:
+                            # Combine all audio clips
+                            from moviepy.audio.AudioClip import CompositeAudioClip
+                            final_audio = CompositeAudioClip(audio_clips)
+                            final_clip = final_clip.set_audio(final_audio)
+                        else:
+                            # If no audio clips, create silent audio
+                            from moviepy.audio.AudioClip import AudioClip
+                            import numpy as np
+                            def silent_frame(t):
+                                return np.zeros(2)
+                            silent_audio = AudioClip(make_frame=silent_frame, duration=final_clip.duration)
+                            silent_audio = silent_audio.set_fps(44100)
+                            final_clip = final_clip.set_audio(silent_audio)
+                        
+                        logger.info(f"Created composite video with duration={final_clip.duration:.2f}s")
                     except Exception as fallback_error:
                         logger.error(f"Alternative concatenation also failed: {fallback_error}")
                         
