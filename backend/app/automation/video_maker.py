@@ -12,8 +12,9 @@ import requests # for HTTP requests
 from gtts import gTTS # for text-to-speech
 from pathlib import Path # for path manipulations
 from datetime import datetime # for timestamps
-from PIL import Image, ImageFilter, ImageEnhance # for image processing
+from PIL import Image, ImageFilter, ImageEnhance, ImageDraw,ImageFont # for image processing
 import concurrent.futures # for parallel processing
+from dotenv import load_dotenv # for loading environment variables
 
 # MoviePy imports for video processing
 from moviepy.editor import (
@@ -880,7 +881,7 @@ class YTShortsCreator_V:
         try:
             # Time tracking
             start_time = time.time()
-            
+
             # Setup progress reporting if callback is provided
             last_progress_check = time.time()
             if progress_callback and callable(progress_callback):
@@ -988,7 +989,7 @@ class YTShortsCreator_V:
                 if check_progress():
                     logger.info("Progress callback requested abort")
                     return None
-                    
+
                 if bg_clip is not None:
                     try:
                         # Process each background clip (resize, apply effects)
@@ -1012,14 +1013,14 @@ class YTShortsCreator_V:
 
             # Calculate total duration of script sections
             initial_total_duration = sum(section.get('duration', 5) for section in script_sections)
-            
+
             # If total exceeds max_duration, scale all sections proportionally
             if initial_total_duration > max_duration:
                 logger.info(f"Total duration ({initial_total_duration:.2f}s) exceeds max_duration ({max_duration}s), scaling sections")
                 scale_factor = max_duration / initial_total_duration
                 for section in script_sections:
                     section['duration'] = section.get('duration', 5) * scale_factor
-                
+
                 # Verify scaled durations
                 new_total = sum(section.get('duration', 5) for section in script_sections)
                 logger.info(f"After scaling: total duration = {new_total:.2f}s")
@@ -1040,41 +1041,41 @@ class YTShortsCreator_V:
             combined_text = ""
             section_starts = []
             current_position = 0
-            
+
             for section in script_sections:
                 section_text = section["text"]
                 section_duration = section.get("duration", 5)
-                
+
                 # Add to combined text with a pause marker (period and space if needed)
                 if combined_text and not combined_text.endswith('.'):
                     combined_text += ". "
                 elif combined_text:
                     combined_text += " "
-                
+
                 section_starts.append((current_position, section_text, section_duration))
                 combined_text += section_text
                 current_position += len(section_text) + 1  # +1 for the space or period
-            
+
             # Generate a single audio file for the entire script
             full_audio_path = None
             audio_clips = []
             section_durations = []
-            
+
             try:
                 # Create a single audio file for all sections
                 full_audio_path = self._generate_audio(combined_text, voice_style=voice_style)
-                
+
                 if full_audio_path and os.path.exists(full_audio_path):
                     full_audio = AudioFileClip(full_audio_path)
                     total_audio_duration = full_audio.duration
                     logger.info(f"Generated full audio with duration: {total_audio_duration:.2f}s")
-                    
+
                     # If the audio is too short or too long, adjust it
                     total_script_duration = sum(duration for _, _, duration in section_starts)
-                    
+
                     if abs(total_audio_duration - total_script_duration) > 2.0:
                         logger.warning(f"Audio duration ({total_audio_duration:.2f}s) doesn't match script duration ({total_script_duration:.2f}s)")
-                        
+
                         # Scale the audio to match the expected duration
                         if total_audio_duration > 0:
                             scale_factor = total_script_duration / total_audio_duration
@@ -1082,28 +1083,28 @@ class YTShortsCreator_V:
                         else:
                             logger.error("Generated audio has zero duration, falling back to individual section generation")
                             raise ValueError("Zero duration audio generated")
-                    
+
                     # Divide the audio into sections based on proportional text length
                     current_time = 0
                     audio_sections = []
-                    
+
                     for i, (_, section_text, section_duration) in enumerate(section_starts):
                         # Calculate this section's proportion of the total audio
                         if total_script_duration > 0:
                             section_proportion = section_duration / total_script_duration
                         else:
                             section_proportion = 1.0 / len(section_starts)
-                        
+
                         # Calculate audio duration for this section
                         audio_section_duration = total_audio_duration * section_proportion
-                        
+
                         # Extract this section of audio
                         if current_time + audio_section_duration <= total_audio_duration:
                             section_audio = full_audio.subclip(current_time, current_time + audio_section_duration)
                         else:
                             # Handle edge case for last section
                             section_audio = full_audio.subclip(current_time, total_audio_duration)
-                        
+
                         # Make sure the section matches the expected duration
                         if abs(section_audio.duration - section_duration) > 0.1:
                             # Either extend with silence or trim
@@ -1118,32 +1119,32 @@ class YTShortsCreator_V:
                             else:
                                 # Trim
                                 section_audio = section_audio.subclip(0, section_duration)
-                        
+
                         # Store the audio section
                         section_durations.append((i, section_duration))
                         audio_sections.append((i, section_audio, section_duration))
                         current_time += audio_section_duration
-                    
+
                     # Use the divided sections
                     audio_clips = audio_sections
                     logger.info(f"Successfully divided full audio into {len(audio_clips)} sections")
-                
+
                 else:
                     logger.error("Failed to generate full audio file, falling back to per-section generation")
                     raise ValueError("Full audio generation failed")
-                    
+
             except Exception as e:
                 logger.warning(f"Error with unified audio approach: {e}. Falling back to per-section audio generation.")
-                
+
                 # Fall back to generating audio for each section individually (original approach)
                 audio_clips = []
                 section_durations = []
-                
+
                 # Use multithreading for audio generation to improve performance
                 with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(script_sections))) as executor:
                     # Create a list to hold future objects
                     future_to_section = {}
-                    
+
                     # Submit TTS generation jobs to the executor
                     for i, section in enumerate(script_sections):
                         section_text = section["text"]
@@ -1154,19 +1155,19 @@ class YTShortsCreator_V:
                             section_voice_style
                         )
                         future_to_section[future] = (i, section)
-                    
+
                     # Process results as they complete
                     for future in concurrent.futures.as_completed(future_to_section):
                         i, section = future_to_section[future]
                         min_section_duration = max(3, section.get('duration', 5))
-                        
+
                         try:
                             audio_path = future.result()
                             if audio_path and os.path.exists(audio_path):
                                 try:
                                     audio_clip = AudioFileClip(audio_path)
                                     actual_duration = audio_clip.duration
-                                    
+
                                     # Check if audio has valid duration
                                     if actual_duration <= 0:
                                         logger.warning(f"Audio file for section {i} has zero duration, creating fallback silent audio")
@@ -1175,7 +1176,7 @@ class YTShortsCreator_V:
                                             audio_clip.close()
                                         except:
                                             pass
-                                        
+
                                         # Create silent audio clip as fallback
                                         def silent_frame(t):
                                             return np.zeros(2)  # Stereo silence
@@ -1189,7 +1190,7 @@ class YTShortsCreator_V:
                                 except Exception as e:
                                     logger.error(f"Error processing audio file for section {i}: {e}")
                                     section_durations.append((i, min_section_duration))
-                                    
+
                                     # Create silent audio clip as fallback
                                     def silent_frame(t):
                                         return np.zeros(2)  # Stereo silence
@@ -1199,7 +1200,7 @@ class YTShortsCreator_V:
                             else:
                                 # If no audio was created, use minimum duration and create silent audio
                                 section_durations.append((i, min_section_duration))
-                                
+
                                 # Create silent audio clip as fallback
                                 def silent_frame(t):
                                     return np.zeros(2)  # Stereo silence
@@ -1209,47 +1210,47 @@ class YTShortsCreator_V:
                         except Exception as e:
                             logger.error(f"Error getting TTS result for section {i}: {e}")
                             section_durations.append((i, min_section_duration))
-                            
+
                             # Create silent audio clip as fallback
                             def silent_frame(t):
                                 return np.zeros(2)  # Stereo silence
                             silent_audio = AudioClip(make_frame=silent_frame, duration=min_section_duration)
                             silent_audio = silent_audio.set_fps(44100)
                             audio_clips.append((i, silent_audio, min_section_duration))
-                
+
                 # Sort durations by section index
                 section_durations.sort(key=lambda x: x[0])
-                
+
                 # Update script sections with actual durations
                 for i, duration in section_durations:
                     if i < len(script_sections):
                         script_sections[i]['duration'] = duration
-                
+
                 # Recalculate total duration based on actual audio lengths
                 total_duration = sum(duration for _, duration in section_durations)
-                
+
                 # Enforce max duration again if needed
                 if total_duration > max_duration:
                     scale_factor = max_duration / total_duration
                     logger.info(f"Scaling sections again to fit max_duration (factor: {scale_factor:.3f})")
-                    
+
                     # Scale all durations
                     for i, (idx, duration) in enumerate(section_durations):
                         scaled_duration = duration * scale_factor
                         section_durations[i] = (idx, scaled_duration)
-                        
+
                         # Also update the script sections
                         if idx < len(script_sections):
                             script_sections[idx]['duration'] = scaled_duration
-                    
+
                     # Scale audio clips
                     for i, (idx, clip, _) in enumerate(audio_clips):
                         new_duration = section_durations[i][1]
                         audio_clips[i] = (idx, clip, new_duration)
-                    
+
                     # Update total duration
                     total_duration = sum(duration for _, duration in section_durations)
-            
+
             logger.info(f"Completed audio generation in {time.time() - tts_start_time:.2f} seconds")
             logger.info(f"Final total audio duration: {total_duration:.1f}s" if 'total_duration' in locals() else "Audio generation completed")
 
@@ -1268,7 +1269,7 @@ class YTShortsCreator_V:
                 if check_progress():
                     logger.info("Progress callback requested abort")
                     return None
-                    
+
                 try:
                     # Get matching audio clip for this section
                     matching_audio = None
@@ -1281,7 +1282,7 @@ class YTShortsCreator_V:
                                           f"from {audio_duration:.2f}s to {section.get('duration', 5):.2f}s")
                                 matching_audio = matching_audio.set_duration(section.get('duration', 5))
                             break
-                    
+
                     if not matching_audio:
                         logger.warning(f"No matching audio found for section {i}, creating silent audio")
                         # Create silent audio
@@ -1327,11 +1328,11 @@ class YTShortsCreator_V:
                             bg_clip = concatenate_videoclips(looped_clips)
                         except Exception as concat_error:
                             logger.error(f"Error looping background clip: {concat_error}, using unlooped clip")
-                    
+
                     # Trim or pad bg_clip to match section_duration exactly
                     bg_clip = bg_clip.subclip(0, section_duration)
                     bg_clip = bg_clip.set_duration(section_duration)
-                    
+
                     # Create text overlay for this section
                     text = section["text"]
                     text_clip = None
@@ -1353,28 +1354,28 @@ class YTShortsCreator_V:
                             color=(0, 0, 0, 0),
                             duration=section_duration
                         ).set_opacity(0)
-                    
+
                     # Add text and audio to background
                     try:
                         # Verify clip dimensions and positions
                         if text_clip.size[0] > bg_clip.size[0] or text_clip.size[1] > bg_clip.size[1]:
                             logger.warning(f"Text clip size {text_clip.size} exceeds background {bg_clip.size}, resizing")
                             text_clip = text_clip.resize(width=min(text_clip.size[0], bg_clip.size[0]))
-                        
+
                         # Composite background, text and add audio
                         composite_clip = CompositeVideoClip([bg_clip, text_clip])
                         composite_clip = composite_clip.set_audio(matching_audio)
-                        
+
                         # Ensure duration is consistent
                         composite_clip = composite_clip.set_duration(section_duration)
-                        
+
                         # Store the section clip
                         section_clips.append(composite_clip)
                     except Exception as e:
                         logger.error(f"Error compositing section {i}: {e}")
                         # Create a fallback clip
                         logger.warning(f"Creating fallback clip for section {i}")
-                        
+
                         try:
                             # Use just the background with audio as fallback
                             fallback_clip = bg_clip.set_audio(matching_audio)
@@ -1390,7 +1391,7 @@ class YTShortsCreator_V:
                     # Create a fallback clip for this section
                     section_duration = section.get('duration', 5)
                     blank_clip = ColorClip(self.resolution, color=(0, 0, 0)).set_duration(section_duration)
-                    
+
                     # Try to add audio if available
                     try:
                         # Look for audio for this section
@@ -1399,7 +1400,7 @@ class YTShortsCreator_V:
                             if idx == i:
                                 matching_audio = audio_clip
                                 break
-                        
+
                         if matching_audio:
                             blank_clip = blank_clip.set_audio(matching_audio)
                         else:
@@ -1411,7 +1412,7 @@ class YTShortsCreator_V:
                             blank_clip = blank_clip.set_audio(silent_audio)
                     except Exception as audio_error:
                         logger.error(f"Error adding audio to fallback clip: {audio_error}")
-                    
+
                     section_clips.append(blank_clip)
 
             # Create watermark for the entire video duration
@@ -1492,26 +1493,26 @@ class YTShortsCreator_V:
                     # Write final video with reduced memory settings
                     # Set up a progress_function that reports every 5% of frames
                     total_frames = int(final_clip.duration * self.fps)
-                    
+
                     def write_progress(current_frame):
                         # Call progress callback to check for abort
                         if check_progress():
                             # Returning True from a moviepy progress function aborts rendering
                             return True
-                            
+
                         # Add more detailed progress reporting
                         try:
                             if total_frames > 0 and current_frame > 0:
                                 # Calculate percent complete for this video rendering phase
                                 # MoviePy calls this function with current frame
                                 percent_complete = min(99, int((current_frame / total_frames) * 100))
-                                
+
                                 # Only log every 5% to avoid excessive logging
                                 if percent_complete % 5 == 0:
                                     logger.info(f"Video rendering progress: {percent_complete}% ({current_frame}/{total_frames} frames)")
                         except Exception as e:
                             logger.warning(f"Error in progress calculation: {e}")
-                            
+
                         return None  # Continue rendering
 
                     final_clip.write_videofile(
@@ -1626,7 +1627,7 @@ class YTShortsCreator_V:
         # This enables caching for repeated sections
         section_hash = str(hash(text + str(voice_style)))[:12]
         section_audio_file = os.path.join(self.temp_dir, f"section_{section_hash}.mp3")
-        
+
         # Check if we already have this audio cached
         if os.path.exists(section_audio_file):
             logger.info(f"Using cached audio for section: {text[:20]}...")
@@ -1635,7 +1636,7 @@ class YTShortsCreator_V:
         logger.info(f"Generating audio for text: \"{text[:50]}{'...' if len(text) > 50 else ''}\" (length: {len(text)})")
         if voice_style:
             logger.info(f"Voice style requested: {voice_style}")
-            
+
         # Create a unique filename based on content hash and timestamp
         timestamp = int(time.time())
         section_audio_file = os.path.join(self.temp_dir, f"section_{section_hash}_{timestamp}.mp3")
@@ -1679,7 +1680,7 @@ class YTShortsCreator_V:
         logger.info("Using gTTS fallback")
         retry_count = 0
         max_retries = 3
-        
+
         while retry_count < max_retries:
             try:
                 logger.info(f"gTTS attempt {retry_count+1}/{max_retries}")
@@ -1695,7 +1696,7 @@ class YTShortsCreator_V:
                 logger.error(f"gTTS error (attempt {retry_count+1}/{max_retries}): {e}")
                 time.sleep(2)
                 retry_count += 1
-                
+
         # If all TTS methods fail, create a silent audio clip
         try:
             logger.warning("All TTS methods failed. Creating silent audio clip.")
