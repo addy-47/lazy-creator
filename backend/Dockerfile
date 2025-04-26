@@ -39,9 +39,11 @@ ENV MEDIA_BUCKET="lazycreator-media"
 ENV UPLOADS_BUCKET="lazycreator-uploads"
 ENV DEBUG="False"
 ENV FRONTEND_URL="https://lazycreator.in"
-
-# Cloud Run specific: Use $PORT environment variable
-ENV PORT 8080
+ENV MONGODB_URI="mongodb://localhost:27017/lazy-creator"
+ENV SECRET_KEY="change-this-in-production"
+ENV MONGODB_DB_NAME="lazy-creator"
+ENV GCS_CREDENTIALS_FILE="/app/app/credentials/service-account.json"
+ENV PORT=8080
 
 # Command to run the application with gunicorn for production
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app.main:app

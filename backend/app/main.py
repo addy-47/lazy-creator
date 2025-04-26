@@ -63,16 +63,16 @@ if os.getenv('DEBUG', 'True').lower() == 'true':
          supports_credentials=True,
          allow_headers=["Content-Type", "Authorization", "x-access-token", "X-Requested-With"],
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
-    
+
     logger.info("Configured CORS for development environment (all origins)")
 else:
     # Production environment - strict CORS
     allowed_origins = [
-        "https://lazycreator.in", 
+        "https://lazycreator.in",
         "https://www.lazycreator.in",
         FRONTEND_URL
     ]
-    
+
     CORS(app,
          resources={r"/api/*": {"origins": allowed_origins}},
          supports_credentials=True,
@@ -80,7 +80,7 @@ else:
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
          expose_headers=["Content-Type", "Authorization"],
          max_age=600)
-    
+
     logger.info(f"Configured CORS for production environment with origins: {allowed_origins}")
 
 # Secret key configuration
@@ -89,10 +89,26 @@ app.config['TOKEN_EXPIRATION'] = 60 * 60 * 24 * 7  # 7 days
 
 # MongoDB Configuration
 mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/youtube_shorts_db')
-client = MongoClient(mongo_uri)
-db = client.get_database()
-users_collection = db.users
-videos_collection = db.videos
+db_name = os.getenv('MONGODB_DB_NAME', 'lazy-creator')
+logger.info(f"Attempting to connect to MongoDB at: {mongo_uri.split('@')[-1]}")  # Log only the host part, not credentials
+
+try:
+    # Connect to MongoDB
+    client = MongoClient(mongo_uri)
+    # Verify connection by running a simple command
+    client.admin.command('ping')
+    logger.info("Successfully connected to MongoDB Atlas!")
+
+    # Explicitly specify the database name
+    db = client[db_name]
+    logger.info(f"Using database: {db.name}")
+
+    users_collection = db.users
+    videos_collection = db.videos
+    logger.info("MongoDB collections initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to connect to MongoDB: {str(e)}")
+    raise
 
 # Track all video generation threads to allow graceful shutdown
 active_threads = []
@@ -746,7 +762,7 @@ def get_gallery(current_user):
         # Convert ObjectId to string for JSON serialization
         for video in videos:
             video['id'] = str(video['_id'])
-            video.pop('_id', None)
+            video.pop('_id, None')
 
             # Include generated title in the frontend for display in gallery
             if 'comprehensive_content' in video and 'title' in video['comprehensive_content']:
@@ -973,7 +989,7 @@ def youtube_auth_callback_new():
                 redirect_uri = f"{frontend_url}/youtube-auth-success"
 
             return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
-        
+
         # Process the successful authentication
         # Decode the state parameter to get the user ID
         user_id = decode_state_param(state)
@@ -984,18 +1000,18 @@ def youtube_auth_callback_new():
             if not redirect_uri:
                 redirect_uri = f"{frontend_url}/youtube-auth-success"
             return redirect(f"{redirect_uri}?error=auth_failed&message={error_msg}")
-        
+
         # Exchange the authorization code for credentials
         logger.info(f"Exchanging code for credentials for user {user_id}")
         credentials = get_credentials_from_code(code, state, redirect_uri)
-        
+
         logger.info(f"YouTube auth successful for user {user_id}")
-        
+
         # If no redirect_uri is provided, use default
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
         if not redirect_uri:
             redirect_uri = f"{frontend_url}/youtube-auth-success"
-            
+
         # Generate a new token for the user to ensure session is valid
         user = users_collection.find_one({'_id': ObjectId(user_id)})
         if user:
@@ -1003,10 +1019,10 @@ def youtube_auth_callback_new():
                 'user_id': str(user['_id']),
                 'exp': datetime.utcnow() + timedelta(days=30)
             }, os.getenv('SECRET_KEY', 'dev_key'))
-            
+
             # Add token to the redirect URL
             return redirect(f"{redirect_uri}?youtube_auth=success&token={token}")
-        
+
         # If we can't generate a token, just redirect with success
         return redirect(f"{redirect_uri}?youtube_auth=success")
 
@@ -1285,7 +1301,7 @@ def serve_gallery_file_with_token(filename):
         if not token:
             logger.warning(f"No token provided for file: {filename}")
             return jsonify({'message': 'A valid token is required!'}), 401
-            
+
         # Validate token
         try:
             # Decode the token
@@ -1805,14 +1821,14 @@ def add_cors_headers(response):
     if request.method == 'OPTIONS':
         # Get the allowed origins from our earlier CORS configuration
         allowed_origins = ["https://lazycreator.in", "https://www.lazycreator.in"]
-        
+
         # In development mode, allow all origins
         if os.getenv('DEBUG', 'True').lower() == 'true':
             response.headers.add('Access-Control-Allow-Origin', '*')
         else:
             # Get the origin from the request
             origin = request.headers.get('Origin')
-            
+
             # If the origin is in our allowed list, set it explicitly
             if origin in allowed_origins or origin == FRONTEND_URL:
                 response.headers.add('Access-Control-Allow-Origin', origin)
@@ -1827,7 +1843,7 @@ def add_cors_headers(response):
 
         # Allow credentials
         response.headers.add('Access-Control-Allow-Credentials', 'true')
-        
+
         # Add cache control for preflight requests
         response.headers.add('Access-Control-Max-Age', '600')
 
@@ -1925,15 +1941,15 @@ def serve_demo_video(filename):
         # Only serve files from the demo directory for security
         if '..' in filename or '/' in filename:
             return jsonify({'message': 'Invalid filename'}), 400
-            
+
         # Path to demo videos
         demo_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'demo')
         file_path = os.path.join(demo_dir, filename)
-        
+
         if not os.path.exists(file_path):
             logger.error(f"Demo file not found: {filename}")
             return jsonify({'message': 'File not found'}), 404
-            
+
         logger.info(f"Serving demo video: {filename}")
         return send_file(
             file_path,
