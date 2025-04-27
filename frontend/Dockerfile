@@ -1,4 +1,4 @@
-FROM node:18-alpine AS build
+FROM node:23-alpine AS build
 
 WORKDIR /app
 COPY package*.json ./
@@ -22,4 +22,4 @@ ENV PORT 8080
 EXPOSE 8080
 
 # Update nginx conf to listen on $PORT and start nginx
-CMD sed -i -e 's/$PORT/'"$PORT"'/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;' 
+CMD sed -i -e 's/$PORT/'"$PORT"'/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'
