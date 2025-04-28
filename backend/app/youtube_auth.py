@@ -24,59 +24,45 @@ logger = logging.getLogger(__name__)
 
 # Load OAuth credentials with flexible path resolution
 def get_client_secrets_path():
-    """Get path to the YouTube client secrets file"""
-    # Try to load from environment variable first
+    """Get YouTube client secrets, prioritizing environment variable as JSON."""
     client_secrets_env = os.getenv('YOUTUBE_CLIENT_SECRETS')
     if client_secrets_env:
-        # If it's a full path, use it directly
-        if os.path.isabs(client_secrets_env) and os.path.exists(client_secrets_env):
-            return client_secrets_env
+        logger.info("Using YOUTUBE_CLIENT_SECRETS from environment variable")
+        try:
+            return json.loads(client_secrets_env)  # Return as dict, not path
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in YOUTUBE_CLIENT_SECRETS: {e}")
+            return None
 
-        # Otherwise, try relative to current directory and app directory
-        relative_paths = [
-            client_secrets_env,
-            os.path.join(os.path.dirname(__file__), client_secrets_env),
-            os.path.join(os.path.dirname(__file__), 'credentials', client_secrets_env)
-        ]
-
-        for path in relative_paths:
-            if os.path.exists(path):
-                return path
-
-    # Fallback to searching in standard locations
+    # Fallback to file-based search only if env var is not set
     potential_paths = [
         os.path.join(os.path.dirname(__file__), 'client_secret.json'),
         os.path.join(os.path.dirname(os.path.dirname(__file__)), 'client_secret.json'),
         os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json'),
     ]
-
     for path in potential_paths:
         if os.path.exists(path):
             logger.warning(f"Using fallback client secrets file at {path}. Consider setting YOUTUBE_CLIENT_SECRETS environment variable.")
             return path
-
-    logger.error("No client secrets file found in any location")
+    logger.error("No client secrets found in environment or file system")
     return None
 
-# Initialize client secrets file
-client_secrets_file = get_client_secrets_path()
-
-if client_secrets_file:
-    logger.info(f"Using client secrets file: {client_secrets_file}")
-    try:
-        # Verify we can read the file
-        with open(client_secrets_file, 'r') as f:
-            client_secrets = json.load(f)
-
-        # Verify it contains the required fields
-        if 'web' not in client_secrets:
-            logger.error("Invalid client_secret.json format: missing 'web' field")
-            client_secrets_file = None
-    except Exception as e:
-        logger.error(f"Error loading OAuth credentials: {e}")
-        client_secrets_file = None
+# Update client_secrets_file initialization
+client_secrets = get_client_secrets_path()
+if isinstance(client_secrets, dict):
+    logger.info("Using client secrets from environment variable")
 else:
-    logger.error("No client secrets file found in any location")
+    client_secrets_file = client_secrets
+    if client_secrets_file:
+        logger.info(f"Using client secrets file: {client_secrets_file}")
+        try:
+            with open(client_secrets_file, 'r') as f:
+                client_secrets = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading OAuth credentials from file: {e}")
+            client_secrets = None
+    else:
+        logger.error("No client secrets available")
 
 # Scopes needed for YouTube uploads
 YOUTUBE_SCOPES = [
@@ -456,23 +442,17 @@ def check_auth_status(user_id):
         return False
 
 def get_auth_url(user_id, redirect_uri):
-    """Generate OAuth authorization URL for YouTube"""
     try:
-        # Create OAuth flow
-        flow = Flow.from_client_secrets_file(
-            client_secrets_file,
-            scopes=YOUTUBE_SCOPES,
-            redirect_uri=redirect_uri
-        )
-
-        # Generate auth URL
+        if isinstance(client_secrets, dict):
+            flow = Flow.from_client_config(client_secrets, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
+        else:
+            flow = Flow.from_client_secrets_file(client_secrets_file, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
         auth_url, _ = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
             prompt='consent',
             state=encode_state_param(user_id)
         )
-
         return auth_url
     except Exception as e:
         logger.error(f"Error generating auth URL: {e}")
@@ -489,29 +469,19 @@ def decode_state_param(state):
     return None
 
 def get_credentials_from_code(code, state, redirect_uri):
-    """Exchange authorization code for credentials"""
     try:
-        # Extract user ID from state
         user_id = decode_state_param(state)
         if not user_id:
             raise ValueError("Invalid state parameter")
-
-        # Create OAuth flow
-        flow = Flow.from_client_secrets_file(
-            client_secrets_file,
-            scopes=YOUTUBE_SCOPES,
-            redirect_uri=redirect_uri
-        )
-
-        # Exchange code for credentials
+        if isinstance(client_secrets, dict):
+            flow = Flow.from_client_config(client_secrets, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
+        else:
+            flow = Flow.from_client_secrets_file(client_secrets_file, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
         flow.fetch_token(code=code)
         credentials = flow.credentials
-
-        # Save credentials to file
         credentials_path = get_credentials_path(user_id)
         with open(credentials_path, 'w') as f:
             f.write(credentials.to_json())
-
         return credentials
     except Exception as e:
         logger.error(f"Error exchanging code for credentials: {e}")

@@ -89,7 +89,8 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
 app.config['TOKEN_EXPIRATION'] = int(os.getenv('TOKEN_EXPIRATION_SECONDS', 60 * 60 * 24 * 7))
 
 # MongoDB Configuration
-mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/youtube_shorts_db')
+mongo_uri = os.getenv('MONGODB_URI', 'mongodb+srv://addy:Chocoluv1@lazy-creator-mdb-1.ksvzvmv.mongodb.net/?retryWrites=true&w=majority&appName=lazy-creator-mdb-1')
+logger.info(f"MongoDB URI: {mongo_uri}")
 db_name = os.getenv('MONGODB_DB_NAME', 'lazy-creator')
 logger.info(f"Attempting to connect to MongoDB at: {mongo_uri.split('@')[-1]}")  # Log only the host part, not credentials
 

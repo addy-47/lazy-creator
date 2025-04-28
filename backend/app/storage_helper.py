@@ -4,6 +4,7 @@ from google.cloud import storage
 from google.oauth2 import service_account
 import threading
 from dotenv import load_dotenv
+import json
 
 # Load environment variables
 load_dotenv()
@@ -14,59 +15,35 @@ logger = logging.getLogger(__name__)
 _thread_local = threading.local()
 
 def get_storage_client():
-    """Get a Google Cloud Storage client, creating one if necessary."""
     if hasattr(_thread_local, 'client'):
         return _thread_local.client
 
-    # Get project ID from environment variable
     project_id = os.getenv('GCP_PROJECT_ID', 'yt-shorts-automation-452420')
+    credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 
-    # Check if running in Cloud Run
-    if os.getenv('K_SERVICE'):
+    if credentials_json:
+        try:
+            logger.info("Using GOOGLE_APPLICATION_CREDENTIALS from environment variable")
+            credentials = service_account.Credentials.from_service_account_info(json.loads(credentials_json))
+            client = storage.Client(credentials=credentials, project=project_id)
+            logger.info(f"Successfully created storage client with environment credentials")
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS: {e}")
+            client = storage.Client(project=project_id)
+    elif os.getenv('K_SERVICE'):
         logger.info("Running in Cloud Run, using default authentication")
         client = storage.Client(project=project_id)
-        _thread_local.client = client
-        return client
-
-    # Try to get credentials path from environment
-    credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-
-    if credentials_path and os.path.exists(credentials_path):
-        try:
-            # Normalize path for the current OS
-            credentials_path = os.path.normpath(credentials_path)
-            logger.info(f"Using credentials file at: {credentials_path}")
-
-            # Create credentials from service account file
-            credentials = service_account.Credentials.from_service_account_file(
-                credentials_path,
-                scopes=["https://www.googleapis.com/auth/cloud-platform"]
-            )
-
-            # Create client with explicit credentials
-            client = storage.Client(credentials=credentials, project=project_id)
-            logger.info(f"Successfully created storage client with service account credentials")
-
-            # Store the client in thread-local storage
-            _thread_local.client = client
-            return client
-        except Exception as e:
-            logger.error(f"Error creating storage client with credentials file: {e}")
-            # Fall back to default authentication
-            client = storage.Client(project=project_id)
-            logger.info(f"Using default authentication with project: {project_id}")
-
-            # Store the client in thread-local storage
-            _thread_local.client = client
-            return client
     else:
-        # If no credentials file is available, use default authentication
-        logger.info(f"No credentials file found, using default authentication with project: {project_id}")
-        client = storage.Client(project=project_id)
+        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+        if credentials_path and os.path.exists(credentials_path):
+            credentials = service_account.Credentials.from_service_account_file(credentials_path)
+            client = storage.Client(credentials=credentials, project=project_id)
+        else:
+            logger.info(f"No credentials file found, using default authentication with project: {project_id}")
+            client = storage.Client(project=project_id)
 
-        # Store the client in thread-local storage
-        _thread_local.client = client
-        return client
+    _thread_local.client = client
+    return client
 
 def init_module():
     """Initialize the module by creating a storage client."""
