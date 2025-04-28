@@ -25,8 +25,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import googleapiclient.http
 
-from automation.shorts_main import generate_youtube_short
-from automation.youtube_upload import upload_video
+from app.automation.shorts_main import generate_youtube_short
+from app.automation.youtube_upload import upload_video
 import youtube_auth
 from youtube_auth import get_authenticated_service, check_auth_status, get_auth_url, get_credentials_from_code
 from storage import cloud_storage
@@ -85,7 +85,8 @@ else:
 
 # Secret key configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-app.config['TOKEN_EXPIRATION'] = 60 * 60 * 24 * 7  # 7 days
+# Token expiration in seconds (default 7 days)
+app.config['TOKEN_EXPIRATION'] = int(os.getenv('TOKEN_EXPIRATION_SECONDS', 60 * 60 * 24 * 7))
 
 # MongoDB Configuration
 mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/youtube_shorts_db')
@@ -815,7 +816,11 @@ def download_video(current_user, video_id):
 
         # Create a temporary file
         # Create directory if it doesn't exist
-        storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{current_user["_id"]}')
+        storage_dir = os.path.join(
+            os.getenv('LOCAL_STORAGE_PATH', os.path.join(os.path.dirname(__file__), 'local_storage')),
+            'lazycreator-media',
+            f'users/{current_user["_id"]}'
+        )
         os.makedirs(storage_dir, exist_ok=True)
 
         # Create temp file in the specified directory
@@ -1128,7 +1133,11 @@ def upload_video_to_youtube(current_user, video_id):
         # Download the video to a temporary file
         try:
             # Create directory if it doesn't exist
-            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{current_user["_id"]}')
+            storage_dir = os.path.join(
+                os.getenv('LOCAL_STORAGE_PATH', os.path.join(os.path.dirname(__file__), 'local_storage')),
+                'lazycreator-media',
+                f'users/{current_user["_id"]}'
+            )
             os.makedirs(storage_dir, exist_ok=True)
 
             # Create temp file in the specified directory
@@ -1681,7 +1690,11 @@ def upload_to_youtube(current_user, video_id):
         # Download the video to a temporary file
         try:
             # Create directory if it doesn't exist
-            storage_dir = os.path.join('D:\\lazy-creator\\backend\\app\\local_storage\\lazycreator-media', f'users/{current_user["_id"]}')
+            storage_dir = os.path.join(
+                os.getenv('LOCAL_STORAGE_PATH', os.path.join(os.path.dirname(__file__), 'local_storage')),
+                'lazycreator-media',
+                f'users/{current_user["_id"]}'
+            )
             os.makedirs(storage_dir, exist_ok=True)
 
             # Create temp file in the specified directory
@@ -1942,8 +1955,8 @@ def serve_demo_video(filename):
         if '..' in filename or '/' in filename:
             return jsonify({'message': 'Invalid filename'}), 400
 
-        # Path to demo videos
-        demo_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'demo')
+        # Path to demo videos from environment variable or default
+        demo_dir = os.getenv('DEMO_VIDEOS_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'demo'))
         file_path = os.path.join(demo_dir, filename)
 
         if not os.path.exists(file_path):

@@ -2,9 +2,13 @@ import logging
 import logging.handlers
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
-# Define log directory
-LOG_DIR = 'logs'
+# Load environment variables
+load_dotenv()
+
+# Define log directory from environment variable
+LOG_DIR = os.getenv('LOG_DIR', 'logs')
 
 # Ensure log directory exists
 Path(LOG_DIR).mkdir(parents=True, exist_ok=True)

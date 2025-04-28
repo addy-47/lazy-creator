@@ -1,33 +1,42 @@
 import axios from "axios";
 
-// Helper to get API base URL consistently for both HTTP and WebSocket
 export const getAPIBaseURL = (): string => {
-  // Use the environment variable if available
   const apiUrl = import.meta.env.VITE_API_URL;
-  
-  if (apiUrl) {
-    return apiUrl;
-  }
-  
-  // Fallback for local development
-  if (window.location.hostname === "localhost") {
-    return "http://localhost:4000";
-  }
-  
-  // Production fallback
-  return "https://backend.lazycreator.in";
+  return (
+    apiUrl ||
+    (window.location.hostname === "localhost"
+      ? "http://localhost:4000"
+      : "https://backend-xyz.run.app/api")
+  );
 };
 
-// Create preconfigured axios instance for consistent API calls
+export const getWebSocketURL = (): string => {
+  const wsUrl = import.meta.env.VITE_WEBSOCKET_URL;
+  if (wsUrl) return wsUrl;
+  const apiBase = getAPIBaseURL().replace(/^http/, "ws");
+  return apiBase.replace(/\/api$/, "/ws");
+};
+
+// Add WebSocket client (example integration)
+export const connectWebSocket = () => {
+  const ws = new WebSocket(getWebSocketURL());
+  ws.onmessage = (event) => console.log("WS Message:", event.data);
+  ws.onerror = (error) => console.error("WS Error:", error);
+  return ws;
+};
+
+// Rest of your axios configuration...
 export const api = axios.create({
   baseURL: getAPIBaseURL(),
-  timeout: 15000, // 15 seconds timeout
+  timeout: 15000,
   headers: {
     "Content-Type": "application/json",
-    "X-Requested-With": "XMLHttpRequest", // Add this to help with CORS
+    "X-Requested-With": "XMLHttpRequest",
   },
-  withCredentials: false, // Don't send credentials by default
+  withCredentials: false,
 });
+
+// ... (rest of apiWithoutPreflight, interceptors, setAuthToken)
 
 // Fix CORS issues by directly calling api without preflight when possible
 export const apiWithoutPreflight = {

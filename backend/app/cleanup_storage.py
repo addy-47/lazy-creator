@@ -4,6 +4,10 @@ import re
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from storage import CloudStorage
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -14,9 +18,10 @@ logger = logging.getLogger(__name__)
 cloud_storage = CloudStorage()
 
 # Connect to MongoDB
-mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/yt_shorts_app')
+mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/lazy-creator')
+db_name = os.getenv('MONGODB_DB_NAME', 'lazy-creator')
 client = MongoClient(mongo_uri)
-db = client['yt_shorts_app']
+db = client[db_name]
 videos_collection = db['videos']
 
 def cleanup_storage():

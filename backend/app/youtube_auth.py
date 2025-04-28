@@ -13,42 +13,70 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load OAuth credentials
-try:
+# Load OAuth credentials with flexible path resolution
+def get_client_secrets_path():
+    """Get path to the YouTube client secrets file"""
     # Try to load from environment variable first
-    client_secrets_file = os.getenv('GOOGLE_CLIENT_SECRETS_FILE', 'client_secret.json')
+    client_secrets_env = os.getenv('YOUTUBE_CLIENT_SECRETS')
+    if client_secrets_env:
+        # If it's a full path, use it directly
+        if os.path.isabs(client_secrets_env) and os.path.exists(client_secrets_env):
+            return client_secrets_env
 
-    # Check if the file exists
-    if not os.path.exists(client_secrets_file):
-        # Try default locations
-        potential_paths = [
-            'client_secret.json',
-            os.path.join('backend', 'app', 'client_secret.json'),
-            os.path.join('app', 'client_secret.json')
+        # Otherwise, try relative to current directory and app directory
+        relative_paths = [
+            client_secrets_env,
+            os.path.join(os.path.dirname(__file__), client_secrets_env),
+            os.path.join(os.path.dirname(__file__), 'credentials', client_secrets_env)
         ]
 
-        for path in potential_paths:
+        for path in relative_paths:
             if os.path.exists(path):
-                client_secrets_file = path
-                break
+                return path
 
+    # Fallback to searching in standard locations
+    potential_paths = [
+        os.path.join(os.path.dirname(__file__), 'client_secret.json'),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), 'client_secret.json'),
+        os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json'),
+    ]
+
+    for path in potential_paths:
+        if os.path.exists(path):
+            logger.warning(f"Using fallback client secrets file at {path}. Consider setting YOUTUBE_CLIENT_SECRETS environment variable.")
+            return path
+
+    logger.error("No client secrets file found in any location")
+    return None
+
+# Initialize client secrets file
+client_secrets_file = get_client_secrets_path()
+
+if client_secrets_file:
     logger.info(f"Using client secrets file: {client_secrets_file}")
+    try:
+        # Verify we can read the file
+        with open(client_secrets_file, 'r') as f:
+            client_secrets = json.load(f)
 
-    # Verify we can read the file
-    with open(client_secrets_file, 'r') as f:
-        client_secrets = json.load(f)
-
-    # Verify it contains the required fields
-    if 'web' not in client_secrets:
-        logger.error("Invalid client_secret.json format: missing 'web' field")
-except Exception as e:
-    logger.error(f"Error loading OAuth credentials: {e}")
-    client_secrets_file = None
+        # Verify it contains the required fields
+        if 'web' not in client_secrets:
+            logger.error("Invalid client_secret.json format: missing 'web' field")
+            client_secrets_file = None
+    except Exception as e:
+        logger.error(f"Error loading OAuth credentials: {e}")
+        client_secrets_file = None
+else:
+    logger.error("No client secrets file found in any location")
 
 # Scopes needed for YouTube uploads
 YOUTUBE_SCOPES = [
@@ -325,8 +353,8 @@ def setup_routes(app, db, users_collection, token_required, skip_routes=None):
 # Helper functions for YouTube authentication
 def get_credentials_path(user_id):
     """Get path to store user's YouTube credentials"""
-    # Create credentials directory if it doesn't exist
-    credentials_dir = os.path.join('credentials')
+    # Get credentials directory from env var or use default
+    credentials_dir = os.getenv('YOUTUBE_CREDENTIALS_DIR', os.path.join(os.path.dirname(__file__), 'credentials'))
     os.makedirs(credentials_dir, exist_ok=True)
     return os.path.join(credentials_dir, f"youtube_{user_id}.json")
 

@@ -25,6 +25,7 @@ class CloudStorage:
         self.media_bucket = os.getenv('MEDIA_BUCKET', 'lazycreator-media')
         self.uploads_bucket = os.getenv('UPLOADS_BUCKET', 'lazycreator-uploads')
         self.local_storage_dir = os.getenv('LOCAL_STORAGE_DIR', os.path.join(os.path.dirname(__file__), 'local_storage'))
+        self.project_id = os.getenv('GCP_PROJECT_ID', 'yt-shorts-automation-452420')
 
         # Service account information - prioritize the specific GCS_SERVICE_ACCOUNT value
         self.service_account_email = os.getenv('GCS_SERVICE_ACCOUNT', 'lazycreator-1@yt-shorts-automation-452420.iam.gserviceaccount.com')
@@ -80,7 +81,7 @@ class CloudStorage:
                                 self.service_account_key_path,
                                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
                             )
-                            self.client = storage.Client(credentials=credentials, project="yt-shorts-automation-452420")
+                            self.client = storage.Client(credentials=credentials, project=self.project_id)
                             logger.info(f"Successfully authenticated with service account credentials")
                         except Exception as cred_error:
                             logger.warning(f"Error creating credentials from file: {cred_error}")
@@ -95,7 +96,7 @@ class CloudStorage:
                         try:
                             # Try to use the GCS_SERVICE_ACCOUNT email with default credentials mechanism
                             logger.info(f"Attempting to use default credentials with specific service account {self.service_account_email}")
-                            self.client = storage.Client(project="yt-shorts-automation-452420")
+                            self.client = storage.Client(project=self.project_id)
                             logger.info(f"Successfully authenticated with default credentials")
                         except Exception as default_auth_error:
                             logger.error(f"Error with default authentication: {default_auth_error}")
@@ -103,7 +104,7 @@ class CloudStorage:
                 else:
                     # Try default credentials with the correct service account
                     logger.info(f"No service account key file available, using default Google Cloud credentials with service account {self.service_account_email}")
-                    self.client = storage.Client(project="yt-shorts-automation-452420")
+                    self.client = storage.Client(project=self.project_id)
                     logger.info(f"Successfully authenticated with default Google Cloud credentials")
 
                 # Check if buckets exist, create them if not - wrap in try/except for each bucket

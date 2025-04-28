@@ -3,6 +3,10 @@ import logging
 from google.cloud import storage
 from google.oauth2 import service_account
 import threading
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -10,34 +14,24 @@ logger = logging.getLogger(__name__)
 _thread_local = threading.local()
 
 def get_storage_client():
-    """
-    Creates a Google Cloud Storage client using the correct service account.
-    This should be used across the application for any direct GCS operations.
-
-    Returns:
-        A Google Cloud Storage client configured with the correct service account
-    """
-    # Check if we're running in Cloud Run
-    is_cloud_run = os.getenv('K_SERVICE') is not None
-    
-    # Check if we already have a client for this thread
+    """Get a Google Cloud Storage client, creating one if necessary."""
     if hasattr(_thread_local, 'client'):
         return _thread_local.client
 
-    # Get service account information from environment variables
-    service_account_email = os.getenv('GCS_SERVICE_ACCOUNT', 'lazycreator-1@yt-shorts-automation-452420.iam.gserviceaccount.com')
-    credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-    project_id = os.getenv('GCP_PROJECT', "yt-shorts-automation-452420")
+    # Get project ID from environment variable
+    project_id = os.getenv('GCP_PROJECT_ID', 'yt-shorts-automation-452420')
 
-    logger.info(f"Creating storage client with service account: {service_account_email}")
-
-    if is_cloud_run:
-        # In Cloud Run, we'll use the default service account
+    # Check if running in Cloud Run
+    if os.getenv('K_SERVICE'):
         logger.info("Running in Cloud Run, using default authentication")
         client = storage.Client(project=project_id)
         _thread_local.client = client
         return client
-    elif credentials_path and os.path.exists(credentials_path):
+
+    # Try to get credentials path from environment
+    credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+
+    if credentials_path and os.path.exists(credentials_path):
         try:
             # Normalize path for the current OS
             credentials_path = os.path.normpath(credentials_path)
@@ -75,29 +69,16 @@ def get_storage_client():
         return client
 
 def init_module():
-    """
-    Initialize the module by overriding the storage import in other modules.
-    This is used to patch imports in parallel processing environments.
-    """
-    # This is used to initialize module-level settings
-    logger.info("Initializing storage_helper module")
-
-    # Force the environment variable to the correct value if it's not set
-    if not os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
-        # Look for GCS_CREDENTIALS_FILE first
-        gcs_creds = os.getenv('GCS_CREDENTIALS_FILE')
-        if gcs_creds:
-            logger.info(f"Setting GOOGLE_APPLICATION_CREDENTIALS to value from GCS_CREDENTIALS_FILE: {gcs_creds}")
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gcs_creds
+    """Initialize the module by creating a storage client."""
+    try:
+        get_storage_client()
+    except Exception as e:
+        logger.error(f"Error initializing storage helper: {e}")
 
 def reset_client():
-    """
-    Reset the thread-local client.
-    This is useful in multiprocessing environments where threads might be reused.
-    """
+    """Reset the storage client (useful for testing)."""
     if hasattr(_thread_local, 'client'):
         delattr(_thread_local, 'client')
-        logger.debug("Thread-local storage client reset")
 
 # Initialize the module
 init_module()
