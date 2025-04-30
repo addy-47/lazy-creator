@@ -27,10 +27,7 @@ RUN python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
 # Copy project files
 COPY . .
 
-# Set environment variables for production (will be overridden by Cloud Run environment variables)
-ENV NEWS_API_KEY=""
-ENV PEXELS_API_KEY=""
-ENV PIXABAY_API_KEY=""
+# Set environment variables for production (only non-sensitive defaults)
 ENV USE_AZURE_TTS="false"
 ENV AZURE_VOICE="en-US-JennyNeural"
 ENV YOUTUBE_TOPIC="Artificial Intelligence"
@@ -38,11 +35,7 @@ ENV ENABLE_YOUTUBE_UPLOAD="false"
 ENV MEDIA_BUCKET="lazycreator-media"
 ENV UPLOADS_BUCKET="lazycreator-uploads"
 ENV DEBUG="False"
-ENV FRONTEND_URL="https://lazycreator.in"
-ENV MONGODB_URI="mongodb://localhost:27017/lazy-creator"
-ENV SECRET_KEY="change-this-in-production"
 ENV MONGODB_DB_NAME="lazy-creator"
-ENV GCS_CREDENTIALS_FILE="/app/app/credentials/service-account.json"
 ENV PORT=8080
 
 # Command to run the application with gunicorn for production

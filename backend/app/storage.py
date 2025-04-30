@@ -14,10 +14,14 @@ logger = logging.getLogger(__name__)
 try:
     from google.cloud import storage
     from google.cloud.exceptions import NotFound
+    from google.oauth2 import service_account # Import service_account
     GOOGLE_CLOUD_AVAILABLE = True
 except ImportError:
+    storage = None # Set to None if import fails
+    service_account = None # Set to None if import fails
+    NotFound = None # Set to None if import fails
     GOOGLE_CLOUD_AVAILABLE = False
-    logger.warning("Google Cloud Storage not available. Using local storage fallback.")
+    logger.warning("Google Cloud Storage libraries not available. Using local storage fallback.")
 
 class CloudStorage:
 
@@ -32,48 +36,73 @@ class CloudStorage:
         self.local_storage_dir = os.getenv('LOCAL_STORAGE_DIR', os.path.join(os.path.dirname(__file__), 'local_storage'))
         self.project_id = os.getenv('GCP_PROJECT_ID', 'yt-shorts-automation-452420')
         self.service_account_email = os.getenv('GCS_SERVICE_ACCOUNT', 'lazycreator-1@yt-shorts-automation-452420.iam.gserviceaccount.com')
+        self.client = None # Initialize client to None
 
-        # Try to use GOOGLE_APPLICATION_CREDENTIALS as a JSON string first
-        credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-        if credentials_json:
-            try:
-                logger.info("Using GOOGLE_APPLICATION_CREDENTIALS from environment variable as JSON")
-                credentials = service_account.Credentials.from_service_account_info(
-                    json.loads(credentials_json),
-                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
-                )
-                self.client = storage.Client(credentials=credentials, project=self.project_id)
-                logger.info("Successfully authenticated with environment credentials")
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS: {e}")
-                self.use_local_storage = True
-            except Exception as e:
-                logger.error(f"Failed to authenticate with GOOGLE_APPLICATION_CREDENTIALS: {e}")
-                self.use_local_storage = True
-        else:
-            # Check if GOOGLE_APPLICATION_CREDENTIALS points to a file (fallback for local dev)
-            credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-            if credentials_path and os.path.exists(credentials_path):
+        # --- Authentication Logic --- Start
+        # Only attempt GCS authentication if libraries are available
+        if GOOGLE_CLOUD_AVAILABLE:
+            # Try to use GOOGLE_APPLICATION_CREDENTIALS as a JSON string first
+            credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            if credentials_json:
                 try:
-                    logger.info(f"Using service account key file: {credentials_path}")
-                    credentials = service_account.Credentials.from_service_account_file(
-                        credentials_path,
+                    logger.info("Using GOOGLE_APPLICATION_CREDENTIALS from environment variable as JSON")
+                    credentials = service_account.Credentials.from_service_account_info(
+                        json.loads(credentials_json),
                         scopes=["https://www.googleapis.com/auth/cloud-platform"]
                     )
                     self.client = storage.Client(credentials=credentials, project=self.project_id)
-                    logger.info("Successfully authenticated with service account file")
+                    logger.info("Successfully authenticated with environment credentials")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS: {e}")
+                    self.use_local_storage = True # Fallback to local
                 except Exception as e:
-                    logger.error(f"Failed to authenticate with service account file: {e}")
-                    self.use_local_storage = True
-            else:
-                # Fallback to default credentials (e.g., Cloud Run service account)
+                    logger.error(f"Failed to authenticate with GOOGLE_APPLICATION_CREDENTIALS JSON: {e}")
+                    self.use_local_storage = True # Fallback to local
+
+            # Check if running in Cloud Run (K_SERVICE environment variable is set)
+            # Only check if client hasn't been set yet
+            elif self.client is None and os.getenv('K_SERVICE'):
                 try:
-                    logger.info(f"No credentials provided, using default credentials with service account {self.service_account_email}")
+                    logger.info(f"Running in Cloud Run, using default credentials with project {self.project_id}")
                     self.client = storage.Client(project=self.project_id)
-                    logger.info("Successfully authenticated with default credentials")
+                    logger.info("Successfully authenticated with Cloud Run default credentials")
                 except Exception as e:
-                    logger.error(f"Failed to authenticate with default credentials: {e}")
-                    self.use_local_storage = True
+                    logger.error(f"Failed to authenticate with Cloud Run default credentials: {e}")
+                    self.use_local_storage = True # Fallback to local
+
+            # Check if GOOGLE_APPLICATION_CREDENTIALS points to a file (fallback for local dev)
+            # Only check if client hasn't been set yet
+            elif self.client is None:
+                credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+                if credentials_path and os.path.exists(credentials_path):
+                    try:
+                        logger.info(f"Using service account key file: {credentials_path}")
+                        credentials = service_account.Credentials.from_service_account_file(
+                            credentials_path,
+                            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                        )
+                        self.client = storage.Client(credentials=credentials, project=self.project_id)
+                        logger.info("Successfully authenticated with service account file")
+                    except Exception as e:
+                        logger.error(f"Failed to authenticate with service account file: {e}")
+                        self.use_local_storage = True # Fallback to local
+                else:
+                    # Fallback to default credentials (e.g., local gcloud auth)
+                    # Only try if client still not set
+                    if self.client is None:
+                        try:
+                            logger.info(f"No specific credentials provided or file not found, using default credentials with project {self.project_id}")
+                            self.client = storage.Client(project=self.project_id)
+                            logger.info("Successfully authenticated with default credentials")
+                        except Exception as e:
+                            logger.error(f"Failed to authenticate with default credentials: {e}")
+                            self.use_local_storage = True # Fallback to local
+        # --- Authentication Logic --- End
+
+        # If client is still None after all attempts (or if GCS libs unavailable), force local storage
+        if self.client is None:
+            logger.warning("Could not initialize GCS client, forcing local storage.")
+            self.use_local_storage = True
 
         if self.use_local_storage:
             # Set up local storage directories if we're using the fallback
@@ -81,7 +110,7 @@ class CloudStorage:
             os.makedirs(os.path.join(self.local_storage_dir, self.uploads_bucket), exist_ok=True)
             logger.info(f"Using local storage at {self.local_storage_dir}")
         else:
-            # Ensure buckets exist in GCS
+            # Ensure buckets exist in GCS (only if client was successfully created)
             try:
                 self._ensure_bucket_exists(self.media_bucket)
                 self._ensure_bucket_exists(self.uploads_bucket)
@@ -91,103 +120,39 @@ class CloudStorage:
                 self.use_local_storage = True
                 os.makedirs(os.path.join(self.local_storage_dir, self.media_bucket), exist_ok=True)
                 os.makedirs(os.path.join(self.local_storage_dir, self.uploads_bucket), exist_ok=True)
-                logger.info(f"Using local storage at {self.local_storage_dir}")
-            else:
-                # Use Google Cloud Storage
-                try:
-                    # Try to use explicit service account credentials if available
-                    if self.service_account_key_path and os.path.exists(self.service_account_key_path):
-                        try:
-                            # Check file permissions on non-Windows systems
-                            if os.name != 'nt':  # Unix-like system
-                                try:
-                                    # Check if file has read permissions
-                                    if not os.access(self.service_account_key_path, os.R_OK):
-                                        logger.warning(f"Service account key file has insufficient permissions: {self.service_account_key_path}")
-                                        # Try to fix permissions
-                                        os.chmod(self.service_account_key_path, 0o600)  # Read/write for owner only
-                                        logger.info(f"Updated permissions for service account key file")
-                                except Exception as perm_error:
-                                    logger.warning(f"Failed to check/set permissions: {perm_error}")
-
-                            # Explicitly use the service account key file and specify the correct service account email
-                            logger.info(f"Authenticating with service account key file for {self.service_account_email}...")
-                            try:
-                                # First try to create client with explicit credentials file
-                                from google.oauth2 import service_account
-                                credentials = service_account.Credentials.from_service_account_file(
-                                    self.service_account_key_path,
-                                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
-                                )
-                                self.client = storage.Client(credentials=credentials, project=self.project_id)
-                                logger.info(f"Successfully authenticated with service account credentials")
-                            except Exception as cred_error:
-                                logger.warning(f"Error creating credentials from file: {cred_error}")
-                                # Fall back to from_service_account_json method
-                                self.client = storage.Client.from_service_account_json(self.service_account_key_path)
-                                logger.info(f"Successfully authenticated with service account key file")
-                        except Exception as auth_error:
-                            logger.error(f"Error authenticating with service account key file: {auth_error}")
-                            logger.info("Falling back to default authentication")
-
-                            # Use the explicit service account email with application default credentials
-                            try:
-                                logger.info(f"Attempting to use default credentials with specific service account {self.service_account_email}")
-                                self.client = storage.Client(project=self.project_id)
-                                logger.info(f"Successfully authenticated with default credentials")
-                            except Exception as default_auth_error:
-                                logger.error(f"Error with default authentication: {default_auth_error}")
-                                raise
-                    else:
-                        # Try default credentials with the correct service account
-                        logger.info(f"No service account key file available, using default Google Cloud credentials with service account {self.service_account_email}")
-                        self.client = storage.Client(project=self.project_id)
-                        logger.info(f"Successfully authenticated with default Google Cloud credentials")
-
-                    # Check if buckets exist, create them if not - wrap in try/except for each bucket
-                    try:
-                        self._ensure_bucket_exists(self.media_bucket)
-                    except Exception as media_bucket_error:
-                        logger.warning(f"Error ensuring media bucket exists: {media_bucket_error}")
-                        # Continue and try uploads bucket
-
-                    try:
-                        self._ensure_bucket_exists(self.uploads_bucket)
-                    except Exception as uploads_bucket_error:
-                        logger.warning(f"Error ensuring uploads bucket exists: {uploads_bucket_error}")
-                        # Continue as we might only need one bucket
-
-                    logger.info("Using Google Cloud Storage")
-                except Exception as e:
-                    logger.warning(f"Failed to initialize Google Cloud Storage: {e}. Using local storage fallback.")
-                    self.use_local_storage = True
-
-                    # Set up local storage directories
-                    os.makedirs(os.path.join(self.local_storage_dir, self.media_bucket), exist_ok=True)
-                    os.makedirs(os.path.join(self.local_storage_dir, self.uploads_bucket), exist_ok=True)
-                    logger.info(f"Using local storage at {self.local_storage_dir}")
+                logger.info(f"Using local storage at {self.local_storage_dir} after bucket check failure.")
 
     def _ensure_bucket_exists(self, bucket_name):
         """Ensure the specified bucket exists, create it if it doesn't."""
+        # If using local storage OR if GCS client failed to initialize, handle locally
+        if self.use_local_storage or not self.client:
+            local_bucket_path = os.path.join(self.local_storage_dir, bucket_name)
+            os.makedirs(local_bucket_path, exist_ok=True)
+            logger.info(f"Ensured local storage directory exists: {local_bucket_path}")
+            return
+
+        # Proceed with GCS check only if client exists
         try:
             self.client.get_bucket(bucket_name)
             logger.info(f"Bucket {bucket_name} exists")
-        except Exception as e:
-            if "Permission 'storage.buckets.get' denied" in str(e) or "403" in str(e):
-                logger.warning(f"Permission denied checking bucket {bucket_name}. Assuming bucket exists and continuing.")
-                # Continue without failure - we'll handle errors when accessing specific blobs
-                return
-
+        except NotFound:
             logger.warning(f"Bucket {bucket_name} not found, attempting to create...")
             try:
                 self.client.create_bucket(bucket_name)
                 logger.info(f"Created bucket {bucket_name}")
             except Exception as create_error:
                 logger.error(f"Error creating bucket {bucket_name}: {create_error}")
-                if "Permission 'storage.buckets.create' denied" in str(create_error):
+                if "Permission 'storage.buckets.create' denied" in str(create_error) or "403" in str(create_error):
                     logger.warning("Insufficient permissions to create bucket. Continuing with assumption bucket exists.")
                 else:
-                    raise
+                    raise # Re-raise other creation errors
+        except Exception as e:
+            if "Permission 'storage.buckets.get' denied" in str(e) or "403" in str(e):
+                logger.warning(f"Permission denied checking bucket {bucket_name}. Assuming bucket exists and continuing.")
+                return
+            else:
+                logger.error(f"Unexpected error checking bucket {bucket_name}: {e}")
+                raise
 
     def _get_user_folder(self, user_id=None):
         """Get a user-specific folder path for better organization."""

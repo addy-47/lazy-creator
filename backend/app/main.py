@@ -11,7 +11,7 @@ import uuid
 import re
 import signal
 import concurrent.futures
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Tuple, List, Dict, Any, Optional
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -215,11 +215,11 @@ def register():
         return jsonify({'message': 'User already exists!'}), 409
 
     # Create new user
-    hashed_password = generate_password_hash(data['password'], method='sha256')
+    hashed_password = generate_password_hash(data['password'])
     user = {
         'email': data['email'],
         'password': hashed_password,
-        'created_at': datetime.utcnow()
+        'created_at': datetime.now(timezone.utc)
     }
     users_collection.insert_one(user)
 
@@ -240,52 +240,61 @@ def login():
 
     # Handle social login (Firebase)
     if is_social_login:
-        if not user:
-            # Create new user for social login
-            try:
-                user = {
-                    'email': data['email'],
-                    'password': generate_password_hash(data['password'], method='sha256'),
-                    'name': data.get('name', 'User'),
-                    'provider': data.get('provider', 'google'),
-                    'provider_id': data.get('providerId', ''),
-                    'created_at': datetime.utcnow()
-                }
-                result = users_collection.insert_one(user)
-                user['_id'] = result.inserted_id
-                logger.info(f"Created new user with social login: {data['email']}")
-            except Exception as e:
-                logger.error(f"Error creating user for social login: {e}")
-                return jsonify({'message': 'Failed to create user account!'}), 500
-        else:
-            # Update existing user for social login
-            try:
-                users_collection.update_one(
-                    {'_id': user['_id']},
-                    {'$set': {
+        try:
+            # Use upsert to create or update user atomically
+            update_result = users_collection.update_one(
+                {'email': data['email']}, # Filter by email
+                {
+                    '$setOnInsert': { # Fields to set only when inserting (creating) a new user
+                        'email': data['email'],
+                        'password': generate_password_hash(data['password']), # Store hashed 'FIREBASE_AUTH_...' password
+                        'name': data.get('name', 'User'),
+                        'created_at': datetime.now(timezone.utc)
+                    },
+                    '$set': { # Fields to set on both insert and update
                         'provider': data.get('provider', 'google'),
                         'provider_id': data.get('providerId', ''),
-                        'last_login': datetime.utcnow()
-                    }}
-                )
+                        'last_login': datetime.now(timezone.utc)
+                    }
+                },
+                upsert=True # Enable upsert
+            )
+
+            if update_result.upserted_id:
+                logger.info(f"Created new user with social login via upsert: {data['email']}")
+                user_id = update_result.upserted_id
+            else:
+                # If not upserted, find the existing user to get their ID (if needed later)
+                # Or just log the update
                 logger.info(f"Updated existing user with social login: {data['email']}")
-            except Exception as e:
-                logger.error(f"Error updating user for social login: {e}")
-                # Continue anyway since we have the user
+                # Fetch the user if needed, otherwise the email is sufficient for the token
+                user = users_collection.find_one({'email': data['email']})
+                if not user:
+                     # This case should ideally not happen with upsert logic but handle defensively
+                     logger.error(f"Failed to find user {data['email']} immediately after update.")
+                     return jsonify({'message': 'User processing error after social login!'}), 500
 
-        # Generate token for social login
-        token = jwt.encode({
-            'email': user['email'],
-            'exp': datetime.utcnow().timestamp() + app.config['TOKEN_EXPIRATION']
-        }, app.config['SECRET_KEY'])
+            # Generate token using the email (which is unique)
+            token = jwt.encode({
+                'email': data['email'],
+                'exp': datetime.now(timezone.utc).timestamp() + app.config['TOKEN_EXPIRATION']
+            }, app.config['SECRET_KEY'])
 
-        return jsonify({
-            'token': token,
-            'email': user['email'],
-            'user': {
-                'name': user.get('name', 'User')
-            }
-        }), 200
+            # Fetch the latest user data to return name (handle potential race condition where name might not be set yet on insert)
+            final_user_data = users_collection.find_one({'email': data['email']})
+            user_name = final_user_data.get('name', 'User') if final_user_data else data.get('name', 'User')
+
+            return jsonify({
+                'token': token,
+                'email': data['email'],
+                'user': {
+                    'name': user_name
+                }
+            }), 200
+
+        except Exception as e:
+            logger.exception(f"Error during social login processing for {data.get('email', 'unknown')}: {e}") # Use logger.exception to include traceback
+            return jsonify({'message': 'Failed to process social login!'}), 500
 
     # Regular password login
     if not user:
@@ -294,7 +303,7 @@ def login():
     if check_password_hash(user['password'], data['password']):
         token = jwt.encode({
             'email': user['email'],
-            'exp': datetime.utcnow().timestamp() + app.config['TOKEN_EXPIRATION']
+            'exp': datetime.now(timezone.utc).timestamp() + app.config['TOKEN_EXPIRATION']
         }, app.config['SECRET_KEY'])
 
         return jsonify({
@@ -387,7 +396,7 @@ def generate_short(current_user):
             'background_type': background_type,
             'background_source': background_source,
             'background_path': background_path,  # Store the background path in the database
-            'created_at': datetime.utcnow(),
+            'created_at': datetime.now(timezone.utc),
             'status': 'processing',
             'progress': 0,
             'uploaded_to_yt': False,
@@ -563,7 +572,7 @@ def generate_short(current_user):
                                 'filename': filename,
                                 'path': gcs_path,
                                 'user_id': user_id,
-                                'completed_at': datetime.utcnow()
+                                'completed_at': datetime.now(timezone.utc)
                             }}
                         )
 
@@ -1023,7 +1032,7 @@ def youtube_auth_callback_new():
         if user:
             token = jwt.encode({
                 'user_id': str(user['_id']),
-                'exp': datetime.utcnow() + timedelta(days=30)
+                'exp': datetime.now(timezone.utc) + timedelta(days=30)
             }, os.getenv('SECRET_KEY', 'dev_key'))
 
             # Add token to the redirect URL
@@ -1239,7 +1248,7 @@ def upload_video_to_youtube(current_user, video_id):
                     'youtube_tags': tags,
                     'youtube_privacy': privacy_status,
                     'youtube_channel_id': channel_id,
-                    'uploaded_at': datetime.utcnow()
+                    'uploaded_at': datetime.now(timezone.utc)
                 }}
             )
 
@@ -1796,7 +1805,7 @@ def upload_to_youtube(current_user, video_id):
                     'youtube_tags': tags,
                     'youtube_privacy': privacy_status,
                     'youtube_channel_id': channel_id,
-                    'uploaded_at': datetime.utcnow()
+                    'uploaded_at': datetime.now(timezone.utc)
                 }}
             )
 
@@ -1900,7 +1909,7 @@ def cancel_video_generation(current_user, video_id):
             {'_id': ObjectId(video_id)},
             {'$set': {
                 'status': 'cancelled',
-                'cancelled_at': datetime.utcnow()
+                'cancelled_at': datetime.now(timezone.utc)
             }}
         )
 

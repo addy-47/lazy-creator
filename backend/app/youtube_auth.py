@@ -6,7 +6,7 @@ This module handles all YouTube API-related functionality without any demo user 
 import os
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone # Ensure timezone is imported
 from flask import jsonify, request, redirect, make_response
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -22,6 +22,14 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Scopes needed for YouTube uploads
+YOUTUBE_SCOPES = [
+    'https://www.googleapis.com/auth/youtube',
+    'https://www.googleapis.com/auth/youtube.readonly',
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube.force-ssl'
+]
+
 # Load OAuth credentials with flexible path resolution
 def get_client_secrets_path():
     """Get YouTube client secrets, prioritizing environment variable as JSON."""
@@ -29,12 +37,19 @@ def get_client_secrets_path():
     if client_secrets_env:
         logger.info("Using YOUTUBE_CLIENT_SECRETS from environment variable")
         try:
-            return json.loads(client_secrets_env)  # Return as dict, not path
+            secrets_dict = json.loads(client_secrets_env)
+            # Validate the structure minimally (check for 'web' or 'installed' key)
+            if 'web' in secrets_dict or 'installed' in secrets_dict:
+                 return secrets_dict  # Return the dictionary directly
+            else:
+                logger.error("Invalid structure in YOUTUBE_CLIENT_SECRETS JSON")
+                return None
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in YOUTUBE_CLIENT_SECRETS: {e}")
             return None
 
-    # Fallback to file-based search only if env var is not set
+    # Fallback to file-based search only if env var is not set or invalid
+    logger.info("YOUTUBE_CLIENT_SECRETS not found or invalid, searching for client_secret.json file.")
     potential_paths = [
         os.path.join(os.path.dirname(__file__), 'client_secret.json'),
         os.path.join(os.path.dirname(os.path.dirname(__file__)), 'client_secret.json'),
@@ -48,29 +63,35 @@ def get_client_secrets_path():
     return None
 
 # Update client_secrets_file initialization
-client_secrets = get_client_secrets_path()
-if isinstance(client_secrets, dict):
-    logger.info("Using client secrets from environment variable")
-else:
-    client_secrets_file = client_secrets
-    if client_secrets_file:
-        logger.info(f"Using client secrets file: {client_secrets_file}")
-        try:
-            with open(client_secrets_file, 'r') as f:
-                client_secrets = json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading OAuth credentials from file: {e}")
-            client_secrets = None
-    else:
-        logger.error("No client secrets available")
+client_secrets_data = get_client_secrets_path()
 
-# Scopes needed for YouTube uploads
-YOUTUBE_SCOPES = [
-    'https://www.googleapis.com/auth/youtube',
-    'https://www.googleapis.com/auth/youtube.readonly',
-    'https://www.googleapis.com/auth/youtube.upload',
-    'https://www.googleapis.com/auth/youtube.force-ssl'
-]
+# Initialize flow_kwargs for Flow constructor
+flow_kwargs = {
+    'scopes': YOUTUBE_SCOPES,
+    'redirect_uri': None # Will be set per request
+}
+
+if isinstance(client_secrets_data, dict):
+    logger.info("Initializing OAuth flow using client secrets from environment variable")
+    flow_kwargs['client_config'] = client_secrets_data
+else:
+    # If it's a path (string) or None
+    client_secrets_file = client_secrets_data
+    if client_secrets_file and os.path.exists(client_secrets_file):
+        logger.info(f"Initializing OAuth flow using client secrets file: {client_secrets_file}")
+        flow_kwargs['client_secrets_file'] = client_secrets_file
+    else:
+        logger.error("No valid YouTube client secrets found in environment variable or file. YouTube functionality will be disabled.")
+        # Set client_secrets_data to None to indicate failure
+        client_secrets_data = None
+
+# Scopes needed for YouTube uploads << DELETE THIS BLOCK
+# YOUTUBE_SCOPES = [ << DELETE THIS BLOCK
+#     'https://www.googleapis.com/auth/youtube', << DELETE THIS BLOCK
+#     'https://www.googleapis.com/auth/youtube.readonly', << DELETE THIS BLOCK
+#     'https://www.googleapis.com/auth/youtube.upload', << DELETE THIS BLOCK
+#     'https://www.googleapis.com/auth/youtube.force-ssl' << DELETE THIS BLOCK
+# ] << DELETE THIS BLOCK
 
 def setup_routes(app, db, users_collection, token_required, skip_routes=None):
     """Set up all YouTube auth related routes"""
@@ -506,3 +527,54 @@ def get_authenticated_service(user_id):
     except Exception as e:
         logger.error(f"Error creating YouTube service: {e}")
         return None
+
+def load_credentials(user_id):
+    """Load credentials for a given user ID."""
+    user_creds = db.youtube_credentials.find_one({'user_id': user_id})
+    if user_creds and 'credentials' in user_creds:
+        creds_dict = json.loads(user_creds['credentials'])
+        # Add client_id and client_secret if missing and available
+        if not creds_dict.get('client_id') or not creds_dict.get('client_secret'):
+            if isinstance(client_secrets_data, dict):
+                secrets_key = 'web' if 'web' in client_secrets_data else 'installed'
+                creds_dict['client_id'] = client_secrets_data[secrets_key]['client_id']
+                creds_dict['client_secret'] = client_secrets_data[secrets_key]['client_secret']
+            elif flow_kwargs.get('client_secrets_file'):
+                 # Reload from file if necessary (less ideal)
+                 try:
+                     with open(flow_kwargs['client_secrets_file'], 'r') as f:
+                         secrets_from_file = json.load(f)
+                         secrets_key = 'web' if 'web' in secrets_from_file else 'installed'
+                         creds_dict['client_id'] = secrets_from_file[secrets_key]['client_id']
+                         creds_dict['client_secret'] = secrets_from_file[secrets_key]['client_secret']
+                 except Exception as e:
+                     logger.error(f"Could not reload client secrets from file to supplement credentials: {e}")
+
+        credentials = Credentials.from_authorized_user_info(creds_dict, YOUTUBE_SCOPES)
+
+        # Check if credentials need refreshing
+        if credentials and credentials.expired and credentials.refresh_token:
+            logger.info(f"Refreshing YouTube token for user {user_id}")
+            try:
+                credentials.refresh(Request())
+                save_credentials(user_id, credentials) # Save the refreshed credentials
+                logger.info(f"Successfully refreshed YouTube token for user {user_id}")
+            except Exception as e:
+                logger.error(f"Error refreshing YouTube token for user {user_id}: {e}")
+                # Optionally delete invalid credentials here
+                # delete_credentials(user_id)
+                return None # Indicate refresh failure
+        return credentials
+    return None
+
+def save_credentials(user_id):
+    """Save credentials for a given user ID."""
+    creds_json = credentials.to_json()
+    db.youtube_credentials.update_one(
+        {'user_id': user_id},
+        {'$set': {
+            'credentials': creds_json,
+            'updated_at': datetime.now(timezone.utc) # Use timezone aware datetime
+        }},
+        upsert=True
+    )
