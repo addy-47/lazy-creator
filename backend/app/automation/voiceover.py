@@ -2,6 +2,10 @@ import os # for interacting with the operating system
 import logging # for logging messages
 import re # for regular expressions
 import time # for handling retries
+from dotenv import load_dotenv
+import json
+from google.cloud import texttospeech
+from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
 
@@ -16,67 +20,74 @@ class GoogleVoiceover:
             voice (str): Voice ID to use. Default is en-US-Neural2-D.
             output_dir (str): Directory to save audio files.
         """
-        import os
-        import json
-        from google.cloud import texttospeech
+
+
+        load_dotenv()
 
         logger.info(f"Initializing Google TTS with voice: {voice}")
-        
+
         # Get API key from environment variables
         self.api_key = os.getenv("GOOGLE_API_KEY")
-        
+
         # Set the environment variable for Google Cloud credentials
-        credentials_path = os.getenv("GOOGLE_CREDENTIALS_JSON")
-        
+        credentials_json_content = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
         # Track credential method for debugging
         self.credentials_method = "unknown"
-        
+
         try:
-            if credentials_path and os.path.exists(credentials_path):
-                logger.info(f"Using Google Cloud credentials from file: {credentials_path}")
-                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
-                self.client = texttospeech.TextToSpeechClient()
-                self.credentials_method = "credentials_file"
-            elif self.api_key:
-                # If using API key authentication
-                logger.info("Using Google Cloud API key authentication")
-                if os.path.exists(self.api_key):  # If API key is a file path
-                    self.client = texttospeech.TextToSpeechClient.from_service_account_json(self.api_key)
-                    self.credentials_method = "service_account_json"
-                else:
-                    # If API key is the actual key string (JSON content)
-                    try:
-                        # Check if it's valid JSON
-                        json_obj = json.loads(self.api_key)
-                        # Write to temporary file and use that
-                        import tempfile
-                        temp_cred_file = tempfile.NamedTemporaryFile(delete=False, suffix='.json')
-                        with open(temp_cred_file.name, 'w') as f:
-                            json.dump(json_obj, f)
-                        logger.info(f"Created temporary credentials file from JSON string")
-                        self.client = texttospeech.TextToSpeechClient.from_service_account_json(temp_cred_file.name)
-                        self.credentials_method = "json_string"
-                        os.unlink(temp_cred_file.name)  # Clean up temp file
-                    except json.JSONDecodeError:
-                        # Not JSON, must be API key string - try default auth
-                        logger.info("API key provided but not JSON format, using default auth")
-                        self.client = texttospeech.TextToSpeechClient()
-                        self.credentials_method = "default_auth_with_api_key"
+
+            if credentials_json_content:
+                try:
+                    # Try parsing as JSON content first
+                    credentials_info = json.loads(credentials_json_content)
+                    logger.info("Using Google Cloud credentials from GOOGLE_APPLICATION_CREDENTIALS environment variable (JSON content)")
+                    credentials = service_account.Credentials.from_service_account_info(credentials_info)
+                    self.client = texttospeech.TextToSpeechClient(credentials=credentials)
+                    self.credentials_method = "env_json_content"
+                except json.JSONDecodeError:
+                    # If not JSON, treat as file path
+                    if os.path.exists(credentials_json_content):
+                        logger.info(f"Using Google Cloud credentials from file specified in GOOGLE_APPLICATION_CREDENTIALS: {credentials_json_content}")
+                        # Setting GOOGLE_APPLICATION_CREDENTIALS lets the client library find it automatically
+                        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_json_content
+                        self.client = texttospeech.TextToSpeechClient() # Default client uses GOOGLE_APPLICATION_CREDENTIALS
+                        self.credentials_method = "env_json_path"
+                    else:
+                        logger.warning(f" GOOGLE_APPLICATION_CREDENTIALS is set but is not valid JSON and the path does not exist: {credentials_json_content}. Falling back...")
+                        self.client = None # Mark client as None initially
+                except Exception as e:
+                     logger.error(f"Error initializing client from GOOGLE_APPLICATION_CREDENTIALS: {e}")
+                     self.client = None
             else:
+                 self.client = None # Mark client as None if GOOGLE_APPLICATION_CREDENTIALS is not set
+
+            if not self.client:
                 # Try default authentication
-                logger.info("No explicit credentials provided, attempting to use default authentication")
-                self.client = texttospeech.TextToSpeechClient()
-                self.credentials_method = "default_auth"
-                
+                logger.info("No valid explicit credentials found, attempting to use default Google Application Credentials")
+                try:
+                    self.client = texttospeech.TextToSpeechClient()
+                    self.credentials_method = "default_auth"
+                except Exception as e:
+                    logger.error(f"Default authentication failed: {e}")
+                    self.client = None # Ensure client is None if default auth fails
+
+            # Check if client was successfully initialized
+            if not self.client:
+                 raise ValueError("Could not initialize Google TTS client with any available credential method.")
+
             # Verify credentials by making a simple list voices call
-            logger.info("Verifying Google Cloud TTS credentials")
+            logger.info(f"Verifying Google Cloud TTS credentials using method: {self.credentials_method}")
             response = self.client.list_voices(language_code="en-US")
             logger.info(f"Successfully connected to Google Cloud TTS with {len(response.voices)} English voices available")
-                
+
         except Exception as e:
             logger.error(f"Failed to initialize Google TTS client: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+            # Re-raise a more specific error if possible, or the general one
+            if isinstance(e, ValueError):
+                raise e
             raise ValueError(f"Google Cloud TTS initialization failed: {e}")
 
         # Parse the voice into language and name components
@@ -88,7 +99,7 @@ class GoogleVoiceover:
             # Default to US English if the format is unexpected
             self.language_code = "en-US"
             self.voice_name = voice
-            
+
         logger.info(f"Using voice: {self.voice_name} with language code: {self.language_code}")
 
         # Create output directory if it doesn't exist
@@ -117,17 +128,12 @@ class GoogleVoiceover:
         Returns:
             str: Path to the generated audio file.
         """
-        from google.cloud import texttospeech
-        import logging
-        import re
-        import time
-        import os
 
         logger = logging.getLogger(__name__)
 
         if not output_filename:
             output_filename = os.path.join(self.output_dir, f"google_tts_{hash(text)}.mp3")
-            
+
         logger.info(f"Generating speech with Google TTS (credentials: {self.credentials_method})")
         logger.info(f"Text: \"{text[:50]}...\" (length: {len(text)} chars)")
         logger.info(f"Output file: {output_filename}")

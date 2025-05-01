@@ -882,12 +882,12 @@ def check_youtube_auth_status(current_user):
         logger.info(f"Checking YouTube auth status for user {user_id}")
 
         # Check if credentials exist
-        is_authenticated = check_auth_status(user_id)
+        is_authenticated = check_auth_status(user_id, users_collection)
 
         # Get user channels if authenticated
         channels = []
         if is_authenticated:
-            youtube = get_authenticated_service(user_id)
+            youtube = get_authenticated_service(user_id, users_collection)
 
             if youtube:
                 try:
@@ -1018,7 +1018,7 @@ def youtube_auth_callback_new():
 
         # Exchange the authorization code for credentials
         logger.info(f"Exchanging code for credentials for user {user_id}")
-        credentials = get_credentials_from_code(code, state, redirect_uri)
+        credentials = get_credentials_from_code(code, state, redirect_uri, users_collection)
 
         logger.info(f"YouTube auth successful for user {user_id}")
 
@@ -1053,7 +1053,7 @@ def youtube_auth_callback_new():
 def get_youtube_channels(current_user):
     try:
         user_id = str(current_user['_id'])
-        youtube = get_authenticated_service(user_id)
+        youtube = get_authenticated_service(user_id, users_collection)
 
         if not youtube:
             return jsonify({
@@ -1131,7 +1131,7 @@ def upload_video_to_youtube(current_user, video_id):
 
         # Get authenticated YouTube service
         user_id = str(current_user['_id'])
-        youtube = get_authenticated_service(user_id)
+        youtube = get_authenticated_service(user_id, users_collection)
 
         if not youtube:
             return jsonify({
@@ -1446,7 +1446,7 @@ def get_youtube_trending_shorts(current_user):
     try:
         # Get authenticated YouTube client
         user_id = str(current_user['_id'])
-        youtube = get_authenticated_service(user_id)
+        youtube = get_authenticated_service(user_id, users_collection)
 
         if not youtube:
             return jsonify({
@@ -1579,12 +1579,12 @@ def youtube_auth_status_compat(current_user):
         logger.info(f"Compatibility route: Checking YouTube auth status for user {user_id}")
 
         # Check if credentials exist
-        is_authenticated = check_auth_status(user_id)
+        is_authenticated = check_auth_status(user_id, users_collection)
 
         # Get user channels if authenticated
         channels = []
         if is_authenticated:
-            youtube = get_authenticated_service(user_id)
+            youtube = get_authenticated_service(user_id, users_collection)
 
             if youtube:
                 try:
@@ -1688,7 +1688,7 @@ def upload_to_youtube(current_user, video_id):
 
         # Get authenticated YouTube service
         user_id = str(current_user['_id'])
-        youtube = get_authenticated_service(user_id)
+        youtube = get_authenticated_service(user_id, users_collection)
 
         if not youtube:
             return jsonify({

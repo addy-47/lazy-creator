@@ -2,7 +2,7 @@ import os  # for file operations
 import googleapiclient.discovery # for interacting with the YouTube API
 import googleapiclient.errors # for handling API errors
 import googleapiclient.http
-from youtube_auth import get_credentials, get_authenticated_service, check_auth_status
+from youtube_auth import get_authenticated_service, check_auth_status
 import logging
 import time
 
@@ -157,6 +157,8 @@ def upload_video(youtube, file_path, title, description, tags, thumbnail_path=No
         logger.error(f"Unexpected error during video upload: {general_error}")
         raise
 
-if __name__ == "__main__":
-    youtube = get_authenticated_service()
-    upload_video(youtube, "short_output.mp4", "Test Short", "A test video.", ["shorts", "test"])
+# if __name__ == "__main__":
+#     # This block needs user_id and users_collection to work with the updated get_authenticated_service
+#     # youtube = get_authenticated_service(user_id, users_collection) # Example
+#     # upload_video(youtube, "short_output.mp4", "Test Short", "A test video.", ["shorts", "test"])
+#     pass

@@ -13,8 +13,7 @@ const predefinedPrompts = [
   {
     id: 1,
     title: "Latest AI News",
-    prompt:
-      "Create a short about the latest developments in AI technology",
+    prompt: "Create a short about the latest developments in AI technology",
   },
   {
     id: 2,
@@ -59,9 +58,12 @@ const PromptSelector = ({
 }: PromptSelectorProps) => {
   const [customPrompt, setCustomPrompt] = useState("");
   const [isCustomInternal, setIsCustomInternal] = useState(false);
-  
+
   // Use external custom state if provided, otherwise use internal state
-  const isCustom = isCustomPromptExternal !== undefined ? isCustomPromptExternal : isCustomInternal;
+  const isCustom =
+    isCustomPromptExternal !== undefined
+      ? isCustomPromptExternal
+      : isCustomInternal;
 
   // Effect to notify parent component when isCustom changes
   useEffect(() => {
@@ -81,35 +83,29 @@ const PromptSelector = ({
 
     // Check if the currently selected prompt matches any predefined prompts
     const matchingPredefinedPrompt = predefinedPrompts.find(
-      p => p.prompt === selectedPrompt
+      (p) => p.prompt === selectedPrompt
     );
 
-    // If we're in custom mode and isCustomPromptExternal is true, we should preserve the custom state
-    if (isCustomPromptExternal === true) {
-      // Only set customPrompt if it's not being toggled to empty state
-      if (selectedPrompt && selectedPrompt !== "") {
-        setCustomPrompt(selectedPrompt);
-      }
-      return; // Skip the rest of the logic when externally controlled
-    }
-
-    // If we're in custom mode, update the custom prompt text field with existing value, if any
-    if (isCustom) {
+    // If we're in custom mode (internally managed), update the custom prompt text field
+    if (isCustom && isCustomPromptExternal === undefined) {
       // Only set customPrompt if it's not being toggled to empty state
       if (selectedPrompt && selectedPrompt !== "") {
         setCustomPrompt(selectedPrompt);
       }
     }
-    // If we've got a predefined prompt selected, make sure we're not in custom mode
+    // If we've got a predefined prompt selected, make sure we're not in custom mode (internally managed)
     else if (matchingPredefinedPrompt && isCustomPromptExternal === undefined) {
       setIsCustomInternal(false);
-    } 
-    // If we have a prompt but it's not a predefined one, we must be in custom mode
+    }
+    // If we have a prompt but it's not a predefined one, we must be in custom mode (internally managed)
     else if (selectedPrompt && isCustomPromptExternal === undefined) {
       setIsCustomInternal(true);
       setCustomPrompt(selectedPrompt);
     }
-  }, [selectedPrompt, isCustom, isCustomPromptExternal]);
+    // NOTE: Logic for isCustomPromptExternal === true is removed here.
+    // The parent component (CreateForm) manages the selectedPrompt state,
+    // and the Textarea value is directly bound to selectedPrompt when external.
+  }, [selectedPrompt, isCustom, isCustomPromptExternal, onPromptChange]); // Added onPromptChange dependency
 
   const handlePredefinedPromptSelect = (prompt: string) => {
     onPromptChange(prompt);
@@ -124,8 +120,13 @@ const PromptSelector = ({
     e: React.ChangeEvent<HTMLTextAreaElement>
   ) => {
     const value = e.target.value;
-    setCustomPrompt(value);
+    // Only update the parent's state. The internal customPrompt state
+    // is only relevant when isCustomPromptExternal is undefined.
     onPromptChange(value);
+    // If managing state internally, update internal state as well
+    if (isCustomPromptExternal === undefined) {
+      setCustomPrompt(value);
+    }
   };
 
   const toggleCustomPrompt = () => {
@@ -135,7 +136,7 @@ const PromptSelector = ({
     } else if (onCustomPromptStateChange) {
       onCustomPromptStateChange(true);
     }
-    
+
     // Always clear the custom prompt when switching to custom mode
     setCustomPrompt("");
     onPromptChange("");
@@ -182,7 +183,11 @@ const PromptSelector = ({
             id="custom-prompt"
             className="w-full p-3 min-h-[120px] rounded-lg resize-none focus:ring-2 focus:ring-primary/50"
             placeholder="Write your custom prompt here..."
-            value={isCustomPromptExternal !== undefined ? selectedPrompt : customPrompt}
+            value={
+              isCustomPromptExternal !== undefined
+                ? selectedPrompt
+                : customPrompt
+            }
             onChange={handleCustomPromptChange}
             autoFocus
           />

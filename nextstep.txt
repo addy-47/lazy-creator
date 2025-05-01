@@ -92,18 +92,7 @@ gcloud run deploy backend \
 
 Once deployed, note the URL of your backend service (e.g., `https://backend-xyz123.run.app`). You'll need this for the frontend deployment.
 
-### Step 2: Create DNS Entry for Backend
-
-Create a DNS record for the backend subdomain:
-```bash
-# Get the backend URL from Cloud Run
-BACKEND_URL=$(gcloud run services describe backend --platform managed --region [REGION] --format="value(status.url)")
-
-# Add a CNAME record in GoDaddy DNS settings:
-# backend.lazycreator.in -> [BACKEND_URL] (without https://)
-```
-
-### Step 3: Build and Deploy Frontend
+### Step 2: Build and Deploy Frontend
 
 Next, build and deploy the frontend to Cloud Run:
 
@@ -124,7 +113,7 @@ gcloud run deploy frontend \
   --service-account=[SERVICE_ACCOUNT_EMAIL]
 ```
 
-### Step 4: Set Up Load Balancer and Domain
+### Step 3: Set Up Load Balancer and Domain
 
 Follow these steps to set up a global HTTPS load balancer for your domain:
 
@@ -142,32 +131,49 @@ Follow these steps to set up a global HTTPS load balancer for your domain:
 
 3. Set up HTTPS load balancer with Cloud Run backend:
    ```bash
-   # Create backend service for frontend
-   gcloud compute backend-services create lazy-creator-frontend \
+   # Create backend service for the *frontend* Cloud Run service
+   gcloud compute backend-services create lb-frontend-backend-service \
      --global \
      --load-balancing-scheme=EXTERNAL
 
-   # Create NEG (Network Endpoint Group) for frontend Cloud Run service
-   gcloud compute network-endpoint-groups create lazy-creator-frontend-neg \
+   # Create NEG (Network Endpoint Group) for the *frontend* Cloud Run service
+   gcloud compute network-endpoint-groups create lb-frontend-neg \
      --region=[REGION] \
      --network-endpoint-type=SERVERLESS \
-     --cloud-run-service=frontend
+     --cloud-run-service=frontend # This links the NEG to your frontend Cloud Run service
 
-   # Add the NEG as a backend to the backend service
-   gcloud compute backend-services add-backend lazy-creator-frontend \
+   # Add the *frontend* NEG as a backend to the *frontend* backend service
+   gcloud compute backend-services add-backend lb-frontend-backend-service \
      --global \
-     --network-endpoint-group=lazy-creator-frontend-neg \
+     --network-endpoint-group=lb-frontend-neg \
      --network-endpoint-group-region=[REGION]
 
-   # Create URL map
-   gcloud compute url-maps create lazy-creator-url-map \
-     --default-service=lazy-creator-frontend
+   # Create backend service for the *backend* Cloud Run service
+   gcloud compute backend-services create lb-backend-backend-service \
+     --global \
+     --load-balancing-scheme=EXTERNAL
 
-   # Create path matcher for backend
+   # Create NEG for the *backend* Cloud Run service
+   gcloud compute network-endpoint-groups create lb-backend-neg \
+     --region=[REGION] \
+     --network-endpoint-type=SERVERLESS \
+     --cloud-run-service=backend # This links the NEG to your backend Cloud Run service
+
+   # Add the *backend* NEG as a backend to the *backend* backend service
+   gcloud compute backend-services add-backend lb-backend-backend-service \
+     --global \
+     --network-endpoint-group=lb-backend-neg \
+     --network-endpoint-group-region=[REGION]
+
+   # Create URL map - Default traffic goes to the frontend service
+   gcloud compute url-maps create lazy-creator-url-map \
+     --default-service=lb-frontend-backend-service # Default traffic goes to the frontend service
+
+   # Create path matcher to route /api/* to the backend service
    gcloud compute url-maps add-path-matcher lazy-creator-url-map \
-     --path-matcher-name=backend-paths \
-     --default-service=lazy-creator-frontend \
-     --path-rules="/api/*=lazy-creator-backend"
+     --path-matcher-name=api-paths \
+     --default-service=lb-frontend-backend-service \ # Other paths also go to frontend
+     --backend-service-path-rules="/api/*=lb-backend-backend-service" # Route /api/* to the backend service
 
    # Create HTTPS proxy
    gcloud compute target-https-proxies create lazy-creator-https-proxy \
@@ -182,16 +188,19 @@ Follow these steps to set up a global HTTPS load balancer for your domain:
      --ports=443
    ```
 
-4. Update GoDaddy DNS with the IP address obtained from step 1
+4. Update GoDaddy DNS:
+   - **A Record:** `@` points to the IP address obtained from `gcloud compute addresses describe lazy-creator-ip --global --format="get(address)"`
+   - **CNAME Record:** `www` points to `lazycreator.in`
+   - **TXT Record:** `@` with the value provided by Google for domain verification (if needed during certificate setup)
 
-### Step 5: Verify Deployment
+### Step 4: Verify Deployment
 
 1. Test the application via the domain name:
    ```
    https://lazycreator.in
    ```
 
-2. Verify API access:
+2. Verify API access (should now be routed by the load balancer):
    ```
    https://lazycreator.in/api/health
    ```
@@ -202,7 +211,7 @@ Follow these steps to set up a global HTTPS load balancer for your domain:
    gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=backend"
    ```
 
-## 4. Monitoring and Maintenance
+## 5. Monitoring and Maintenance
 
 1. Set up Cloud Monitoring:
    ```
@@ -561,25 +570,25 @@ both the backend and frontend without altering the user interface."
    ```bash
    # Replace YOUR_PROJECT_ID with your actual project ID
    # Replace SERVICE_ACCOUNT_EMAIL with your service account email (e.g., lazy-creator-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com)
-   
+
    PROJECT_ID=YOUR_PROJECT_ID
    SA_EMAIL=SERVICE_ACCOUNT_EMAIL
-   
+
    # Cloud Run admin
    gcloud projects add-iam-policy-binding $PROJECT_ID \
      --member="serviceAccount:$SA_EMAIL" \
      --role="roles/run.admin"
-   
+
    # Storage admin
    gcloud projects add-iam-policy-binding $PROJECT_ID \
      --member="serviceAccount:$SA_EMAIL" \
      --role="roles/storage.admin"
-   
+
    # Secret Manager accessor
    gcloud projects add-iam-policy-binding $PROJECT_ID \
      --member="serviceAccount:$SA_EMAIL" \
      --role="roles/secretmanager.secretAccessor"
-   
+
    # Logging writer
    gcloud projects add-iam-policy-binding $PROJECT_ID \
      --member="serviceAccount:$SA_EMAIL" \
@@ -597,12 +606,12 @@ both the backend and frontend without altering the user interface."
 2. Navigate to the backend directory and build the Docker image:
    ```bash
    cd backend
-   
+
    # Set variables for easier command building
    PROJECT_ID=YOUR_PROJECT_ID
    REGION=us-central1  # Choose your preferred region
    SA_EMAIL=YOUR_SERVICE_ACCOUNT_EMAIL  # e.g., lazy-creator-sa@project-id.iam.gserviceaccount.com
-   
+
    # Build the Docker image using Cloud Build
    gcloud builds submit --tag gcr.io/$PROJECT_ID/lazy-creator-backend
    ```
@@ -632,7 +641,7 @@ both the backend and frontend without altering the user interface."
 1. Navigate to the frontend directory and build the Docker image:
    ```bash
    cd ../frontend  # Assuming you're in the backend directory
-   
+
    # Build the frontend Docker image
    gcloud builds submit --tag gcr.io/$PROJECT_ID/lazy-creator-frontend
    ```
@@ -718,7 +727,7 @@ both the backend and frontend without altering the user interface."
    # For frontend
    gcloud compute backend-services add-backend lazy-creator-frontend \
      --global \
-     --network-endpoint-group=lazy-creator-frontend-neg \
+     --network-endpoint-group=lb-frontend-neg \
      --network-endpoint-group-region=$REGION
 
    # For backend
@@ -732,7 +741,7 @@ both the backend and frontend without altering the user interface."
    ```bash
    gcloud compute url-maps create lazy-creator-url-map \
      --default-service=lazy-creator-frontend
-   
+
    # Add backend API path matcher
    gcloud compute url-maps add-path-matcher lazy-creator-url-map \
      --path-matcher-name=backend-paths \
@@ -791,7 +800,7 @@ both the backend and frontend without altering the user interface."
    ```bash
    # Backend logs
    gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=backend" --limit=10
-   
+
    # Frontend logs
    gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=frontend" --limit=10
    ```

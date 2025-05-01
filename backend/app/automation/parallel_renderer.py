@@ -134,11 +134,6 @@ def render_clip_segment(clip, output_path, fps=30, preset="ultrafast", threads=2
             logger.info("Shutdown requested, aborting render")
             return None
 
-        # Use optimized encoding settings with reduced memory usage
-        # Show progress bar with tqdm if requested
-        logger_setting = None if show_progress else "bar"
-
-        # Pre-process and configure to reduce memory usage
         gc.collect()  # Force garbage collection before each render
 
         # Memory-efficient rendering settings
@@ -148,23 +143,25 @@ def render_clip_segment(clip, output_path, fps=30, preset="ultrafast", threads=2
             codec="libx264",
             audio_codec="aac",
             threads=threads,
-            preset=preset if preset else "ultrafast",  # Use ultrafast preset if none specified
-            audio_bufsize=4096,  # Reduced buffer size to save memory
+            preset=preset if preset else "ultrafast",
+            audio_bufsize=2048,  # Reduced buffer size
             ffmpeg_params=[
-                "-bufsize", "10M",      # Reduced buffer size
-                "-maxrate", "2M",       # Lower max rate to save memory
-                "-pix_fmt", "yuv420p",  # Compatible pixel format for all players
-                "-crf", "28"            # Higher compression (lower quality) to save memory
+                "-bufsize", "8M",       # Reduced buffer size
+                "-maxrate", "2M",       # Lower max rate
+                "-pix_fmt", "yuv420p",  # Compatible pixel format
+                "-crf", "28",           # Higher compression
+                "-tune", "fastdecode",  # Optimize for decoding speed
+                "-profile:v", "baseline" # Most compatible profile
             ],
-            logger=logger_setting  # None shows progress bar, "bar" hides it
+            logger=None if show_progress else "bar"
         )
+
         duration = time.time() - start_time
         logger.info(f"Completed render of segment {output_path} in {duration:.2f} seconds")
 
         return output_path
     except Exception as e:
         logger.error(f"Error rendering segment {output_path}: {e}")
-        # Try to clean up the failed output file
         if os.path.exists(output_path):
             try:
                 os.remove(output_path)
@@ -888,16 +885,16 @@ def render_clips_in_parallel(clips, output_file, fps=30, num_processes=None, log
                     logger.warning(f"Error extracting index from filename {path}: {e}")
                     # Use a high index to ensure it's at the end
                     indexed_paths.append((9999, path))
-            
+
             # Sort by the original indices to preserve order
             indexed_paths.sort(key=lambda x: x[0])
             logger.info("Clip order after sorting:")
             for idx, path in indexed_paths:
                 logger.info(f"  Index {idx}: {os.path.basename(path)}")
-                
+
             # Get just the paths back in the correct order
             sorted_paths = [path for _, path in indexed_paths]
-            
+
             # Continue with concatenation using the sorted paths
             logger.info("Concatenating clips using FFmpeg with preserved original order...")
 
@@ -1001,7 +998,7 @@ class ParallelRenderer:
             output_path (str): Optional output path
             max_duration (float): Maximum duration in seconds
             progress_callback (callable): Optional callback for progress updates
-        
+
         Returns:
             tuple: (clip_id, video_clip)
         """
@@ -1009,14 +1006,14 @@ class ParallelRenderer:
         clip_index = clip_info.get('index', 0)
         logger.info(f"Rendering clip {clip_id} (index {clip_index})")
         logger.debug(f"Clip info: {clip_info}")
-        
+
         # Different makers for different clip types
         clip_type = clip_info.get('type', 'image')
-        
+
         try:
             # Track start time for performance monitoring
             start_time = time.time()
-            
+
             if clip_type == 'video':
                 maker = self.video_maker
                 video_clip = maker.create_video_clip(clip_info, progress_callback=progress_callback)
@@ -1026,16 +1023,16 @@ class ParallelRenderer:
             else:  # Default to image
                 maker = self.image_maker
                 video_clip = maker.create_video_clip(clip_info, progress_callback=progress_callback)
-            
+
             # Apply max duration constraint if specified
             if max_duration is not None and video_clip.duration > max_duration:
                 logger.warning(f"Clip {clip_id} exceeds max duration ({video_clip.duration:.2f}s > {max_duration:.2f}s), trimming")
                 video_clip = video_clip.subclip(0, max_duration)
-                
+
             # Log clip properties
             render_time = time.time() - start_time
             logger.info(f"Rendered clip {clip_id} - duration: {video_clip.duration:.2f}s, render time: {render_time:.2f}s")
-            
+
             # Save individual clip if output_path specified
             if output_path:
                 clip_output = f"{os.path.splitext(output_path)[0]}_{clip_id}.mp4"
@@ -1046,7 +1043,7 @@ class ParallelRenderer:
                     audio_codec='aac',
                     fps=self.fps
                 )
-                
+
             return (clip_id, clip_index, video_clip)
         except Exception as e:
             logger.error(f"Error rendering clip {clip_id}: {str(e)}")
@@ -1065,42 +1062,42 @@ class ParallelRenderer:
             max_duration (float): Maximum duration in seconds
             concat_method (str): Method to use for concatenation - 'chain' or 'compose'
             progress_callback (callable): Optional callback for progress updates
-        
+
         Returns:
             str: Path to rendered file
         """
         if not clips:
             logger.error("No clips provided for rendering")
             raise ValueError("No clips provided for rendering")
-            
+
         logger.info(f"Rendering {len(clips)} clips to {output_path}")
         logger.info(f"Maximum duration: {max_duration if max_duration is not None else 'unlimited'}")
         logger.info(f"Concatenation method: {concat_method}")
-        
+
         start_time = time.time()
         results = []
-        
+
         # Validate all clips before starting
         for i, clip in enumerate(clips):
             if not isinstance(clip, dict):
                 logger.error(f"Invalid clip at index {i}: not a dictionary")
                 raise ValueError(f"Invalid clip at index {i}: not a dictionary")
-            
+
             # Ensure all clips have an index field
             if 'index' not in clip:
                 clip['index'] = i
                 logger.info(f"Adding index {i} to clip {clip.get('id', 'unknown')}")
-        
+
         # Render clips (sequentially for now)
         for i, clip_info in enumerate(clips):
             if progress_callback:
                 # Notify overall progress
                 overall_progress = (i / len(clips)) * 100
                 progress_callback(overall_progress, f"Rendering clip {i+1}/{len(clips)}")
-                
+
             try:
                 clip_result = self.render_clip(
-                    clip_info, 
+                    clip_info,
                     max_duration=max_duration,
                     progress_callback=progress_callback
                 )
@@ -1109,20 +1106,20 @@ class ParallelRenderer:
                 logger.error(f"Failed to render clip at index {i}: {str(e)}")
                 # Continue with other clips rather than failing the entire render
                 continue
-                
+
         if not results:
             logger.error("All clips failed to render")
             raise RuntimeError("All clips failed to render")
-            
+
         # Sort clips by original index to maintain correct order
         logger.info("Sorting clips by original index")
         results.sort(key=lambda x: x[1])
         result_clips = [result[2] for result in results]
-        
+
         # Log all clip durations for debugging
         for i, (clip_id, clip_index, clip) in enumerate(results):
             logger.info(f"Clip {i}: id={clip_id}, index={clip_index}, duration={clip.duration:.2f}s")
-            
+
         # Concatenate clips
         logger.info(f"Concatenating {len(result_clips)} clips using {concat_method} method")
         if concat_method == 'compose':
@@ -1131,25 +1128,25 @@ class ParallelRenderer:
         else:
             # Default to chain (concatenate end-to-end)
             final_clip = mp.concatenate_videoclips(result_clips)
-            
+
         total_duration = final_clip.duration
         logger.info(f"Total concatenated duration: {total_duration:.2f}s")
-        
+
         # Apply overall max duration if specified
         if max_duration is not None and final_clip.duration > max_duration:
             logger.warning(f"Final video exceeds max duration ({total_duration:.2f}s > {max_duration:.2f}s), trimming")
             final_clip = final_clip.subclip(0, max_duration)
             logger.info(f"New duration after trimming: {final_clip.duration:.2f}s")
-        
+
         # Write final output
         logger.info(f"Writing final video to {output_path}")
         if progress_callback:
             progress_callback(95, "Writing final video file")
-            
+
         try:
             final_clip.write_videofile(
                 output_path,
-                codec='libx264', 
+                codec='libx264',
                 audio_codec='aac',
                 fps=self.fps
             )
@@ -1158,11 +1155,11 @@ class ParallelRenderer:
             import traceback
             logger.error(f"Video writing error traceback: {traceback.format_exc()}")
             raise
-            
+
         render_time = time.time() - start_time
         logger.info(f"Video rendering complete - duration: {final_clip.duration:.2f}s, render time: {render_time:.2f}s")
-        
+
         if progress_callback:
             progress_callback(100, "Rendering complete")
-            
+
         return output_path

@@ -14,6 +14,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
 from dotenv import load_dotenv
+from bson.objectid import ObjectId  # Add this import for MongoDB ObjectId
 
 # Load environment variables
 load_dotenv()
@@ -85,15 +86,14 @@ else:
         # Set client_secrets_data to None to indicate failure
         client_secrets_data = None
 
-# Scopes needed for YouTube uploads << DELETE THIS BLOCK
-# YOUTUBE_SCOPES = [ << DELETE THIS BLOCK
-#     'https://www.googleapis.com/auth/youtube', << DELETE THIS BLOCK
-#     'https://www.googleapis.com/auth/youtube.readonly', << DELETE THIS BLOCK
-#     'https://www.googleapis.com/auth/youtube.upload', << DELETE THIS BLOCK
-#     'https://www.googleapis.com/auth/youtube.force-ssl' << DELETE THIS BLOCK
-# ] << DELETE THIS BLOCK
 
 def setup_routes(app, db, users_collection, token_required, skip_routes=None):
+    """Set up all YouTube auth related routes"""
+
+    # Make users_collection accessible to helper functions within this scope
+    # This is a simplification; a better approach might involve Flask blueprints or app context
+    global _users_collection
+    _users_collection = users_collection
     """Set up all YouTube auth related routes"""
 
     # Initialize skip_routes if not provided
@@ -144,8 +144,8 @@ def setup_routes(app, db, users_collection, token_required, skip_routes=None):
 
                 user_id = str(user['_id'])
 
-                # Check if credentials exist
-                is_authenticated = check_auth_status(user_id)
+                # Check if credentials exist using the database
+                is_authenticated = check_auth_status(user_id, _users_collection)
 
                 return jsonify({
                     "status": "success",
@@ -215,6 +215,7 @@ def setup_routes(app, db, users_collection, token_required, skip_routes=None):
                 logger.info(f"Using redirect URI: {redirect_uri}")
 
                 # Generate the authorization URL
+                # get_auth_url uses global client_secrets_data, no need to pass db/collection
                 auth_url = get_auth_url(user_id, redirect_uri)
 
                 logger.info(f"Generated YouTube auth URL for user {user_id}")
@@ -252,9 +253,9 @@ def setup_routes(app, db, users_collection, token_required, skip_routes=None):
 
                 logger.info(f"YouTube Auth Callback - state: {state}, redirect URI: {redirect_uri}")
 
-                # Exchange code for credentials
+                # Exchange code for credentials and save to DB
                 try:
-                    get_credentials_from_code(code, state, redirect_uri)
+                    get_credentials_from_code(code, state, redirect_uri, _users_collection)
                     logger.info(f"Successfully exchanged code for credentials for state: {state}")
                 except Exception as credential_error:
                     logger.error(f"Error exchanging code for credentials: {credential_error}")
@@ -311,8 +312,8 @@ def setup_routes(app, db, users_collection, token_required, skip_routes=None):
 
                 user_id = str(user['_id'])
 
-                # Get YouTube service
-                youtube = get_authenticated_service(user_id)
+                # Get YouTube service using DB credentials
+                youtube = get_authenticated_service(user_id, _users_collection)
 
                 if not youtube:
                     return jsonify({
@@ -357,117 +358,117 @@ def setup_routes(app, db, users_collection, token_required, skip_routes=None):
                 logger.error(f"Error fetching YouTube channels: {e}")
                 return jsonify({"status": "error", "message": str(e)}), 500
 
-# Helper functions for YouTube authentication
-def get_credentials_path(user_id):
-    """Get path to store user's YouTube credentials"""
-    # Get credentials directory from env var or use default
-    credentials_dir = os.getenv('YOUTUBE_CREDENTIALS_DIR', os.path.join(os.path.dirname(__file__), 'credentials'))
-    os.makedirs(credentials_dir, exist_ok=True)
-    return os.path.join(credentials_dir, f"youtube_{user_id}.json")
+# Helper functions for YouTube authentication using Database
 
-def get_credentials(user_id):
-    """Get OAuth credentials for a specific user"""
+def save_credentials(user_id, credentials, users_collection):
+    """Save credentials for a given user ID to the database."""
     try:
-        credentials_path = get_credentials_path(user_id)
-        if not os.path.exists(credentials_path):
-            logger.warning(f"No credentials file found for user {user_id}")
-            return None
+        creds_json = credentials.to_json()
+        users_collection.update_one(
+            {'_id': ObjectId(user_id)}, # Assuming user_id is the string representation of ObjectId
+            {'$set': {
+                'youtube_credentials': creds_json,
+                'youtube_credentials_updated_at': datetime.now(timezone.utc)
+            }}
+            # Consider upsert=False if you only want to update existing users
+        )
+        logger.info(f"Saved/Updated YouTube credentials in DB for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error saving YouTube credentials to DB for user {user_id}: {e}")
 
-        # Load credentials from file
-        with open(credentials_path, 'r') as f:
-            credentials_data = json.load(f)
+def load_credentials(user_id, users_collection):
+    """Load credentials for a given user ID from the database."""
+    try:
+        user_data = users_collection.find_one({'_id': ObjectId(user_id)})
+        if user_data and 'youtube_credentials' in user_data:
+            creds_dict = json.loads(user_data['youtube_credentials'])
 
-        credentials = Credentials.from_authorized_user_info(credentials_data)
+            # Add client_id and client_secret if missing and available
+            # This is crucial for the refresh mechanism
+            if not creds_dict.get('client_id') or not creds_dict.get('client_secret'):
+                if isinstance(client_secrets_data, dict):
+                    secrets_key = 'web' if 'web' in client_secrets_data else 'installed'
+                    creds_dict['client_id'] = client_secrets_data[secrets_key]['client_id']
+                    creds_dict['client_secret'] = client_secrets_data[secrets_key]['client_secret']
+                elif flow_kwargs.get('client_secrets_file'):
+                     # Reload from file if necessary (less ideal)
+                     try:
+                         with open(flow_kwargs['client_secrets_file'], 'r') as f:
+                             secrets_from_file = json.load(f)
+                             secrets_key = 'web' if 'web' in secrets_from_file else 'installed'
+                             creds_dict['client_id'] = secrets_from_file[secrets_key]['client_id']
+                             creds_dict['client_secret'] = secrets_from_file[secrets_key]['client_secret']
+                     except Exception as e:
+                         logger.error(f"Could not reload client secrets from file to supplement credentials: {e}")
+                else:
+                    logger.error(f"Cannot supplement credentials with client_id/secret for user {user_id} - missing client_secrets_data.")
+                    # Cannot refresh without client_id/secret
 
-        # Check if credentials are expired
-        if credentials.expired and credentials.refresh_token:
-            try:
-                credentials.refresh(Request())
-                # Save refreshed credentials
-                with open(credentials_path, 'w') as f:
-                    f.write(credentials.to_json())
-                logger.info(f"Refreshed credentials for user {user_id}")
-            except Exception as e:
-                logger.error(f"Error refreshing credentials: {e}")
+            credentials = Credentials.from_authorized_user_info(creds_dict, YOUTUBE_SCOPES)
+
+            # Check if credentials need refreshing
+            if credentials and credentials.expired and credentials.refresh_token:
+                logger.info(f"Refreshing YouTube token for user {user_id}")
+                try:
+                    credentials.refresh(Request())
+                    save_credentials(user_id, credentials, users_collection) # Save the refreshed credentials
+                    logger.info(f"Successfully refreshed YouTube token for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Error refreshing YouTube token for user {user_id}: {e}")
+                    # Optionally delete invalid credentials here
+                    # delete_credentials(user_id, users_collection)
+                    return None # Indicate refresh failure
+            elif not credentials or not credentials.valid:
+                 logger.warning(f"Loaded credentials for user {user_id} are invalid or expired and cannot be refreshed.")
+                 # Optionally delete invalid credentials
+                 # delete_credentials(user_id, users_collection)
+                 return None
+
+            # Check scopes after loading/refreshing
+            if set(credentials.scopes) != set(YOUTUBE_SCOPES):
+                logger.warning(f"Scope mismatch for user {user_id}. Required: {YOUTUBE_SCOPES}, Found: {credentials.scopes}. Clearing credentials.")
+                delete_credentials(user_id, users_collection)
                 return None
 
-        return credentials
+            return credentials
+        else:
+            logger.info(f"No YouTube credentials found in DB for user {user_id}")
+            return None
     except Exception as e:
-        logger.error(f"Error getting credentials for user {user_id}: {e}")
+        logger.error(f"Error loading YouTube credentials from DB for user {user_id}: {e}")
         return None
 
-def clear_credentials(user_id):
-    """Delete stored credentials for a user to force re-authentication"""
-    credentials_path = get_credentials_path(user_id)
-    if os.path.exists(credentials_path):
-        try:
-            os.remove(credentials_path)
-            logger.info(f"Cleared YouTube credentials for user {user_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Error clearing credentials for user {user_id}: {e}")
-            return False
-    return False
-
-def check_auth_status(user_id):
-    """Check if the user has valid YouTube credentials"""
+def delete_credentials(user_id, users_collection):
+    """Delete stored credentials for a user from the database."""
     try:
-        credentials_path = get_credentials_path(user_id)
-
-        # If credentials don't exist, user is not authenticated
-        if not os.path.exists(credentials_path):
-            logger.info(f"No credentials file found for user {user_id}")
-            return False
-
-        # Load credentials from file
-        with open(credentials_path, 'r') as cred_file:
-            cred_json = json.load(cred_file)
-
-        # Check if the stored scopes match our current required scopes
-        if 'scopes' in cred_json:
-            stored_scopes = set(cred_json.get('scopes', []))
-            required_scopes = set(YOUTUBE_SCOPES)
-
-            # If scopes don't match, clear credentials and require re-auth
-            if stored_scopes != required_scopes:
-                logger.warning(f"Scope mismatch for user {user_id}. Clearing credentials and requiring re-auth.")
-                clear_credentials(user_id)
-                return False
-
-        # Load credentials
-        credentials = Credentials.from_authorized_user_info(cred_json)
-
-        # Check if credentials are valid and not expired
-        if credentials and credentials.valid:
-            return True
-
-        # Try to refresh if expired
-        if credentials and credentials.expired and credentials.refresh_token:
-            try:
-                credentials.refresh(Request())
-                # Save refreshed credentials
-                with open(credentials_path, 'w') as cred_file:
-                    cred_file.write(credentials.to_json())
-                return True
-            except Exception as refresh_error:
-                logger.error(f"Error refreshing credentials for user {user_id}: {refresh_error}")
-                clear_credentials(user_id)
-                return False
-
-        # If we get here, credentials are invalid
-        logger.info(f"Invalid credentials for user {user_id}")
-        return False
-
+        users_collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$unset': {
+                'youtube_credentials': "",
+                'youtube_credentials_updated_at': ""
+            }}
+        )
+        logger.info(f"Cleared YouTube credentials from DB for user {user_id}")
+        return True
     except Exception as e:
-        logger.error(f"Error checking auth status for user {user_id}: {e}")
+        logger.error(f"Error clearing YouTube credentials from DB for user {user_id}: {e}")
         return False
+
+def check_auth_status(user_id, users_collection):
+    """Check if the user has valid YouTube credentials in the database."""
+    credentials = load_credentials(user_id, users_collection)
+    return credentials is not None and credentials.valid
 
 def get_auth_url(user_id, redirect_uri):
     try:
-        if isinstance(client_secrets, dict):
-            flow = Flow.from_client_config(client_secrets, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
+        # Use the globally loaded client_secrets_data
+        if isinstance(client_secrets_data, dict):
+            flow = Flow.from_client_config(client_secrets_data, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
+        elif isinstance(client_secrets_data, str) and os.path.exists(client_secrets_data):
+            flow = Flow.from_client_secrets_file(client_secrets_data, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
         else:
-            flow = Flow.from_client_secrets_file(client_secrets_file, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
+            logger.error("Cannot generate auth URL: YouTube client secrets are not configured correctly.")
+            raise ValueError("YouTube client secrets configuration error.")
         auth_url, _ = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
@@ -489,38 +490,44 @@ def decode_state_param(state):
         return state[5:]
     return None
 
-def get_credentials_from_code(code, state, redirect_uri):
+def get_credentials_from_code(code, state, redirect_uri, users_collection):
+    """Exchange authorization code for credentials and save them to the database."""
     try:
         user_id = decode_state_param(state)
         if not user_id:
             raise ValueError("Invalid state parameter")
-        if isinstance(client_secrets, dict):
-            flow = Flow.from_client_config(client_secrets, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
+
+        # Use the globally initialized flow_kwargs
+        current_flow_kwargs = flow_kwargs.copy()
+        current_flow_kwargs['redirect_uri'] = redirect_uri
+
+        if 'client_config' in current_flow_kwargs:
+            flow = Flow.from_client_config(**current_flow_kwargs)
+        elif 'client_secrets_file' in current_flow_kwargs:
+            flow = Flow.from_client_secrets_file(**current_flow_kwargs)
         else:
-            flow = Flow.from_client_secrets_file(client_secrets_file, scopes=YOUTUBE_SCOPES, redirect_uri=redirect_uri)
+             logger.error("Cannot exchange code: YouTube client secrets are not configured correctly.")
+             raise ValueError("YouTube client secrets configuration error.")
+
         flow.fetch_token(code=code)
         credentials = flow.credentials
-        credentials_path = get_credentials_path(user_id)
-        with open(credentials_path, 'w') as f:
-            f.write(credentials.to_json())
+
+        # Save credentials to database
+        save_credentials(user_id, credentials, users_collection)
+
         return credentials
     except Exception as e:
         logger.error(f"Error exchanging code for credentials: {e}")
         raise
 
-def get_authenticated_service(user_id):
-    """Get authenticated YouTube API service"""
+def get_authenticated_service(user_id, users_collection):
+    """Get authenticated YouTube API service using credentials from the database."""
     try:
-        # Check if user is authenticated
-        if not check_auth_status(user_id):
+        credentials = load_credentials(user_id, users_collection)
+
+        if not credentials:
+            logger.warning(f"Could not get authenticated service for user {user_id}: No valid credentials found.")
             return None
-
-        # Load credentials from file
-        credentials_path = get_credentials_path(user_id)
-        with open(credentials_path, 'r') as f:
-            credentials_data = json.load(f)
-
-        credentials = Credentials.from_authorized_user_info(credentials_data)
 
         # Create YouTube API service
         return build('youtube', 'v3', credentials=credentials)
@@ -528,53 +535,4 @@ def get_authenticated_service(user_id):
         logger.error(f"Error creating YouTube service: {e}")
         return None
 
-def load_credentials(user_id):
-    """Load credentials for a given user ID."""
-    user_creds = db.youtube_credentials.find_one({'user_id': user_id})
-    if user_creds and 'credentials' in user_creds:
-        creds_dict = json.loads(user_creds['credentials'])
-        # Add client_id and client_secret if missing and available
-        if not creds_dict.get('client_id') or not creds_dict.get('client_secret'):
-            if isinstance(client_secrets_data, dict):
-                secrets_key = 'web' if 'web' in client_secrets_data else 'installed'
-                creds_dict['client_id'] = client_secrets_data[secrets_key]['client_id']
-                creds_dict['client_secret'] = client_secrets_data[secrets_key]['client_secret']
-            elif flow_kwargs.get('client_secrets_file'):
-                 # Reload from file if necessary (less ideal)
-                 try:
-                     with open(flow_kwargs['client_secrets_file'], 'r') as f:
-                         secrets_from_file = json.load(f)
-                         secrets_key = 'web' if 'web' in secrets_from_file else 'installed'
-                         creds_dict['client_id'] = secrets_from_file[secrets_key]['client_id']
-                         creds_dict['client_secret'] = secrets_from_file[secrets_key]['client_secret']
-                 except Exception as e:
-                     logger.error(f"Could not reload client secrets from file to supplement credentials: {e}")
-
-        credentials = Credentials.from_authorized_user_info(creds_dict, YOUTUBE_SCOPES)
-
-        # Check if credentials need refreshing
-        if credentials and credentials.expired and credentials.refresh_token:
-            logger.info(f"Refreshing YouTube token for user {user_id}")
-            try:
-                credentials.refresh(Request())
-                save_credentials(user_id, credentials) # Save the refreshed credentials
-                logger.info(f"Successfully refreshed YouTube token for user {user_id}")
-            except Exception as e:
-                logger.error(f"Error refreshing YouTube token for user {user_id}: {e}")
-                # Optionally delete invalid credentials here
-                # delete_credentials(user_id)
-                return None # Indicate refresh failure
-        return credentials
-    return None
-
-def save_credentials(user_id):
-    """Save credentials for a given user ID."""
-    creds_json = credentials.to_json()
-    db.youtube_credentials.update_one(
-        {'user_id': user_id},
-        {'$set': {
-            'credentials': creds_json,
-            'updated_at': datetime.now(timezone.utc) # Use timezone aware datetime
-        }},
-        upsert=True
-    )
+# --- Removed old load_credentials and save_credentials that used 'db' directly ---
