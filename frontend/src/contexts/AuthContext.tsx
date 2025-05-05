@@ -6,6 +6,14 @@ import React, {
   ReactNode,
 } from "react";
 import { setAuthToken } from "@/lib/socket";
+import {
+  getToken,
+  setToken,
+  clearToken,
+  initializeTokenRefresh,
+  shouldRefreshToken,
+  refreshToken,
+} from "@/utils/tokenService";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -15,6 +23,7 @@ interface AuthContextType {
   login: (token: string, user: any) => void;
   logout: () => void;
   refreshAuthState: () => void;
+  refreshTokenIfNeeded: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to refresh auth state
   const refreshAuthState = () => {
-    const token = localStorage.getItem("token");
+    const token = getToken();
     const user = localStorage.getItem("user");
 
     if (token && user) {
@@ -54,21 +63,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Function to refresh the token if needed
+  const refreshTokenIfNeeded = async (): Promise<boolean> => {
+    if (!isAuthenticated) return false;
+
+    if (shouldRefreshToken()) {
+      try {
+        const newToken = await refreshToken();
+        if (newToken) {
+          setAuthToken(newToken);
+          console.log("Token refreshed successfully via AuthContext");
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error("Failed to refresh token:", error);
+        return false;
+      }
+    }
+
+    return false; // No refresh needed
+  };
+
+  // Initialize token refresh mechanism
+  useEffect(() => {
+    if (isAuthenticated) {
+      initializeTokenRefresh();
+    }
+  }, [isAuthenticated]);
+
   // Check if user is already authenticated on mount
   useEffect(() => {
     refreshAuthState();
   }, []);
 
   const login = (token: string, user: any) => {
-    localStorage.setItem("token", token);
+    setToken(token);
     localStorage.setItem("user", JSON.stringify(user));
     setAuthToken(token);
     setIsAuthenticated(true);
     setUsername(user.name);
+
+    // Initialize token refresh mechanism after login
+    initializeTokenRefresh();
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    clearToken();
     localStorage.removeItem("user");
     setAuthToken(null);
     setIsAuthenticated(false);
@@ -90,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         refreshAuthState,
+        refreshTokenIfNeeded,
       }}
     >
       {children}

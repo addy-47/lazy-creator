@@ -22,7 +22,7 @@ def get_storage_client():
     credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
     client = None # Initialize client to None
 
-    if credentials_json:
+    if credentials_json and credentials_json.strip().startswith('{'):
         try:
             logger.info("Using GOOGLE_APPLICATION_CREDENTIALS from environment variable as JSON")
             credentials = service_account.Credentials.from_service_account_info(json.loads(credentials_json))
@@ -68,8 +68,7 @@ def get_storage_client():
             logger.info("Successfully created storage client with default credentials")
         except Exception as e:
             logger.error(f"Failed to authenticate with default credentials: {e}")
-            # If even default fails, raise the error or handle as appropriate
-            # For now, we'll let it raise to indicate a critical configuration issue
+            # If even default fails, raise the error to indicate a critical configuration issue
             raise
 
     _thread_local.client = client

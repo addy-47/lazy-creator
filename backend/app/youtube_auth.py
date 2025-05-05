@@ -35,16 +35,13 @@ YOUTUBE_SCOPES = [
 def get_client_secrets_path():
     """Get YouTube client secrets, prioritizing environment variable as JSON."""
     client_secrets_env = os.getenv('YOUTUBE_CLIENT_SECRETS')
-    if client_secrets_env:
+    if client_secrets_env and client_secrets_env.strip().startswith('{'):
         logger.info("Using YOUTUBE_CLIENT_SECRETS from environment variable")
         try:
             secrets_dict = json.loads(client_secrets_env)
             # Validate the structure minimally (check for 'web' or 'installed' key)
             if 'web' in secrets_dict or 'installed' in secrets_dict:
                  return secrets_dict  # Return the dictionary directly
-            else:
-                logger.error("Invalid structure in YOUTUBE_CLIENT_SECRETS JSON")
-                return None
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in YOUTUBE_CLIENT_SECRETS: {e}")
             return None

@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import axios from "axios";
 import { getAPIBaseURL } from "@/lib/socket";
+import { getToken, setToken } from "@/utils/tokenService";
 
 export default function YouTubeAuthSuccess() {
   const navigate = useNavigate();
@@ -32,9 +33,15 @@ export default function YouTubeAuthSuccess() {
         const code = urlParams.get("code");
         const state = urlParams.get("state");
         const errorParam = urlParams.get("error");
+        // Check if we received a new token from the auth callback
+        const newTokenParam = urlParams.get("token");
 
         console.log("YouTube Auth Success - state:", state);
         console.log("YouTube Auth Success - code present:", !!code);
+        console.log(
+          "YouTube Auth Success - new token present:",
+          !!newTokenParam
+        );
 
         // Function to send message to opener window and close this tab
         const sendMessageAndFinish = (
@@ -104,6 +111,12 @@ export default function YouTubeAuthSuccess() {
           }
         };
 
+        // If we received a new token directly from the server, update it
+        if (newTokenParam) {
+          console.log("Received new token from auth callback, updating...");
+          setToken(newTokenParam);
+        }
+
         if (errorParam) {
           const errorMessage =
             urlParams.get("message") || "Authentication failed";
@@ -131,7 +144,7 @@ export default function YouTubeAuthSuccess() {
         }
 
         // Get token
-        const token = localStorage.getItem("token");
+        const token = getToken();
         if (!token) {
           setError("Authentication required");
           setProcessing(false);
@@ -181,7 +194,7 @@ export default function YouTubeAuthSuccess() {
             // Send success message and close window
             const newToken = response.data.token || null;
             if (newToken) {
-              localStorage.setItem("token", newToken);
+              setToken(newToken);
             }
 
             sendMessageAndFinish(true, undefined, newToken);
@@ -212,7 +225,7 @@ export default function YouTubeAuthSuccess() {
             const url = new URL(error.request.responseURL);
             const token = url.searchParams.get("token");
             if (token) {
-              localStorage.setItem("token", token);
+              setToken(token);
             }
 
             sendMessageAndFinish(true, undefined, token || undefined);
@@ -249,110 +262,92 @@ export default function YouTubeAuthSuccess() {
                   sendMessageAndFinish(false, "Connection verification failed");
                 }
               } else {
-                setError("Invalid response from server");
+                setError(
+                  response.data?.message ||
+                    "YouTube connection status check failed"
+                );
                 setProcessing(false);
-                toast.error("Error verifying YouTube connection");
-                sendMessageAndFinish(false, "Invalid response from server");
+                toast.error("YouTube connection status check failed");
+                sendMessageAndFinish(false, "Connection status check failed");
               }
-            } catch (statusError: any) {
-              console.error("Error checking YouTube connection:", statusError);
-              setError(
-                statusError?.response?.data?.message ||
-                  "Connection verification failed"
-              );
+            } catch (verifyError) {
+              console.error("Error verifying YouTube connection:", verifyError);
+              setError("Error verifying YouTube connection");
               setProcessing(false);
-              toast.error("Error checking YouTube connection status");
-              sendMessageAndFinish(false, "Error checking connection status");
+              toast.error("Error verifying YouTube connection");
+              sendMessageAndFinish(false, "Verification error");
             }
           }, 1500);
         }
-      } catch (error: any) {
-        console.error("Error in YouTube auth success page:", error);
-        setError(error?.message || "An unknown error occurred");
+      } catch (e: any) {
+        console.error("Unexpected error in YouTube auth success:", e);
+        setError("Unexpected error: " + e.message);
         setProcessing(false);
-        toast.error("Error processing YouTube authentication");
-
-        if (window.opener) {
-          window.opener.postMessage(
-            {
-              type: "youtube_auth_success",
-              success: false,
-              error: error?.message || "An unknown error occurred",
-            },
-            window.location.origin
-          );
-
-          // Start auto-close countdown
-          let seconds = 5;
-          const countdownInterval = setInterval(() => {
-            seconds -= 1;
-            setCountdownSeconds(seconds);
-
-            if (seconds <= 0) {
-              clearInterval(countdownInterval);
-              window.close();
-            }
-          }, 1000);
-        } else {
-          navigate(
-            `/gallery?error=auth_failed&message=${encodeURIComponent(
-              error?.message || "An unknown error occurred"
-            )}`
-          );
-        }
+        toast.error("YouTube connection error: " + e.message);
       }
     };
 
     checkYouTubeConnection();
-  }, [navigate, location.search, setYouTubeConnected]);
+  }, [location.search, navigate, setYouTubeConnected]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center p-8 max-w-md bg-card rounded-xl shadow-sm border border-border">
-        <h1 className="text-3xl font-bold mb-4">
-          {error ? "Authentication Failed" : "Connecting to YouTube..."}
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">
+      <div className="max-w-md w-full mx-auto bg-card p-6 rounded-lg shadow-lg border border-border">
+        <h1 className="text-2xl font-bold mb-6 text-center">
+          YouTube Connection
         </h1>
 
         {processing ? (
-          <>
-            <p className="text-lg text-muted-foreground mb-6">
-              Please wait while we verify your YouTube connection
-            </p>
-            <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto"></div>
-          </>
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+            <p>Processing YouTube authentication...</p>
+          </div>
         ) : error ? (
-          <>
-            <p className="text-red-500 mb-6">{error}</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              This window will close automatically in {countdownSeconds} seconds
+          <div className="text-center">
+            <div className="text-red-500 text-5xl mb-4">⚠️</div>
+            <h2 className="text-xl font-semibold mb-2 text-red-500">
+              Connection Failed
+            </h2>
+            <p className="mb-4">{error}</p>
+            <p className="text-sm text-muted-foreground">
+              This window will close in {countdownSeconds} seconds...
             </p>
             <button
+              className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
               onClick={() => window.close()}
-              className="px-6 py-2 bg-primary text-white rounded-full hover:bg-primary/90 transition-colors"
             >
-              Close This Window
+              Close Window
             </button>
-          </>
+          </div>
         ) : (
-          <>
-            <p className="text-green-500 mb-6">Connection successful!</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              This window will close automatically in {countdownSeconds} seconds
+          <div className="text-center">
+            <div className="text-green-500 text-5xl mb-4">✅</div>
+            <h2 className="text-xl font-semibold mb-2 text-green-500">
+              Successfully Connected
+            </h2>
+            <p className="mb-4">
+              Your YouTube account has been successfully connected!
+            </p>
+            <p className="text-sm text-muted-foreground">
+              This window will close in {countdownSeconds} seconds...
             </p>
             <button
+              className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
               onClick={() => window.close()}
-              className="px-6 py-2 bg-primary text-white rounded-full hover:bg-primary/90 transition-colors"
             >
-              Close This Window
+              Close Window
             </button>
-          </>
+          </div>
         )}
 
-        {/* Debug information - only in development */}
-        {process.env.NODE_ENV === "development" && debugInfo && (
-          <div className="mt-8 text-left text-xs p-4 bg-gray-100 dark:bg-gray-800 rounded overflow-auto max-h-60">
-            <h3 className="font-bold mb-2">Debug Information:</h3>
-            <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+        {debugInfo && (
+          <div className="mt-8 text-xs text-muted-foreground border-t border-border pt-4">
+            <details>
+              <summary className="cursor-pointer font-mono">Debug Info</summary>
+              <pre className="mt-2 bg-muted p-2 rounded-md overflow-auto">
+                {JSON.stringify(debugInfo, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
       </div>

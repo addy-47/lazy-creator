@@ -43,7 +43,7 @@ class CloudStorage:
         if GOOGLE_CLOUD_AVAILABLE:
             # Try to use GOOGLE_APPLICATION_CREDENTIALS as a JSON string first
             credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-            if credentials_json:
+            if credentials_json and credentials_json.strip().startswith('{'):
                 try:
                     logger.info("Using GOOGLE_APPLICATION_CREDENTIALS from environment variable as JSON")
                     credentials = service_account.Credentials.from_service_account_info(
@@ -54,9 +54,6 @@ class CloudStorage:
                     logger.info("Successfully authenticated with environment credentials")
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS: {e}")
-                    self.use_local_storage = True # Fallback to local
-                except Exception as e:
-                    logger.error(f"Failed to authenticate with GOOGLE_APPLICATION_CREDENTIALS JSON: {e}")
                     self.use_local_storage = True # Fallback to local
 
             # Check if running in Cloud Run (K_SERVICE environment variable is set)

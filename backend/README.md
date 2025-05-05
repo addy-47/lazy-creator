@@ -1,6 +1,6 @@
-# LazyCreator Backend
+# Lazy Creator Backend
 
-The backend component of LazyCreator is built with Python and Flask, providing a robust API for video generation and YouTube integration.
+This is the backend service for the Lazy Creator application, providing API endpoints for AI-powered video generation and YouTube uploading.
 
 ## Core Technologies
 
@@ -27,58 +27,96 @@ backend/
 └── requirements.txt      # Python dependencies
 ```
 
-## Setup
+## Setup Instructions
 
-1. Install Python dependencies:
+### Local Development
 
-```bash
-pip install -r requirements.txt
-```
+1. **Install dependencies:**
 
-2. Configure environment variables in `.env`:
+   ```
+   pip install -r requirements.txt
+   ```
 
-```
-MONGODB_URI=your_mongodb_uri
-SECRET_KEY=your_jwt_secret
-GOOGLE_APPLICATION_CREDENTIALS=path/to/credentials.json
-MEDIA_BUCKET=your-media-bucket
-UPLOADS_BUCKET=your-uploads-bucket
-FRONTEND_URL=http://localhost:3500
-```
+2. **Configure environment variables:**
 
-3. Set up Google Cloud credentials:
+   - Copy `env.example` to `.env` and customize
+   - OR use the setup scripts:
+     - Windows: `.\setup_env.ps1`
+     - Linux/Mac: `source setup_env.sh`
 
-   - Create a service account in Google Cloud Console
-   - Download the JSON key file
-   - Set the path in GOOGLE_APPLICATION_CREDENTIALS
+3. **Run the application:**
 
-4. Start the server:
+   ```
+   python -m app.main
+   ```
 
-```bash
-python app/main.py
-```
+   The app will be available at http://localhost:4000
+
+### Production Deployment (Cloud Run)
+
+1. **Build the Docker image:**
+
+   ```
+   docker build -t gcr.io/your-project-id/lazy-creator-backend .
+   ```
+
+2. **Push to Container Registry:**
+
+   ```
+   docker push gcr.io/your-project-id/lazy-creator-backend
+   ```
+
+3. **Deploy to Cloud Run:**
+   - Use Google Cloud Console or gcloud CLI
+   - Make sure to configure the environment variables in the Cloud Run service configuration
+
+## Authentication
+
+The backend uses JWT tokens for authentication. Tokens are valid for 30 days by default.
+
+To obtain a token, use:
+
+- `/api/login` - For regular login
+- `/api/refresh-token` - To refresh an existing token
+
+## Troubleshooting
+
+### Google Cloud Storage Issues
+
+If you see errors like `Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS`, ensure:
+
+1. In local development, point to the credentials file path, not the contents
+2. In production, ensure the service account has proper permissions
+
+### YouTube Authentication Issues
+
+If YouTube auth is failing:
+
+1. Ensure your client_secret.json file is properly configured
+2. For local development, use the file path in YOUTUBE_CLIENT_SECRETS
+3. In production, make sure you have correctly set up the OAuth credentials
+
+### Token Expiration Issues
+
+If tokens are expiring too quickly:
+
+1. Check your system clock is correct
+2. Use the /api/refresh-token endpoint to refresh tokens before they expire
+3. Ensure TOKEN_EXPIRATION_SECONDS is set properly
 
 ## API Endpoints
 
-### Authentication
+The backend provides the following key endpoints:
 
-- `POST /api/register` - Register new user
-- `POST /api/login` - User login
-- `GET /api/profile` - Get user profile
+- `/api/register` - User registration
+- `/api/login` - User login
+- `/api/refresh-token` - Refresh JWT token
+- `/api/gallery` - Get all user videos
+- `/api/generate-short` - Generate a YouTube short
+- `/api/youtube/auth/start` - Start YouTube authentication
+- `/api/youtube/upload/{video_id}` - Upload video to YouTube
 
-### Video Generation
-
-- `POST /api/generate-short` - Generate YouTube short
-- `GET /api/gallery` - List user's videos
-- `GET /api/download/<video_id>` - Download generated video
-- `DELETE /api/video/<video_id>` - Delete video
-
-### YouTube Integration
-
-- `GET /api/youtube/auth/start` - Start YouTube authorization
-- `GET /api/youtube/auth/callback` - OAuth callback
-- `GET /api/youtube/channels` - List user's YouTube channels
-- `POST /api/youtube/upload` - Upload video to YouTube
+For a complete list of endpoints, see the API documentation.
 
 ## Features
 

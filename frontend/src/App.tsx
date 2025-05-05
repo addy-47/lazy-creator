@@ -24,6 +24,7 @@ import { createContext, useEffect, useState, useCallback } from "react";
 import PageTransition from "./components/PageTransition";
 import DebugLogin from "./pages/DebugLogin";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { initializeTokenRefresh } from "@/utils/tokenService";
 
 // Create a custom event for auth changes
 export const AUTH_CHANGE_EVENT = "auth-change";
@@ -39,7 +40,36 @@ const RouteTransition = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+// Token refresh manager component
+const TokenRefreshManager = () => {
+  const { isAuthenticated, refreshTokenIfNeeded } = useAuth();
+
+  useEffect(() => {
+    // Only set up refresh if the user is authenticated
+    if (!isAuthenticated) return;
+
+    // Initial token refresh check
+    refreshTokenIfNeeded();
+
+    // Set up periodic token refresh check (every hour)
+    const intervalId = setInterval(() => {
+      refreshTokenIfNeeded();
+    }, 60 * 60 * 1000); // 1 hour
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isAuthenticated, refreshTokenIfNeeded]);
+
+  return null; // This component doesn't render anything
+};
+
 const App = () => {
+  // Initialize token refresh mechanism on app startup
+  useEffect(() => {
+    initializeTokenRefresh();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider
@@ -49,6 +79,7 @@ const App = () => {
         disableTransitionOnChange
       >
         <AuthProvider>
+          <TokenRefreshManager />
           <TooltipProvider>
             <Toaster />
             <Sonner />

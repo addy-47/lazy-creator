@@ -85,11 +85,12 @@ else:
 
 # Secret key configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-# Token expiration in seconds (default 7 days)
-app.config['TOKEN_EXPIRATION'] = int(os.getenv('TOKEN_EXPIRATION_SECONDS', 60 * 60 * 24 * 7))
+# Token expiration in seconds (default 30 days)
+app.config['TOKEN_EXPIRATION'] = int(os.getenv('TOKEN_EXPIRATION_SECONDS', 60 * 60 * 24 * 30))
+logger.info(f"Token expiration time set to {app.config['TOKEN_EXPIRATION']} seconds")
 
 # MongoDB Configuration
-mongo_uri = os.getenv('MONGODB_URI', 'mongodb+srv://addy:Chocoluv1@lazy-creator-mdb-1.ksvzvmv.mongodb.net/?retryWrites=true&w=majority&appName=lazy-creator-mdb-1')
+mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/lazy-creator')
 logger.info(f"MongoDB URI: {mongo_uri}")
 db_name = os.getenv('MONGODB_DB_NAME', 'lazy-creator')
 logger.info(f"Attempting to connect to MongoDB at: {mongo_uri.split('@')[-1]}")  # Log only the host part, not credentials
@@ -162,6 +163,33 @@ def decode_state_param(state):
         logger.error(f"Error decoding state parameter: {e}")
         raise
 
+# Function to create a JWT token with proper expiration
+def create_token(email):
+    try:
+        # Calculate expiration time
+        expiration_seconds = app.config['TOKEN_EXPIRATION']
+        # Use timedelta instead of timestamp calculation for better reliability
+        expiration_time = datetime.now(timezone.utc) + timedelta(seconds=expiration_seconds)
+
+        # Log token creation
+        logger.info(f"Creating token for {email} with expiration in {expiration_seconds} seconds ({expiration_time.isoformat()})")
+
+        # Create the token payload - use timestamp for compatibility across environments
+        payload = {
+            'email': email,
+            'exp': int(expiration_time.timestamp()),  # Convert to integer timestamp for compatibility
+            'iat': int(datetime.now(timezone.utc).timestamp())  # Issued at time
+        }
+
+        # Create the token
+        token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+
+        return token
+    except Exception as e:
+        logger.error(f"Error creating token: {e}")
+        # Re-raise as we can't proceed without a token
+        raise
+
 # Authentication Decorator
 def token_required(f):
     @wraps(f)
@@ -173,6 +201,8 @@ def token_required(f):
             auth_header = request.headers['Authorization']
             if auth_header.startswith('Bearer '):
                 token = auth_header[7:]
+        elif 'token' in request.args:  # Also check for token in query parameters
+            token = request.args.get('token')
 
         if not token:
             logger.warning("Token is missing in request")
@@ -181,6 +211,9 @@ def token_required(f):
         try:
             # Decode the token
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+
+            # Log successful token decode
+            logger.info(f"Successfully decoded token for {data.get('email')}")
 
             # Find the user in the database
             current_user = users_collection.find_one({'email': data['email']})
@@ -275,10 +308,7 @@ def login():
                      return jsonify({'message': 'User processing error after social login!'}), 500
 
             # Generate token using the email (which is unique)
-            token = jwt.encode({
-                'email': data['email'],
-                'exp': datetime.now(timezone.utc).timestamp() + app.config['TOKEN_EXPIRATION']
-            }, app.config['SECRET_KEY'])
+            token = create_token(data['email'])
 
             # Fetch the latest user data to return name (handle potential race condition where name might not be set yet on insert)
             final_user_data = users_collection.find_one({'email': data['email']})
@@ -301,10 +331,8 @@ def login():
         return jsonify({'message': 'User not found!'}), 404
 
     if check_password_hash(user['password'], data['password']):
-        token = jwt.encode({
-            'email': user['email'],
-            'exp': datetime.now(timezone.utc).timestamp() + app.config['TOKEN_EXPIRATION']
-        }, app.config['SECRET_KEY'])
+        # Use the new create_token function
+        token = create_token(user['email'])
 
         return jsonify({
             'token': token,
@@ -1018,9 +1046,15 @@ def youtube_auth_callback_new():
 
         # Exchange the authorization code for credentials
         logger.info(f"Exchanging code for credentials for user {user_id}")
-        credentials = get_credentials_from_code(code, state, redirect_uri, users_collection)
-
-        logger.info(f"YouTube auth successful for user {user_id}")
+        try:
+            credentials = get_credentials_from_code(code, state, redirect_uri, users_collection)
+            logger.info(f"YouTube auth successful for user {user_id}")
+        except Exception as cred_error:
+            logger.error(f"Error getting credentials: {cred_error}")
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
+            if not redirect_uri:
+                redirect_uri = f"{frontend_url}/youtube-auth-success"
+            return redirect(f"{redirect_uri}?error=auth_failed&message=Failed to exchange code for credentials")
 
         # If no redirect_uri is provided, use default
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3500')
@@ -1030,15 +1064,15 @@ def youtube_auth_callback_new():
         # Generate a new token for the user to ensure session is valid
         user = users_collection.find_one({'_id': ObjectId(user_id)})
         if user:
-            token = jwt.encode({
-                'user_id': str(user['_id']),
-                'exp': datetime.now(timezone.utc) + timedelta(days=30)
-            }, os.getenv('SECRET_KEY', 'dev_key'))
+            # Use the new create_token function
+            token = create_token(user['email'])
+            logger.info(f"Created new token for user {user_id} during YouTube auth callback")
 
             # Add token to the redirect URL
             return redirect(f"{redirect_uri}?youtube_auth=success&token={token}")
 
         # If we can't generate a token, just redirect with success
+        logger.warning(f"Could not find user with ID {user_id} to generate token during YouTube auth")
         return redirect(f"{redirect_uri}?youtube_auth=success")
 
     except Exception as e:
@@ -1652,6 +1686,7 @@ def youtube_auth_start_compat(current_user):
 # Old YouTube auth callback route
 @app.route('/api/youtube-auth-callback', methods=['GET'])
 def youtube_auth_callback_compat():
+    logger.info("Using compatibility route for YouTube auth callback")
     return youtube_auth_callback_new()
 
 # Upload to YouTube endpoint
@@ -1982,6 +2017,53 @@ def serve_demo_video(filename):
     except Exception as e:
         logger.error(f"Error serving demo video {filename}: {e}")
         return jsonify({'message': str(e)}), 500
+
+# Token refresh endpoint
+@app.route('/api/refresh-token', methods=['POST'])
+def refresh_token():
+    try:
+        # Get the current token
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'message': 'Valid authorization header required!'}), 401
+
+        token = auth_header[7:]  # Remove 'Bearer ' prefix
+
+        try:
+            # Verify the token is valid (but might be close to expiration)
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+
+            # Check if user exists
+            user = users_collection.find_one({'email': data['email']})
+            if not user:
+                return jsonify({'message': 'User not found!'}), 401
+
+            # Generate a new token with fresh expiration
+            new_token = create_token(data['email'])
+
+            # Log the refresh action
+            logger.info(f"Token refreshed for user {data['email']}")
+
+            # Return the new token
+            return jsonify({
+                'token': new_token,
+                'email': data['email'],
+                'user': {
+                    'name': user.get('name', 'User')
+                }
+            }), 200
+
+        except jwt.ExpiredSignatureError:
+            # If token is already expired, we can't refresh - require re-login
+            logger.warning("Attempted to refresh an expired token")
+            return jsonify({'message': 'Token has expired, please log in again!'}), 401
+        except jwt.InvalidTokenError:
+            logger.warning("Invalid token provided for refresh")
+            return jsonify({'message': 'Invalid token!'}), 401
+
+    except Exception as e:
+        logger.error(f"Error in token refresh: {e}")
+        return jsonify({'message': 'Token refresh failed!'}), 500
 
 if __name__ == '__main__':
     # In development, use port 4000

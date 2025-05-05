@@ -1,4 +1,9 @@
 import axios from "axios";
+import {
+  shouldRefreshToken,
+  refreshToken,
+  getToken,
+} from "@/utils/tokenService";
 
 export const getAPIBaseURL = (): string => {
   const apiUrl = import.meta.env.VITE_API_URL;
@@ -42,7 +47,7 @@ export const api = axios.create({
 export const apiWithoutPreflight = {
   get: async (url: string, config?: any) => {
     // For GET requests, we can attach the token directly to the URL to avoid preflight
-    const token = localStorage.getItem("token");
+    const token = getToken();
     const separator = url.includes("?") ? "&" : "?";
     const tokenParam = token
       ? `${separator}token=${encodeURIComponent(token)}`
@@ -56,7 +61,7 @@ export const apiWithoutPreflight = {
   },
   delete: async (url: string, config?: any) => {
     // For DELETE requests, similar to GET
-    const token = localStorage.getItem("token");
+    const token = getToken();
     const separator = url.includes("?") ? "&" : "?";
     const tokenParam = token
       ? `${separator}token=${encodeURIComponent(token)}`
@@ -67,16 +72,64 @@ export const apiWithoutPreflight = {
   },
 };
 
-// Add interceptors to handle auth properly
-api.interceptors.request.use(
-  (config) => {
-    // Get token from localStorage for each request
-    const token = localStorage.getItem("token");
+// Variable to track if a token refresh is in progress
+let isRefreshing = false;
+// Store pending requests that should be retried after token refresh
+let pendingRequests: any[] = [];
 
-    // Add token to headers if it exists
+// Function to process pending requests after token refresh
+const processPendingRequests = (token: string | null) => {
+  pendingRequests.forEach(({ config, resolve, reject }) => {
     if (token) {
+      // Update the token in the request
       config.headers["x-access-token"] = token;
       config.headers["Authorization"] = `Bearer ${token}`;
+      // Retry the request
+      axios(config).then(resolve).catch(reject);
+    } else {
+      // If token refresh failed, reject all pending requests
+      reject(new Error("Token refresh failed"));
+    }
+  });
+
+  // Clear pending requests
+  pendingRequests = [];
+};
+
+// Add request interceptor to handle auth properly
+api.interceptors.request.use(
+  async (config) => {
+    // Check if token needs refresh before sending the request
+    if (
+      shouldRefreshToken() &&
+      !isRefreshing &&
+      config.url !== "/refresh-token"
+    ) {
+      isRefreshing = true;
+
+      try {
+        // Attempt to refresh the token
+        const newToken = await refreshToken();
+        isRefreshing = false;
+
+        // Update the request with the new token
+        if (newToken) {
+          config.headers["x-access-token"] = newToken;
+          config.headers["Authorization"] = `Bearer ${newToken}`;
+        }
+      } catch (error) {
+        console.error("Error refreshing token in interceptor:", error);
+        isRefreshing = false;
+      }
+    } else {
+      // Get token from localStorage for each request
+      const token = getToken();
+
+      // Add token to headers if it exists
+      if (token) {
+        config.headers["x-access-token"] = token;
+        config.headers["Authorization"] = `Bearer ${token}`;
+      }
     }
 
     return config;
@@ -86,7 +139,66 @@ api.interceptors.request.use(
   }
 );
 
-// Helper function to set auth token
+// Add response interceptor to handle token errors
+api.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  async (error) => {
+    const originalRequest = error.config;
+
+    // If the error is due to an expired token (401) and we haven't tried to refresh yet
+    if (
+      error.response &&
+      error.response.status === 401 &&
+      !originalRequest._retry &&
+      originalRequest.url !== "/refresh-token"
+    ) {
+      originalRequest._retry = true;
+
+      // If a refresh is already in progress, queue this request
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          pendingRequests.push({ config: originalRequest, resolve, reject });
+        });
+      }
+
+      isRefreshing = true;
+
+      try {
+        // Attempt to refresh the token
+        const newToken = await refreshToken();
+        isRefreshing = false;
+
+        if (newToken) {
+          // Process any pending requests with the new token
+          processPendingRequests(newToken);
+
+          // Update the original request with the new token
+          originalRequest.headers["x-access-token"] = newToken;
+          originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
+
+          // Retry the original request
+          return axios(originalRequest);
+        } else {
+          // If token refresh failed, handle authentication failure
+          console.warn("Token refresh failed, redirecting to login");
+          window.location.href = "/login";
+          return Promise.reject(error);
+        }
+      } catch (refreshError) {
+        isRefreshing = false;
+        processPendingRequests(null);
+        console.error("Error during token refresh:", refreshError);
+        window.location.href = "/login";
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 export const setAuthToken = (token: string | null) => {
   if (token) {
     api.defaults.headers.common["x-access-token"] = token;
@@ -94,12 +206,5 @@ export const setAuthToken = (token: string | null) => {
   } else {
     delete api.defaults.headers.common["x-access-token"];
     delete api.defaults.headers.common["Authorization"];
-  }
-
-  // Store in localStorage for persistence
-  if (token) {
-    localStorage.setItem("token", token);
-  } else {
-    localStorage.removeItem("token");
   }
 };
