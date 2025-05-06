@@ -25,6 +25,12 @@ import PageTransition from "./components/PageTransition";
 import DebugLogin from "./pages/DebugLogin";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { initializeTokenRefresh } from "@/utils/tokenService";
+import {
+  NotificationProvider,
+  useNotification,
+} from "./contexts/NotificationContext";
+import { SESSION_EXPIRED_EVENT } from "./utils/tokenService";
+import { resetSessionExpiredFlag } from "./lib/socket";
 
 // Create a custom event for auth changes
 export const AUTH_CHANGE_EVENT = "auth-change";
@@ -64,6 +70,35 @@ const TokenRefreshManager = () => {
   return null; // This component doesn't render anything
 };
 
+// Session Expiration Handler component
+const SessionExpirationHandler = () => {
+  const { showSessionExpiredNotification } = useNotification();
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    // Only set up listener if user is authenticated
+    if (!isAuthenticated) return;
+
+    // Function to handle session expiration
+    const handleSessionExpired = () => {
+      showSessionExpiredNotification();
+    };
+
+    // Add event listener for session expiration
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+
+    // Reset the session expired flag when component mounts
+    resetSessionExpiredFlag();
+
+    // Cleanup listener when component unmounts
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, [isAuthenticated, showSessionExpiredNotification]);
+
+  return null; // This component doesn't render anything
+};
+
 const App = () => {
   // Initialize token refresh mechanism on app startup
   useEffect(() => {
@@ -79,96 +114,99 @@ const App = () => {
         disableTransitionOnChange
       >
         <AuthProvider>
-          <TokenRefreshManager />
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <Routes>
-                <Route
-                  element={
-                    <RouteTransition>
-                      <Index />
-                    </RouteTransition>
-                  }
-                  path="/"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <Create />
-                    </RouteTransition>
-                  }
-                  path="/create"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <Learn />
-                    </RouteTransition>
-                  }
-                  path="/learn"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <Gallery />
-                    </RouteTransition>
-                  }
-                  path="/gallery"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <Processing />
-                    </RouteTransition>
-                  }
-                  path="/processing"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <YouTubeAuthSuccess />
-                    </RouteTransition>
-                  }
-                  path="/youtube-auth-success"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <TermsOfService />
-                    </RouteTransition>
-                  }
-                  path="/terms-of-service"
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <PrivacyPolicy />
-                    </RouteTransition>
-                  }
-                  path="/privacy-policy"
-                />
-                <Route
-                  path="/auth"
-                  element={
-                    <RouteWithAuth>
-                      <Auth />
-                    </RouteWithAuth>
-                  }
-                />
-                <Route
-                  element={
-                    <RouteTransition>
-                      <NotFound />
-                    </RouteTransition>
-                  }
-                  path="*"
-                />
-                <Route path="/debug-login" element={<DebugLogin />} />
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
+          <NotificationProvider>
+            <TokenRefreshManager />
+            <SessionExpirationHandler />
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <Routes>
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <Index />
+                      </RouteTransition>
+                    }
+                    path="/"
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <Create />
+                      </RouteTransition>
+                    }
+                    path="/create"
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <Learn />
+                      </RouteTransition>
+                    }
+                    path="/learn"
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <Gallery />
+                      </RouteTransition>
+                    }
+                    path="/gallery"
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <Processing />
+                      </RouteTransition>
+                    }
+                    path="/processing"
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <YouTubeAuthSuccess />
+                      </RouteTransition>
+                    }
+                    path="/youtube-auth-success"
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <TermsOfService />
+                      </RouteTransition>
+                    }
+                    path="/terms-of-service"
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <PrivacyPolicy />
+                      </RouteTransition>
+                    }
+                    path="/privacy-policy"
+                  />
+                  <Route
+                    path="/auth"
+                    element={
+                      <RouteWithAuth>
+                        <Auth />
+                      </RouteWithAuth>
+                    }
+                  />
+                  <Route
+                    element={
+                      <RouteTransition>
+                        <NotFound />
+                      </RouteTransition>
+                    }
+                    path="*"
+                  />
+                  <Route path="/debug-login" element={<DebugLogin />} />
+                </Routes>
+              </BrowserRouter>
+            </TooltipProvider>
+          </NotificationProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

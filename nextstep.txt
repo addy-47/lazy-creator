@@ -1,6 +1,6 @@
 common cmds
 cd .\lazy-creator\frontend; npm run dev
-cd .\lazy-creator\backend\app; python main.py
+cd .\lazy-creator\backend; python -m  app.main
 cd .\lazy-creator;mongod --dbpath "E:\MongoDBData"
 
 # Lazy Creator App Deployment Roadmap

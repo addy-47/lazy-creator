@@ -5,7 +5,7 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import { setAuthToken } from "@/lib/socket";
+import { setAuthToken, resetSessionExpiredFlag } from "@/lib/socket";
 import {
   getToken,
   setToken,
@@ -103,6 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(token);
     setIsAuthenticated(true);
     setUsername(user.name);
+
+    // Reset session expired flag
+    resetSessionExpiredFlag();
 
     // Initialize token refresh mechanism after login
     initializeTokenRefresh();

@@ -7,6 +7,9 @@ const TOKEN_REFRESH_THRESHOLD = 3 * 24 * 60 * 60 * 1000; // 3 days before expira
 const TOKEN_KEY = "token";
 const TOKEN_EXPIRY_KEY = "token_expiry";
 
+// Session expiration event name
+export const SESSION_EXPIRED_EVENT = "session_expired";
+
 // Decode JWT token to get payload data
 export const decodeToken = (token: string): any => {
   try {
@@ -26,48 +29,48 @@ export const decodeToken = (token: string): any => {
   }
 };
 
-// Get token from local storage
+// Store the token and its expiry time
+export const setToken = (token: string): void => {
+  localStorage.setItem(TOKEN_KEY, token);
+
+  // Extract expiry time from token and store it
+  const decodedToken = decodeToken(token);
+  if (decodedToken && decodedToken.exp) {
+    // JWT exp is in seconds, convert to milliseconds for Date
+    const expiryTime = decodedToken.exp * 1000;
+    localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+  }
+};
+
+// Get the stored token
 export const getToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
 };
 
-// Get token expiry time
-export const getTokenExpiry = (): number => {
-  const storedExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-  if (storedExpiry) {
-    return parseInt(storedExpiry);
-  }
-
-  // If not stored explicitly, try to get from token
-  const token = getToken();
-  if (token) {
-    const decoded = decodeToken(token);
-    if (decoded && decoded.exp) {
-      // exp is in seconds, convert to milliseconds
-      const expiryTime = decoded.exp * 1000;
-      // Save for future reference
-      setTokenExpiry(expiryTime);
-      return expiryTime;
-    }
-  }
-
-  return 0;
+// Get token expiry time as a number (milliseconds)
+export const getTokenExpiry = (): number | null => {
+  const expiryTimeStr = localStorage.getItem(TOKEN_EXPIRY_KEY);
+  return expiryTimeStr ? parseInt(expiryTimeStr, 10) : null;
 };
 
-// Set token in local storage
-export const setToken = (token: string): void => {
-  localStorage.setItem(TOKEN_KEY, token);
-
-  // Extract and store expiration time
-  const decoded = decodeToken(token);
-  if (decoded && decoded.exp) {
-    setTokenExpiry(decoded.exp * 1000);
-  }
+// Clear token and related data
+export const clearToken = (): void => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_EXPIRY_KEY);
 };
 
-// Set token expiry time
-export const setTokenExpiry = (expiryTime: number): void => {
-  localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
+// Check if token is expired
+export const isTokenExpired = (): boolean => {
+  const expiryTime = getTokenExpiry();
+  if (!expiryTime) return true; // No expiry time, consider expired
+
+  return Date.now() > expiryTime;
+};
+
+// Emit session expired event
+export const emitSessionExpiredEvent = (): void => {
+  const event = new CustomEvent(SESSION_EXPIRED_EVENT);
+  window.dispatchEvent(event);
 };
 
 // Check if token needs refresh
@@ -90,7 +93,7 @@ export const refreshToken = async (): Promise<string | null> => {
 
   try {
     const response = await axios.post(
-      `${getAPIBaseURL()}/refresh-token`,
+      `${getAPIBaseURL()}/api/refresh-token`,
       {},
       {
         headers: {
@@ -111,6 +114,13 @@ export const refreshToken = async (): Promise<string | null> => {
     return null;
   } catch (error) {
     console.error("Error refreshing token:", error);
+
+    // Check if the error is due to an expired session
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      // Emit session expired event
+      emitSessionExpiredEvent();
+    }
+
     return null;
   }
 };
@@ -134,8 +144,15 @@ export const initializeTokenRefresh = (): void => {
   }, TOKEN_REFRESH_INTERVAL);
 };
 
-// Clear token from local storage
-export const clearToken = (): void => {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TOKEN_EXPIRY_KEY);
+// Validate token and handle expiration
+export const validateToken = (): boolean => {
+  const token = getToken();
+  if (!token) return false;
+
+  if (isTokenExpired()) {
+    emitSessionExpiredEvent();
+    return false;
+  }
+
+  return true;
 };

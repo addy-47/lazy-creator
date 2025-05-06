@@ -3,6 +3,7 @@ import {
   shouldRefreshToken,
   refreshToken,
   getToken,
+  SESSION_EXPIRED_EVENT,
 } from "@/utils/tokenService";
 
 export const getAPIBaseURL = (): string => {
@@ -76,6 +77,8 @@ export const apiWithoutPreflight = {
 let isRefreshing = false;
 // Store pending requests that should be retried after token refresh
 let pendingRequests: any[] = [];
+// Track if session expired notification was already shown
+let sessionExpiredNotificationShown = false;
 
 // Function to process pending requests after token refresh
 const processPendingRequests = (token: string | null) => {
@@ -182,22 +185,43 @@ api.interceptors.response.use(
           return axios(originalRequest);
         } else {
           // If token refresh failed, handle authentication failure
-          console.warn("Token refresh failed, redirecting to login");
-          window.location.href = "/login";
+          isRefreshing = false;
+          processPendingRequests(null);
+
+          // Only show the expired session notification once
+          if (!sessionExpiredNotificationShown) {
+            sessionExpiredNotificationShown = true;
+            // Dispatch the session expired event
+            window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+          }
+
           return Promise.reject(error);
         }
       } catch (refreshError) {
         isRefreshing = false;
         processPendingRequests(null);
         console.error("Error during token refresh:", refreshError);
-        window.location.href = "/login";
+
+        // Only show the expired session notification once
+        if (!sessionExpiredNotificationShown) {
+          sessionExpiredNotificationShown = true;
+          // Dispatch the session expired event
+          window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+        }
+
         return Promise.reject(refreshError);
       }
     }
 
+    // For any other error, forward it
     return Promise.reject(error);
   }
 );
+
+// Reset session expired notification flag when user logs in
+export const resetSessionExpiredFlag = () => {
+  sessionExpiredNotificationShown = false;
+};
 
 export const setAuthToken = (token: string | null) => {
   if (token) {
