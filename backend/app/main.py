@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, redirect, url_for, make_response
+from flask import Flask, request, jsonify, send_file, redirect, url_for, make_response, Response, send_from_directory
 from flask_cors import CORS
 import os
 import sys
@@ -24,14 +24,17 @@ import base64
 from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import googleapiclient.http
+import secrets
+import schedule
 
-from app.automation.shorts_main import generate_youtube_short
+from app.video_generation.shorts_main import generate_youtube_short
 from app.automation.youtube_upload import upload_video
 import youtube_auth
 from youtube_auth import get_authenticated_service, check_auth_status, get_auth_url, get_credentials_from_code
 from storage import cloud_storage
 import storage_helper  # Import our custom storage helper
 from dotenv import load_dotenv
+from app.video_generation.helper.gcs_temp import use_in_memory_or_gcs, get_gcs_temp_manager
 
 # Configure logging
 from logging_config import get_app_logger, configure_root_logger
@@ -464,20 +467,14 @@ def generate_short(current_user):
                     # Process background path if it exists
                     processed_background_path = background_path
 
-                    # If background is a GCS path, use it directly with signed URL
-                    if processed_background_path and isinstance(processed_background_path, str) and processed_background_path.startswith('gs://'):
-                        try:
-                            # Parse the gs:// URL to get bucket and blob names
-                            parts = processed_background_path.replace('gs://', '').split('/', 1)
-                            if len(parts) == 2:
-                                bucket_name, blob_name = parts
-                                # Get a signed URL for streaming
-                                processed_background_path = cloud_storage.get_signed_url(blob_name, bucket_name, expiration=3600)
-                                logger.info(f"Using streaming URL for background video")
-                        except Exception as bg_error:
-                            logger.error(f"Error getting signed URL for background: {bg_error}")
-                            # Continue without the background, the generation code will use a default
-                            processed_background_path = None
+                    # If using custom background, optimize using GCS temp storage or in-memory depending on size
+                    if processed_background_path and background_source == 'custom':
+                        # Use our new helper to optimize file handling
+                        optimized_path = use_in_memory_or_gcs(processed_background_path, size_threshold_mb=20)
+                        
+                        if optimized_path != processed_background_path:
+                            logger.info(f"Using optimized background path: {optimized_path}")
+                            processed_background_path = optimized_path
 
                     # Ensure background_path is defined before passing it to generate_youtube_short
                     processed_background_source = background_source
@@ -499,14 +496,14 @@ def generate_short(current_user):
                             mapped_progress = int(30 + (progress * 0.5))  # 0->30, 100->80
                             safe_update_progress(video_id, mapped_progress)
 
-                        # Generate the video with progress tracking
+                        # Generate the video with progress tracking - using new pipeline
                         video_result = generate_youtube_short(
                             topic=prompt,
+                            style="photorealistic",
                             max_duration=duration,
                             background_type=background_type,
                             background_source=processed_background_source,
-                            background_path=processed_background_path,
-                            progress_callback=progress_callback
+                            background_path=processed_background_path
                         )
 
                         # Unpack the result (video path and content package)
