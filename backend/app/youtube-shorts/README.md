@@ -1,0 +1,150 @@
+# YouTube Shorts Automation
+
+This project automates the creation of YouTube Shorts videos using AI-generated scripts, images, background videos, and text-to-speech (TTS) technology.
+
+## Features
+
+- Creates AI-powered YouTube Shorts with dynamic transitions and effects
+- Supports both image-based and video-based shorts generation
+- AI image generation using Hugging Face Stable Diffusion API
+- Background video fetching from Pexels and Pixabay
+- Multiple TTS options:
+  - Google Cloud TTS (high quality)
+  - Azure TTS (configurable voices)
+  - gTTS (fallback option)
+- Advanced video features:
+  - Parallel video processing for faster rendering
+  - Word-by-word text animations
+  - Customizable transitions and effects
+  - Smart background video processing
+  - Edge blur and background blur options
+  - Watermark support
+  - Automatic video duration adjustment
+  - Hardware acceleration support (NVIDIA GPU)
+- Automatic fallback mechanisms for reliability
+- Progress logging and error handling
+
+## Project Structure
+
+```
+youtube-shorts-automation/
+├── .env                       # Environment variables
+├── main.py                    # Main script
+├── parallel_renderer.py       # Parallel video rendering
+├── script_generator.py        # Script generation logic
+├── shorts_maker_I.py         # Image-based shorts creator
+├── shorts_maker_V.py         # Video-based shorts creator
+├── thumbnail.py              # Thumbnail generation
+├── voiceover.py              # Text-to-speech base class
+├── voiceover_azure.py        # Azure TTS implementation
+├── youtube_auth.py           # YouTube authentication
+├── youtube_upload.py         # YouTube upload logic
+├── ai_shorts_output/         # Output directory for generated videos
+├── ffmpeg/                   # Directory for ffmpeg binaries
+├── fonts/                    # Directory for font files
+└── logs/                     # Directory for log files
+```
+
+## Setup
+
+1. **Clone the repository:**
+   ```sh
+   git clone https://github.com/yourusername/youtube-shorts-automation.git
+   cd youtube-shorts-automation
+   ```
+
+2. **Install dependencies:**
+   ```sh
+   pip install -r requirements.txt
+   ```
+
+3. **Set up API credentials:**
+   - Create a `client_secret.json` file for YouTube API credentials
+   - Create a `google_credentials.json` file for Google Cloud API credentials
+   - Set up Hugging Face API token for AI image generation
+   - Set up Pexels and Pixabay API keys for video backgrounds
+
+4. **Set up environment variables:**
+   Create a `.env` file in the root directory and add the following variables:
+   ```env
+   # API Keys
+   HUGGINGFACE_API_KEY=your_huggingface_key
+   NEWS_API_KEY=your_news_api_key
+   PEXELS_API_KEY=your_pexels_api_key
+   PIXABAY_API_KEY=your_pixabay_api_key
+
+   # TTS Configuration
+   USE_GOOGLE_TTS=true
+   USE_AZURE_TTS=false
+   AZURE_VOICE=en-US-JennyNeural
+
+   # Video Settings
+   ENABLE_YOUTUBE_UPLOAD=false
+   YOUTUBE_TOPIC=Artificial Intelligence
+   HF_MODEL=stabilityai/stable-diffusion-2-1
+
+   # Optional Features
+   ENABLE_PARALLEL_RENDERING=true
+   ENABLE_GPU_ACCELERATION=true
+   ```
+
+5. **Install additional requirements:**
+   - FFmpeg (required for video processing)
+   - ImageMagick (required for text effects)
+   - CUDA toolkit (optional, for GPU acceleration)
+
+## Usage
+
+1. **Basic usage:**
+   ```sh
+   python main.py
+   ```
+
+2. **With specific options:**
+   ```sh
+   python main.py --style "digital art" --voice-style "enthusiastic" --add-watermark
+   ```
+
+3. **Schedule automated runs:**
+   ```sh
+   python schedule.py
+   ```
+
+## Advanced Features
+
+### Image-based Shorts (shorts_maker_I.py)
+- Uses AI-generated images for visually appealing content
+- Automatic style selection and prompt enhancement
+- Smart fallback to video mode if image generation fails
+- Zoom and transition effects for still images
+
+### Video-based Shorts (shorts_maker_V.py)
+- Smart video background selection and processing
+- Multiple transition effects between scenes
+- Word-by-word text animation
+- Background blur and edge blur effects
+
+### Parallel Processing (parallel_renderer.py)
+- Multi-process video rendering for faster output
+- Smart clip pre-rendering for complex compositions
+- Hardware acceleration support
+- Memory-efficient processing of large videos
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License.
+
+## Acknowledgments
+
+- FFmpeg for video processing
+- MoviePy for Python video editing
+- Hugging Face for AI image generation
+- Pexels and Pixabay for video content
