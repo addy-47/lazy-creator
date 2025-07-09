@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 ENV FFMPEG_THREADS=2
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
     portaudio19-dev \
