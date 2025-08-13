@@ -11,6 +11,9 @@ from datetime import datetime
 import numpy as np
 import shutil
 
+# Custom helpers
+from ..helpers.minor_helper import measure_time, cleanup_temp_directories
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,11 @@ def measure_time(func):
         return result
     return wrapper
 
+# Get temp directory from environment variable or use default
+TEMP_DIR = os.getenv("TEMP_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp"))
+# Ensure temp directory exists
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 class ThumbnailGenerator:
     def __init__(self, output_dir="output"):
         """
@@ -41,47 +49,13 @@ class ThumbnailGenerator:
 
         # Setup directories
         self.output_dir = output_dir
-        self.temp_dir = tempfile.mkdtemp()
+        self.temp_dir = os.path.join(TEMP_DIR, f"thumbnail_{int(time.time())}")
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(self.temp_dir, exist_ok=True)
 
         # Font settings
         self.fonts_dir = os.path.join(os.path.dirname(__file__), 'fonts')
-        os.makedirs(self.fonts_dir, exist_ok=True)
-        # Use relative path for font instead of hardcoded path
-        self.title_font_path = os.path.join(self.fonts_dir, 'default_font.ttf')
-
-        # Check if font files exist
-        if not os.path.exists(self.title_font_path):
-            logger.warning("Default font files not found, using system default fonts")
-            try:
-                # Try to copy a system font to the fonts directory
-                if os.name == 'nt':  # Windows
-                    possible_fonts = [
-                        r"C:\Windows\Fonts\arial.ttf",
-                        r"C:\Windows\Fonts\calibri.ttf",
-                        r"C:\Windows\Fonts\segoeui.ttf"
-                    ]
-                    for font_path in possible_fonts:
-                        if os.path.exists(font_path):
-                            shutil.copy(font_path, self.title_font_path)
-                            logger.info(f"Copied system font {font_path} to fonts directory")
-                            break
-                else:  # Linux/Mac
-                    possible_fonts = [
-                        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                        "/System/Library/Fonts/Helvetica.ttc",
-                        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
-                    ]
-                    for font_path in possible_fonts:
-                        if os.path.exists(font_path):
-                            shutil.copy(font_path, self.title_font_path)
-                            logger.info(f"Copied system font {font_path} to fonts directory")
-                            break
-            except Exception as e:
-                logger.error(f"Error copying system font: {e}")
-                # If all else fails, set to None and let PIL use its default
-                self.title_font_path = None
+        self.title_font_path = r"/home/addy/projects/youtube-shorts-automation/packages/fonts/default_font.ttf"
 
         # Setup API credentials
         self.huggingface_api_key = os.getenv("HUGGINGFACE_API_KEY")
@@ -94,75 +68,7 @@ class ThumbnailGenerator:
         self.unsplash_api_url = "https://api.unsplash.com/search/photos"
 
         # Thumbnail settings
-        self.thumbnail_size = (1280, 720)  # YouTube recommended size
-
-    @measure_time
-    def generate_thumbnail_query(self, title, script_sections, model="gpt-4o-mini-2024-07-18"):
-        """
-        Generate an optimal thumbnail query based on the video content.
-
-        Args:
-            title (str): Title of the video
-            script_sections (list): List of script sections
-            model (str): OpenAI model to use
-
-        Returns:
-            str: Query for thumbnail image generation
-        """
-        try:
-            import openai
-
-            # Check if API key exists
-            if not openai.api_key:
-                logger.warning("OpenAI API key not found. Using title as fallback query.")
-                return f"{title}, eye-catching thumbnail"
-
-            # Create a condensed version of the script for context
-            script_context = ""
-            for i, section in enumerate(script_sections[:3]):  # Use first 3 sections at most
-                script_context += f"Section {i+1}: {section['text'][:100]}...\n"
-
-            prompt = f"""
-            You are a specialist in creating engaging YouTube Shorts thumbnails.
-
-            Create a detailed image generation prompt for a thumbnail based on this YouTube Short:
-
-            Title: {title}
-
-            Script Context:
-            {script_context}
-
-            Your task:
-            1. Create a single, specific image prompt (15-25 words) that will make viewers click
-            2. Focus on the key visual element that represents the video's main topic
-            3. Include composition details that would work well as a YouTube Shorts thumbnail
-            4. DO NOT include style descriptors like "digital art" or "photorealistic"
-            5. The prompt should be specific enough to create a clear, engaging image
-
-            Return ONLY the image prompt text, nothing else.
-            """
-
-            # Make request to OpenAI API
-            client = openai.OpenAI()
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=100,
-                temperature=0.7
-            )
-
-            query = response.choices[0].message.content.strip()
-            logger.info(f"Generated thumbnail query: {query}")
-
-            # Add eye-catching elements to query if not present
-            if "eye-catching" not in query.lower() and "thumbnail" not in query.lower():
-                query += ", eye-catching thumbnail for YouTube Shorts"
-
-            return query
-
-        except Exception as e:
-            logger.error(f"Error generating thumbnail query: {e}")
-            return f"{title}, eye-catching thumbnail"
+        self.thumbnail_size = (1080, 1920)  # YouTube Shorts recommended size (9:16 aspect ratio)
 
     @measure_time
     def generate_image_huggingface(self, prompt, style="photorealistic", file_path=None):
@@ -338,12 +244,18 @@ class ThumbnailGenerator:
         if not output_path:
             output_path = os.path.join(self.output_dir, f"thumbnail_{int(time.time())}.jpg")
 
+        logger.info(f"Creating thumbnail for title: '{title}'")
+        logger.info(f"Using base image: {image_path}")
+        logger.info(f"Output path: {output_path}")
+
         try:
             # Open the image
             img = Image.open(image_path)
+            logger.info(f"Base image size: {img.size}")
 
-            # Resize to YouTube thumbnail dimensions
+            # resize to YouTube thumbnail dimensions
             img = img.resize(self.thumbnail_size, Image.LANCZOS)
+            logger.info(f"resized image to YouTube thumbnail dimensions: {self.thumbnail_size}")
 
             # Convert to RGBA to support transparency for overlay
             img = img.convert("RGBA")
@@ -360,6 +272,7 @@ class ThumbnailGenerator:
 
             # Composite the image with the overlay
             img = Image.alpha_composite(img, overlay)
+            logger.info("Added gradient overlay to thumbnail")
 
             # Add title text
             draw = ImageDraw.Draw(img)
@@ -368,14 +281,17 @@ class ThumbnailGenerator:
             try:
                 # Calculate appropriate font size based on title length
                 font_size = 70 if len(title) < 30 else 60 if len(title) < 50 else 50
+                logger.info(f"Selected font size: {font_size} based on title length: {len(title)}")
                 font = ImageFont.truetype(self.title_font_path, font_size)
-            except:
+                logger.info(f"Loaded custom font from: {self.title_font_path}")
+            except Exception as e:
                 # Fallback to default font
                 font = ImageFont.load_default()
-                logger.warning("Using default font as custom font could not be loaded")
+                logger.warning(f"Using default font as custom font could not be loaded: {e}")
 
             # Wrap text to fit thumbnail width
             wrapped_text = textwrap.fill(title, width=30)
+            logger.info(f"Wrapped text: '{wrapped_text}'")
 
             # Calculate text position (centered horizontally, near bottom vertically)
             text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
@@ -384,46 +300,59 @@ class ThumbnailGenerator:
 
             text_x = (self.thumbnail_size[0] - text_width) // 2
             text_y = self.thumbnail_size[1] - text_height - 50  # 50px from bottom
+            logger.info(f"Text position calculated: x={text_x}, y={text_y}, width={text_width}, height={text_height}")
 
             # Draw text shadow/outline for better visibility
             outline_width = 3
             for dx, dy in [(dx, dy) for dx in range(-outline_width, outline_width+1, 2)
                                      for dy in range(-outline_width, outline_width+1, 2)]:
                 draw.text((text_x + dx, text_y + dy), wrapped_text, font=font, fill=(0, 0, 0, 255))
+            logger.info("Added text shadow/outline for visibility")
 
             # Draw the main text in white
             draw.text((text_x, text_y), wrapped_text, font=font, fill=(255, 255, 255, 255))
+            logger.info("Added main title text")
 
             # Add a small "SHORTS" label in the corner
             shorts_label = "SHORTS"
             try:
                 shorts_font = ImageFont.truetype(self.title_font_path, 30)
-            except:
+            except Exception as e:
                 shorts_font = ImageFont.load_default()
+                logger.warning(f"Using default font for SHORTS label due to error: {e}")
 
             shorts_bbox = draw.textbbox((0, 0), shorts_label, font=shorts_font)
             shorts_width = shorts_bbox[2] - shorts_bbox[0]
+            shorts_height = shorts_bbox[3] - shorts_bbox[1]
+            logger.info(f"SHORTS label dimensions: width={shorts_width}, height={shorts_height}")
 
             # Draw rounded rectangle background for SHORTS label
             label_padding = 10
             label_x = self.thumbnail_size[0] - shorts_width - label_padding * 2 - 20
             label_y = 20
-            label_height = 40
+            label_height = shorts_height + 10
+            logger.info(f"SHORTS label position: x={label_x}, y={label_y}, height={label_height}")
 
             # Draw pill background for "SHORTS" text
             draw.rectangle(
                 [(label_x, label_y), (label_x + shorts_width + label_padding * 2, label_y + label_height)],
                 fill=(255, 0, 0, 200),
-                outline=(255, 255, 255, 200)
+                outline=(255, 255, 255, 200),
+                width=2  # Make outline more visible
             )
+            logger.info("Added rectangle background for SHORTS label")
 
-            # Draw SHORTS text
+            # Draw SHORTS text - properly centered in the rectangle
+            text_y_offset = (label_height - shorts_height) // 2
+            text_position = (label_x + label_padding, label_y + text_y_offset)
+            logger.info(f"SHORTS text position: {text_position}, y_offset={text_y_offset}")
             draw.text(
-                (label_x + label_padding, label_y + 5),
+                text_position,
                 shorts_label,
                 font=shorts_font,
                 fill=(255, 255, 255, 255)
             )
+            logger.info("Added SHORTS text label")
 
             # Convert back to RGB for saving as JPG
             img = img.convert("RGB")
@@ -436,6 +365,8 @@ class ThumbnailGenerator:
 
         except Exception as e:
             logger.error(f"Error creating thumbnail: {e}")
+            import traceback
+            logger.error(f"Thumbnail creation traceback: {traceback.format_exc()}")
             return None
 
     @measure_time
@@ -522,13 +453,11 @@ class ThumbnailGenerator:
 
     def cleanup(self):
         """Clean up temporary files"""
-        try:
-            for filename in os.listdir(self.temp_dir):
-                file_path = os.path.join(self.temp_dir, filename)
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-        except Exception as e:
-            logger.error(f"Error cleaning up temporary files: {e}")
+        from ..helpers.minor_helper import cleanup_temp_directories
+
+        if hasattr(self, 'temp_dir') and self.temp_dir:
+            logger.info(f"Cleaning up thumbnail temporary directory: {self.temp_dir}")
+            cleanup_temp_directories(specific_dir=self.temp_dir)
 
 
 # Simple test function

@@ -2,93 +2,33 @@ import os # for interacting with the operating system
 import logging # for logging messages
 import re # for regular expressions
 import time # for handling retries
-from dotenv import load_dotenv
-import json
-from google.cloud import texttospeech
-from google.oauth2 import service_account
+import concurrent.futures # for parallel processing
+from helper.audio import AudioHelper
+from helper.minor_helper import measure_time
 
 logger = logging.getLogger(__name__)
 
 class GoogleVoiceover:
     """Class to handle Google Cloud Text-to-Speech functionality"""
 
-    def __init__(self, voice="en-US-Neural2-D", output_dir="temp"):
+    def __init__(self, voice="en-GB-Neural2-B", output_dir="temp"):
         """
         Initialize Google Cloud TTS service.
 
         Args:
-            voice (str): Voice ID to use. Default is en-US-Neural2-D.
+            voice (str): Voice ID to use. Default is en-AU-Neural2-B.
             output_dir (str): Directory to save audio files.
         """
+        import os
+        from google.cloud import texttospeech
 
-
-        load_dotenv()
-
-        logger.info(f"Initializing Google TTS with voice: {voice}")
-
-        # Get API key from environment variables
-        self.api_key = os.getenv("GOOGLE_API_KEY")
-
-        # Set the environment variable for Google Cloud credentials
-        credentials_json_content = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-
-        # Track credential method for debugging
-        self.credentials_method = "unknown"
-
+        # The client will automatically use GOOGLE_APPLICATION_CREDENTIALS from the environment
         try:
-
-            if credentials_json_content:
-                try:
-                    # Try parsing as JSON content first
-                    credentials_info = json.loads(credentials_json_content)
-                    logger.info("Using Google Cloud credentials from GOOGLE_APPLICATION_CREDENTIALS environment variable (JSON content)")
-                    credentials = service_account.Credentials.from_service_account_info(credentials_info)
-                    self.client = texttospeech.TextToSpeechClient(credentials=credentials)
-                    self.credentials_method = "env_json_content"
-                except json.JSONDecodeError:
-                    # If not JSON, treat as file path
-                    if os.path.exists(credentials_json_content):
-                        logger.info(f"Using Google Cloud credentials from file specified in GOOGLE_APPLICATION_CREDENTIALS: {credentials_json_content}")
-                        # Setting GOOGLE_APPLICATION_CREDENTIALS lets the client library find it automatically
-                        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_json_content
-                        self.client = texttospeech.TextToSpeechClient() # Default client uses GOOGLE_APPLICATION_CREDENTIALS
-                        self.credentials_method = "env_json_path"
-                    else:
-                        logger.warning(f" GOOGLE_APPLICATION_CREDENTIALS is set but is not valid JSON and the path does not exist: {credentials_json_content}. Falling back...")
-                        self.client = None # Mark client as None initially
-                except Exception as e:
-                     logger.error(f"Error initializing client from GOOGLE_APPLICATION_CREDENTIALS: {e}")
-                     self.client = None
-            else:
-                 self.client = None # Mark client as None if GOOGLE_APPLICATION_CREDENTIALS is not set
-
-            if not self.client:
-                # Try default authentication
-                logger.info("No valid explicit credentials found, attempting to use default Google Application Credentials")
-                try:
-                    self.client = texttospeech.TextToSpeechClient()
-                    self.credentials_method = "default_auth"
-                except Exception as e:
-                    logger.error(f"Default authentication failed: {e}")
-                    self.client = None # Ensure client is None if default auth fails
-
-            # Check if client was successfully initialized
-            if not self.client:
-                 raise ValueError("Could not initialize Google TTS client with any available credential method.")
-
-            # Verify credentials by making a simple list voices call
-            logger.info(f"Verifying Google Cloud TTS credentials using method: {self.credentials_method}")
-            response = self.client.list_voices(language_code="en-US")
-            logger.info(f"Successfully connected to Google Cloud TTS with {len(response.voices)} English voices available")
-
+            self.client = texttospeech.TextToSpeechClient()
         except Exception as e:
-            logger.error(f"Failed to initialize Google TTS client: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            # Re-raise a more specific error if possible, or the general one
-            if isinstance(e, ValueError):
-                raise e
-            raise ValueError(f"Google Cloud TTS initialization failed: {e}")
+            logger.error(f"Failed to initialize Google TextToSpeechClient: {e}")
+            logger.error("Please ensure the GOOGLE_APPLICATION_CREDENTIALS environment variable is set correctly.")
+            raise ValueError("Google Cloud TTS client could not be initialized.") from e
 
         # Parse the voice into language and name components
         parts = voice.split("-")
@@ -99,8 +39,6 @@ class GoogleVoiceover:
             # Default to US English if the format is unexpected
             self.language_code = "en-US"
             self.voice_name = voice
-
-        logger.info(f"Using voice: {self.voice_name} with language code: {self.language_code}")
 
         # Create output directory if it doesn't exist
         self.output_dir = output_dir
@@ -128,17 +66,16 @@ class GoogleVoiceover:
         Returns:
             str: Path to the generated audio file.
         """
+        from google.cloud import texttospeech
+        import logging
+        import re
+        import time
+        import os
 
         logger = logging.getLogger(__name__)
 
         if not output_filename:
             output_filename = os.path.join(self.output_dir, f"google_tts_{hash(text)}.mp3")
-
-        logger.info(f"Generating speech with Google TTS (credentials: {self.credentials_method})")
-        logger.info(f"Text: \"{text[:50]}...\" (length: {len(text)} chars)")
-        logger.info(f"Output file: {output_filename}")
-        if voice_style:
-            logger.info(f"Voice style: {voice_style}")
 
         # Implement retry logic
         max_retries = 3
@@ -149,7 +86,6 @@ class GoogleVoiceover:
             try:
                 # Break long text into smaller chunks if more than 5000 characters (Google's limit)
                 if len(text) > 5000:
-                    logger.info(f"Text exceeds 5000 char limit ({len(text)} chars), splitting into chunks")
                     # Split into sentences and process in chunks
                     sentences = re.split(r'(?<=[.!?])\s+', text)
                     chunks = []
@@ -222,7 +158,7 @@ class GoogleVoiceover:
                         temp_files.append(temp_file)
 
                     # Combine audio files using moviepy
-                    from moviepy.editor import concatenate_audioclips, AudioFileClip
+                    from moviepy  import concatenate_audioclips, AudioFileClip
 
                     audio_clips = [AudioFileClip(file) for file in temp_files]
                     concatenated = concatenate_audioclips(audio_clips)
@@ -300,3 +236,53 @@ class GoogleVoiceover:
                     raise Exception(f"Google TTS error: {e}")
 
         return output_filename
+
+    @measure_time
+    def generate_audio_for_script(self, script_sections, voice_style=None, max_workers=None):
+        """
+        Generate audio for all script sections in parallel
+
+        Args:
+            script_sections (list): List of sections with text
+            voice_style (str): Voice style to use
+            max_workers (int): Maximum number of concurrent workers
+
+        Returns:
+            list: Audio file information with durations
+        """
+        # Use AudioHelper to process all sections in parallel
+        audio_helper = AudioHelper(self.output_dir)
+        return audio_helper.process_audio_for_script(
+            script_sections, voice_style, max_workers
+        )
+
+# Helper function for parallel processing multiple scripts
+@measure_time
+def generate_voiceovers_parallel(script_sections, voice_style=None, max_workers=None, temp_dir=None):
+    """
+    Generate voiceovers for script sections in parallel
+
+    Args:
+        script_sections (list): List of script sections with text
+        voice_style (str): Voice style to use
+        max_workers (int): Maximum number of concurrent workers
+        temp_dir (str): Directory for temporary files
+
+    Returns:
+        list: Audio data with paths and durations
+    """
+    logger.info(f"Generating voiceovers for {len(script_sections)} sections in parallel")
+    start_time = time.time()
+
+    # Create AudioHelper instance
+    audio_helper = AudioHelper(temp_dir)
+
+    # Process all script sections in parallel
+    audio_data = audio_helper.process_audio_for_script(
+        script_sections, voice_style, max_workers
+    )
+
+    total_time = time.time() - start_time
+    logger.info(f"Generated {len(audio_data)} voiceovers in {total_time:.2f} seconds")
+
+    return audio_data

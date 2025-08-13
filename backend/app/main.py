@@ -25,16 +25,15 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import googleapiclient.http
 
-from app.automation.shorts_main import generate_youtube_short
-from app.automation.youtube_upload import upload_video
-import youtube_auth
-from youtube_auth import get_authenticated_service, check_auth_status, get_auth_url, get_credentials_from_code
-from storage import cloud_storage
-import storage_helper  # Import our custom storage helper
+from app.video_gen.generator import generate_youtube_short
+from .youtube_auth import get_authenticated_service, check_auth_status, get_auth_url, get_credentials_from_code
+from .storage import cloud_storage
+from . import storage_helper  # Import our custom storage helper
 from dotenv import load_dotenv
 
 # Configure logging
-from logging_config import get_app_logger, configure_root_logger
+from .logging_config import get_app_logger, configure_root_logger
+from . import youtube_auth
 
 # Configure root logger
 configure_root_logger()
@@ -574,7 +573,7 @@ def generate_short(current_user):
                                 logger.warning(f"No comprehensive content returned for video {video_id}, generating new content")
 
                                 # Import here to avoid circular imports
-                                from automation.script_generator import generate_comprehensive_content
+                                from .video_gen.makers.content_generator import generate_comprehensive_content
 
                                 # Generate fallback comprehensive content
                                 fallback_content = generate_comprehensive_content(

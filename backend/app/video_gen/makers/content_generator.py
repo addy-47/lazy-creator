@@ -1,6 +1,6 @@
 import openai # for OpenAI API whihc is used to generate the script
 import os  # for environment variables here
-from dotenv import load_dotenv
+# from dotenv import load_dotenv # No longer needed
 import logging
 import time  # for exponential backoff which mwans if the script fails to generate, it will try again after some time
 import re  # for filtering instructional labels
@@ -9,9 +9,9 @@ import json # for parsing JSON responses
 # Configure logging - don't use basicConfig since main.py handles this
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# The OpenAI API key is now expected to be set globally by the main application
+# load_dotenv()
+# openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def filter_instructional_labels(script):
     """
@@ -73,49 +73,6 @@ def filter_instructional_labels(script):
         # filtered_script += f"\n\n{hashtag_text}"
 
     return filtered_script
-
-# This function is no longer needed - commented out
-"""
-def generate_script(prompt, model="gpt-4o-mini-2024-07-18", max_tokens=150, retries=3):
-    '''
-    Generate a YouTube Shorts script using OpenAI's API.
-    '''
-    if not openai.api_key:
-        raise ValueError("OpenAI API key is not set. Please set OPENAI_API_KEY in .env.")
-
-    # Enhance the prompt to discourage instructional labels
-    enhanced_prompt = f'''
-    {prompt}
-
-    IMPORTANT: Do NOT include labels like "Hook:", "Opening Shot:", "Call to Action:", etc. in your response.
-    Just write the actual script content that would be spoken, without any section headers or instructional text.
-    '''
-
-    for attempt in range(retries):
-        try:
-            client = openai.OpenAI()  # Create an OpenAI client
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": enhanced_prompt}], # Use the enhanced prompt as the user message
-                max_tokens=max_tokens,
-                temperature=0.7 # Higher temperature means more randomness ranging from 0 to 1
-            )
-            script = response.choices[0].message.content.strip()
-            # Since response.choices is a list as it can generate multiple responses, [0] accesses the first element of that list and message
-            # is the attribute of that element and content is the attribute of message
-
-            # Additional post-processing to filter out any remaining instructional labels
-            script = filter_instructional_labels(script)
-            logger.info("Script cleaned")
-
-            logger.info(f"Script generated successfully with {len(script.split())} words.")
-            return script
-        except openai.OpenAIError as e:
-            logger.error(f"OpenAI API error (attempt {attempt + 1}/{retries}): {str(e)}")
-            if attempt == retries - 1:
-                raise Exception(f"Failed to generate script after {retries} attempts: {str(e)}")
-            time.sleep(2 ** attempt)  # Exponential backoff which means it will try again after 2^attempt seconds
-"""
 
 def generate_batch_video_queries(texts: list[str], overall_topic="technology", model="gpt-4o-mini-2024-07-18", retries=3):
     """
@@ -296,7 +253,7 @@ def generate_batch_image_prompts(texts: list[str], overall_topic="technology", m
     # Fallback: Return empty dict if all retries fail
     return {}
 
-def generate_comprehensive_content(topic, model="gpt-4o-mini-2024-07-18", max_tokens=800, retries=3, max_duration=25):
+def generate_comprehensive_content(topic, model="gpt-4o-mini-2024-07-18", max_tokens=800, retries=3):
     """
     Generate a comprehensive content package for a YouTube Short in a single API call.
 
@@ -305,7 +262,6 @@ def generate_comprehensive_content(topic, model="gpt-4o-mini-2024-07-18", max_to
         model (str): The OpenAI model to use
         max_tokens (int): Maximum tokens for the response
         retries (int): Number of retry attempts
-        max_duration (int): Maximum duration of the video in seconds
 
     Returns:
         dict: A dictionary containing all generated content elements:
@@ -322,26 +278,16 @@ def generate_comprehensive_content(topic, model="gpt-4o-mini-2024-07-18", max_to
     from datetime import datetime
     current_date = datetime.now().strftime("%Y-%m-%d")
 
-    # Calculate appropriate word count based on max_duration
-    # Average speaking rate is about 150 words per minute or 2.5 words per second
-    max_word_count = int(max_duration * 2.5)
-
-    # Determine min and max word count with some buffer
-    min_word_count = max(80, max_word_count - 20)
-    max_word_count = max_word_count + 10
-
-    logger.info(f"Generating script for {max_duration}s duration (approx {min_word_count}-{max_word_count} words)")
-
     prompt = f"""
     Create a complete content package for a YouTube Short about this topic: "{topic}"
     Date: {current_date}
 
     Provide ALL the following elements in a single JSON response:
 
-    1. "script": A {max_duration}-second script ({min_word_count}-{max_word_count} words) that:
+    1. "script": A 25-second script (100-140 words) that:
        - Starts with an attention-grabbing opening (0-3 seconds)
-       - Highlights key points about the topic (middle section)
-       - Ends with a clear call to action (final 3-5 seconds)
+       - Highlights 1-2 key points about the topic (4-22 seconds)
+       - Ends with a clear call to action (23-25 seconds)
        - Uses short, concise sentences
        - DOES NOT include labels like "Hook:", "Intro:", etc.
        - Is written as plain text to be spoken
@@ -425,55 +371,6 @@ def generate_comprehensive_content(topic, model="gpt-4o-mini-2024-07-18", max_to
 
     # If we get here, all retries failed
     raise Exception(f"Failed to generate comprehensive content package after {retries} attempts")
-
-def parse_script_to_cards(script, max_duration=25):
-    """
-    Parse a script into a list of cards, each with text and duration.
-
-    Args:
-        script (str): The script text to parse
-        max_duration (int): Maximum total duration in seconds
-
-    Returns:
-        list: List of dictionaries with 'text' and 'duration' keys
-    """
-    # Split the script into sentences
-    sentences = re.split(r'(?<=[.!?])\s+', script)
-
-    # Filter out empty sentences
-    sentences = [s.strip() for s in sentences if s.strip()]
-
-    # If no sentences, return a default card
-    if not sentences:
-        return [{'text': 'No script content available.', 'duration': 5}]
-
-    # Calculate approximate duration for each sentence
-    # Average speaking rate is about 150 words per minute or 2.5 words per second
-    cards = []
-    total_duration = 0
-
-    for sentence in sentences:
-        # Count words in the sentence
-        words = sentence.split()
-        # Estimate duration (minimum 3 seconds per card)
-        duration = max(3, len(words) / 2.5)
-
-        # Add to cards
-        cards.append({
-            'text': sentence,
-            'duration': duration
-        })
-
-        total_duration += duration
-
-    # If total duration exceeds max_duration, scale down durations
-    if total_duration > max_duration:
-        scale_factor = max_duration / total_duration
-        for card in cards:
-            card['duration'] = card['duration'] * scale_factor
-
-    logger.info(f"Parsed script into {len(cards)} cards with total duration of {sum(c['duration'] for c in cards):.2f} seconds")
-    return cards
 
 if __name__ == "__main__": # This is used to run the script directly for testing
     # Example usage for batch query generation
