@@ -31,34 +31,22 @@ YOUTUBE_SCOPES = [
     'https://www.googleapis.com/auth/youtube.force-ssl'
 ]
 
-# Load OAuth credentials with flexible path resolution
+# Load OAuth credentials from Secret Manager
 def get_client_secrets_path():
-    """Get YouTube client secrets, prioritizing environment variable as JSON."""
-    client_secrets_env = os.getenv('YOUTUBE_CLIENT_SECRETS')
-    if client_secrets_env and client_secrets_env.strip().startswith('{'):
-        logger.info("Using YOUTUBE_CLIENT_SECRETS from environment variable")
-        try:
-            secrets_dict = json.loads(client_secrets_env)
-            # Validate the structure minimally (check for 'web' or 'installed' key)
-            if 'web' in secrets_dict or 'installed' in secrets_dict:
-                 return secrets_dict  # Return the dictionary directly
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in YOUTUBE_CLIENT_SECRETS: {e}")
+    """Get YouTube client secrets from Secret Manager."""
+    try:
+        from .video_gen.helpers.secrets import Secrets
+        secrets = Secrets()
+        secrets_dict = secrets.get_youtube_credentials()
+        if secrets_dict and ('web' in secrets_dict or 'installed' in secrets_dict):
+            logger.info("Successfully loaded YouTube credentials from Secret Manager")
+            return secrets_dict
+        else:
+            logger.error("Invalid YouTube credentials structure in Secret Manager")
             return None
-
-    # Fallback to file-based search only if env var is not set or invalid
-    logger.info("YOUTUBE_CLIENT_SECRETS not found or invalid, searching for client_secret.json file.")
-    potential_paths = [
-        os.path.join(os.path.dirname(__file__), 'client_secret.json'),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), 'client_secret.json'),
-        os.path.join(os.path.dirname(__file__), 'credentials', 'client_secret.json'),
-    ]
-    for path in potential_paths:
-        if os.path.exists(path):
-            logger.warning(f"Using fallback client secrets file at {path}. Consider setting YOUTUBE_CLIENT_SECRETS environment variable.")
-            return path
-    logger.error("No client secrets found in environment or file system")
-    return None
+    except Exception as e:
+        logger.error(f"Failed to load YouTube credentials from Secret Manager: {e}")
+        return None
 
 # Update client_secrets_file initialization
 client_secrets_data = get_client_secrets_path()

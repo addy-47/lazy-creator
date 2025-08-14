@@ -4,7 +4,7 @@ import { getAnalytics, isSupported } from "firebase/analytics";
 
 // Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyA45dlM11c4kpYhm5bVwck53Of759H9rSg",
+  apiKey: "AIzaSyB940x_nkK1iEjl1jsA4MR-BPXMxmZmgiU",
   authDomain: "lazycreator.firebaseapp.com",
   projectId: "lazycreator",
   storageBucket: "lazycreator.firebasestorage.app",
