@@ -3,8 +3,8 @@ import logging # for logging messages
 import re # for regular expressions
 import time # for handling retries
 import concurrent.futures # for parallel processing
-from helper.audio import AudioHelper
-from helper.minor_helper import measure_time
+from ..helpers.audio import AudioHelper
+from ..helpers.minor_helper import measure_time
 
 logger = logging.getLogger(__name__)
 

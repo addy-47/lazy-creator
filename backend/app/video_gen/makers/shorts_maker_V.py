@@ -97,7 +97,7 @@ class YTShortsCreator_V:
     def create_youtube_short(self, title, script_sections, background_query="abstract background",
                             output_filename=None, add_captions=False, style="video", voice_style=None, max_duration=25,
                             background_queries=None, blur_background=False, edge_blur=False, add_watermark_text=None,
-                            existing_audio_data=None):
+                            existing_audio_data=None, custom_background_path=None, progress_callback=None):
         """
         Create a YouTube Short with the given script sections.
 
@@ -115,6 +115,7 @@ class YTShortsCreator_V:
             edge_blur (bool): Whether to apply edge blur to background videos
             add_watermark_text (str): Text to use as watermark (None for no watermark)
             existing_audio_data (list): Optional pre-generated audio data (from shorts_maker_I fallback)
+            progress_callback (function): Callback function to report progress
 
         Returns:
             str: Output file path
@@ -157,6 +158,13 @@ class YTShortsCreator_V:
 
             # Define task functions
             def fetch_videos_task():
+                if custom_background_path and os.path.exists(custom_background_path):
+                    logger.info(f"Using custom background video: {custom_background_path}")
+                    # To maintain structure of videos_by_query, we can simulate the output
+                    # Assume the custom video applies to all sections or the first one
+                    # Here we will make it available for all queries to ensure it's picked up
+                    return {query: [custom_background_path] for query in background_queries}
+
                 logger.info("Fetching background videos in parallel")
                 return fetch_videos_parallel(
                     queries=background_queries,
@@ -325,7 +333,7 @@ class YTShortsCreator_V:
             # Create section clips (background + audio + text)
             section_clips = []
             section_info = {}  # For better logging in parallel renderer
-
+            start_time = time.time()
             # Now process each section using audio duration as the source of truth
             for i, (bg_clip, audio, text_clip) in enumerate(zip(background_clips, audio_data, text_clips)):
                 # Use the audio duration as the source of truth for section duration
@@ -383,6 +391,12 @@ class YTShortsCreator_V:
                 }
 
                 section_clips.append(composite)
+                if progress_callback:
+                    progress = int((i + 1) / len(script_sections) * 50) + 30 # Map to 30-80 range
+                    elapsed_time = time.time() - start_time
+                    estimated_total_time = (elapsed_time / (i + 1)) * len(script_sections)
+                    estimated_time_remaining = estimated_total_time - elapsed_time
+                    progress_callback(progress, f"Processing clip {i+1}/{len(script_sections)}", estimated_time_remaining)
 
             # Use our unified renderer
             logger.info("Rendering final video using optimized renderer")

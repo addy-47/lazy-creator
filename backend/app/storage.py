@@ -559,5 +559,25 @@ class CloudStorage:
             logger.error(f"Error finding file in local storage: {e}")
             return None
 
+    def get_temp_gcs_path(self, subfolder=None):
+        """
+        Get a temporary GCS path.
+        Args:
+            subfolder: Optional subfolder to create within the main temp directory.
+        Returns:
+            The GCS path to the temporary directory.
+        """
+        if self.use_local_storage:
+            # For local storage, return a local path
+            temp_dir = os.path.join(self.local_storage_dir, self.uploads_bucket, 'temp')
+            if subfolder:
+                temp_dir = os.path.join(temp_dir, subfolder)
+            os.makedirs(temp_dir, exist_ok=True)
+            return temp_dir
+        else:
+            # For GCS, return a gs:// path
+            temp_dir = f"temp/{subfolder or ''}/{uuid.uuid4()}"
+            return f"gs://{self.uploads_bucket}/{temp_dir}"
+
 # Create a singleton instance
 cloud_storage = CloudStorage()

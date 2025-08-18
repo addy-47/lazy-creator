@@ -154,7 +154,7 @@ class YTShortsCreator_I:
     @measure_time
     def create_youtube_short(self, title, script_sections, background_query="abstract background",
                             output_filename=None, add_captions=False, style="image", voice_style=None, max_duration=25,
-                            background_queries=None, blur_background=False, edge_blur=False, add_watermark_text=None):
+                            background_queries=None, blur_background=False, edge_blur=False, add_watermark_text=None, progress_callback=None):
         """
         Create a YouTube Short with the given script sections.
 
@@ -171,6 +171,7 @@ class YTShortsCreator_I:
             blur_background (bool): Whether to apply blur effect to background images
             edge_blur (bool): Whether to apply edge blur to background images
             add_watermark_text (str): Text to use as watermark (None for no watermark)
+            progress_callback (function): Callback function to report progress
 
         Returns:
             str: Output file path
@@ -479,7 +480,7 @@ class YTShortsCreator_I:
             # Create section clips (background + audio + text)
             section_clips = []
             section_info = {}  # For better logging in parallel renderer
-
+            start_time = time.time()
             # Now process each section using audio duration as the source of truth
             for i, (bg_clip, audio, text_clip) in enumerate(zip(background_clips, audio_data, text_clips)):
                 # Use the audio duration as the source of truth for section duration
@@ -537,6 +538,12 @@ class YTShortsCreator_I:
                 }
 
                 section_clips.append(composite)
+                if progress_callback:
+                    progress = int((i + 1) / len(script_sections) * 50) + 30 # Map to 30-80 range
+                    elapsed_time = time.time() - start_time
+                    estimated_total_time = (elapsed_time / (i + 1)) * len(script_sections)
+                    estimated_time_remaining = estimated_total_time - elapsed_time
+                    progress_callback(progress, f"Processing clip {i+1}/{len(script_sections)}", estimated_time_remaining)
 
             # Use our unified renderer
             logger.info("Rendering final video using optimized renderer")

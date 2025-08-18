@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { getAPIBaseURL, api } from "@/lib/socket";
+import { api, connectWebSocket, joinVideoRoom, leaveVideoRoom } from "@/lib/socket";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { motion } from "framer-motion";
 import { X, Info } from "lucide-react";
 import LazyCreatorLoader from "@/components/LazyCreatorLoader";
+import { getToken } from "@/utils/tokenService";
 
 const ProcessingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -74,71 +75,44 @@ const ProcessingPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [startTime, status]);
 
-  // Function to determine progress stage based on progress percentage
-  const updateProgressStage = useCallback((progress: number) => {
-    if (progress < 10) {
-      setProgressStage("Initializing");
-    } else if (progress < 30) {
-      setProgressStage("Generating script");
-    } else if (progress < 50) {
-      setProgressStage("Creating visuals");
-    } else if (progress < 70) {
-      setProgressStage("Rendering video");
-    } else if (progress < 90) {
-      setProgressStage("Finalizing");
-    } else {
-      setProgressStage("Uploading");
-    }
-  }, []);
-
-  // Poll for video status
+  // WebSocket connection
   useEffect(() => {
     if (!videoId || !isAuthenticated) return;
 
-    const checkStatus = async () => {
-      try {
-        const response = await api.get(`/api/video-status/${videoId}`);
+    const token = getToken();
+    if (!token) return;
 
-        if (response.data) {
-          const { status: videoStatus, progress: videoProgress } =
-            response.data;
-          setStatus(videoStatus);
-          setProgress(videoProgress);
-          updateProgressStage(videoProgress);
+    const socket = connectWebSocket(token);
+    joinVideoRoom(videoId);
 
-          // If video is completed or has an error, redirect or show message
-          if (videoStatus === "completed") {
-            toast.success("Video generation completed!");
-            // Clear the in-progress flag
-            localStorage.removeItem("videoCreationInProgress");
-            // Redirect to gallery
-            setTimeout(() => navigate("/gallery"), 1500);
-          } else if (videoStatus === "error") {
-            toast.error("An error occurred during video generation");
-            // Clear the in-progress flag
-            localStorage.removeItem("videoCreationInProgress");
-            // Stay on page but allow user to go back
-          } else if (videoStatus === "cancelled") {
-            toast.info("Video generation was cancelled");
-            // Clear the in-progress flag
-            localStorage.removeItem("videoCreationInProgress");
-            // Redirect to create page
-            setTimeout(() => navigate("/create"), 1500);
-          }
-        }
-      } catch (error) {
-        console.error("Error checking video status:", error);
+    socket.on("progress_update", (data) => {
+      setProgress(data.progress);
+      setProgressStage(data.message);
+      if (data.estimated_time_remaining) {
+        setEstimatedTime(data.estimated_time_remaining);
       }
+      if (data.status) {
+        setStatus(data.status);
+        if (data.status === "completed") {
+          toast.success("Video generation completed!");
+          localStorage.removeItem("videoCreationInProgress");
+          setTimeout(() => navigate("/gallery"), 1500);
+        }
+      }
+    });
+
+    socket.on("generation_failed", (data) => {
+      setStatus("error");
+      toast.error(data.error);
+      localStorage.removeItem("videoCreationInProgress");
+    });
+
+    return () => {
+      leaveVideoRoom(videoId);
+      socket.off("progress_update");
+      socket.off("generation_failed");
     };
-
-    // Initial check
-    checkStatus();
-
-    // Set up polling interval (every 3 seconds)
-    const interval = setInterval(checkStatus, 3000);
-
-    return () => clearInterval(interval);
-  }, [videoId, isAuthenticated, navigate, updateProgressStage]);
+  }, [videoId, isAuthenticated, navigate]);
 
   // Handle cancel button click
   const handleCancel = async () => {

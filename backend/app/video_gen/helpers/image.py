@@ -43,11 +43,9 @@ logger = logging.getLogger(__name__)
 
 resolution = (1080, 1920)  # Assuming a standard resolution for YouTube Shorts
 
+from ... import storage
 # Get temp directory from environment variable or use default
-TEMP_DIR = os.getenv("TEMP_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp"))
-# Create images subdirectory
-temp_dir = os.path.join(TEMP_DIR, "generated_images")
-os.makedirs(temp_dir, exist_ok=True)  # Create temp directory if it doesn't exist
+temp_dir = storage.cloud_storage.get_temp_gcs_path("generated_images")
 
 @measure_time
 def generate_images_parallel(prompts, style="photorealistic", max_workers=None):
@@ -373,6 +371,52 @@ def _fetch_image_from_pexels(query, file_path=None):
 
     except Exception as e:
         logger.error(f"Error fetching image from Pexels: {e}")
+
+    return None
+
+@measure_time
+def _fetch_image_from_pixabay(query, file_path=None):
+    """
+    Fetch an image from Pixabay based on query
+    Args:
+        query (str): Search query
+        file_path (str): Path to save the image, if None a path will be generated
+    Returns:
+        str: Path to the fetched image or None if failed
+    """
+    if not file_path:
+        file_path = os.path.join(temp_dir, f"pixabay_{int(time.time())}_{random.randint(1000, 9999)}.jpg")
+
+    if not pixabay_api_key:
+        logger.warning("No Pixabay API key provided")
+        return None
+
+    try:
+        # Prepare Pixabay API request
+        url = f"https://pixabay.com/api/?key={pixabay_api_key}&q={query}&image_type=photo&orientation=vertical&per_page=3"
+        
+        # Make request
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            data = response.json()
+            if data["hits"]:
+                image_url = data["hits"][0]["largeImageURL"]
+
+                # Download image
+                img_response = requests.get(image_url)
+                if img_response.status_code == 200:
+                    with open(file_path, "wb") as f:
+                        f.write(img_response.content)
+                    logger.info(f"Pixabay image downloaded to {file_path}")
+                    return file_path
+            else:
+                logger.warning(f"No results found on Pixabay for query: {query}")
+        else:
+            logger.error(f"Pixabay API error: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        logger.error(f"Error fetching image from Pixabay: {e}")
 
     return None
 

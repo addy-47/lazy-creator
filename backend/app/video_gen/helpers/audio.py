@@ -37,7 +37,7 @@ class AudioHelper:
         # Initialize Google Cloud TTS if configured
         if os.getenv("USE_GOOGLE_TTS", "true").lower() == "true":
             try:
-                from automation.voiceover import GoogleVoiceover
+                from ..makers.voiceover import GoogleVoiceover
                 self.google_tts = GoogleVoiceover(
                     voice=os.getenv("GOOGLE_VOICE", "en-US-Neural2-D"),
                     output_dir=self.temp_dir
@@ -49,7 +49,7 @@ class AudioHelper:
         # Initialize Azure TTS as fallback (if configured)
         elif os.getenv("USE_AZURE_TTS", "false").lower() == "true":
             try:
-                from automation.voiceover_azure import AzureVoiceover
+                from ..makers.voiceover_azure import AzureVoiceover
                 self.azure_tts = AzureVoiceover(
                     voice=os.getenv("AZURE_VOICE", "en-US-JennyNeural"),
                     output_dir=self.temp_dir

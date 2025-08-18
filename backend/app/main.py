@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_file, redirect, url_for, make_response
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 import os
 import sys
 import logging
@@ -46,6 +47,7 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Initialize storage helper to ensure correct service account is used
 logger.info("Initializing storage helper in main application")
@@ -442,206 +444,172 @@ def generate_short(current_user):
         }
 
         # Start background processing
-        def process_video():
+        def process_video(video_id, user_id, prompt, duration, background_type, background_source, background_path):
             try:
-                # Make background_path accessible in this function
-                nonlocal background_path
+                with app.app_context():
+                    logger.info(f"Started video generation for user {user_id}, video {video_id}")
 
-                logger.info(f"Started video generation for user {user_id}, video {video_id}")
+                    # Update database status to processing
+                    videos_collection.update_one(
+                        {'_id': ObjectId(video_id)},
+                        {'$set': {
+                            'status': 'processing',
+                            'progress': 10
+                        }}
+                    )
+                    socketio.emit('progress_update', {'progress': 10, 'message': 'Generating script...'}, room=video_id)
 
-                # Update database status to processing
-                videos_collection.update_one(
-                    {'_id': ObjectId(video_id)},
-                    {'$set': {
-                        'status': 'processing',
-                        'progress': 10
-                    }}
-                )
+                    # Create a temporary directory for processing
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        # Process background path if it exists
+                        processed_background_path = background_path
 
-                # Create a temporary directory for processing
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    # Process background path if it exists
-                    processed_background_path = background_path
+                        # If background is a GCS path, use it directly with signed URL
+                        if processed_background_path and isinstance(processed_background_path, str) and processed_background_path.startswith('gs://'):
+                            try:
+                                # Parse the gs:// URL to get bucket and blob names
+                                parts = processed_background_path.replace('gs://', '').split('/', 1)
+                                if len(parts) == 2:
+                                    bucket_name, blob_name = parts
+                                    # Get a signed URL for streaming
+                                    processed_background_path = cloud_storage.get_signed_url(blob_name, bucket_name, expiration=3600)
+                                    logger.info(f"Using streaming URL for background video")
+                            except Exception as bg_error:
+                                logger.error(f"Error getting signed URL for background: {bg_error}")
+                                # Continue without the background, the generation code will use a default
+                                processed_background_path = None
 
-                    # If background is a GCS path, use it directly with signed URL
-                    if processed_background_path and isinstance(processed_background_path, str) and processed_background_path.startswith('gs://'):
+                        # Ensure background_path is defined before passing it to generate_youtube_short
+                        processed_background_source = background_source
+                        if processed_background_source == "custom" and not processed_background_path:
+                            logger.warning("Custom background source specified but no background path provided")
+                            processed_background_source = "provided"  # Fallback to provided background
+
+                        # Call the generation function
+                        logger.info(f"Generating YouTube short for prompt: '{prompt}'")
+                        logger.info(f"Using background_path: {processed_background_path}, background_source: {processed_background_source}, background_type: {background_type}")
+
                         try:
-                            # Parse the gs:// URL to get bucket and blob names
-                            parts = processed_background_path.replace('gs://', '').split('/', 1)
-                            if len(parts) == 2:
-                                bucket_name, blob_name = parts
-                                # Get a signed URL for streaming
-                                processed_background_path = cloud_storage.get_signed_url(blob_name, bucket_name, expiration=3600)
-                                logger.info(f"Using streaming URL for background video")
-                        except Exception as bg_error:
-                            logger.error(f"Error getting signed URL for background: {bg_error}")
-                            # Continue without the background, the generation code will use a default
-                            processed_background_path = None
+                            # Create a progress callback function
+                            def progress_callback(progress, message, estimated_time_remaining):
+                                socketio.emit('progress_update', {'progress': progress, 'message': message, 'estimated_time_remaining': estimated_time_remaining}, room=video_id)
+                                safe_update_progress(video_id, progress)
 
-                    # Ensure background_path is defined before passing it to generate_youtube_short
-                    processed_background_source = background_source
-                    if processed_background_source == "custom" and not processed_background_path:
-                        logger.warning("Custom background source specified but no background path provided")
-                        processed_background_source = "provided"  # Fallback to provided background
+                            # Generate the video with progress tracking
+                            video_result = generate_youtube_short(
+                                topic=prompt,
+                                max_duration=duration,
+                                background_type=background_type,
+                                background_source=processed_background_source,
+                                background_path=processed_background_path,
+                                progress_callback=progress_callback
+                            )
 
-                    # Call the generation function
-                    logger.info(f"Generating YouTube short for prompt: '{prompt}'")
-                    logger.info(f"Using background_path: {processed_background_path}, background_source: {processed_background_source}, background_type: {background_type}")
+                            # Unpack the result (video path and content package)
+                            video_path, thumbnail_path, comprehensive_content = video_result
 
-                    try:
-                        # Update progress to 30% after script generation
-                        safe_update_progress(video_id, 30)
+                            # Update progress to 80% after video generation
+                            safe_update_progress(video_id, 80, 'uploading')
+                            socketio.emit('progress_update', {'progress': 80, 'message': 'Uploading video...'}, room=video_id)
 
-                        # Create a progress callback function
-                        def progress_callback(progress):
-                            # Map the 0-100 progress from generate_youtube_short to 30-80 range
-                            mapped_progress = int(30 + (progress * 0.5))  # 0->30, 100->80
-                            safe_update_progress(video_id, mapped_progress)
+                            # Check if video was generated successfully
+                            if not video_path or not os.path.exists(video_path):
+                                raise FileNotFoundError(f"Generated video file not found at {video_path}")
 
-                        # Generate the video with progress tracking
-                        video_result = generate_youtube_short(
-                            topic=prompt,
-                            max_duration=duration,
-                            background_type=background_type,
-                            background_source=processed_background_source,
-                            background_path=processed_background_path,
-                            progress_callback=progress_callback
-                        )
+                            # Create a unique filename
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            safe_prompt = re.sub(r'[^\w\s-]', '', prompt.lower()).strip().replace(' ', '_')[:50]
+                            filename = f"{safe_prompt}_{timestamp}.mp4"
 
-                        # Unpack the result (video path and content package)
-                        video_path, comprehensive_content = video_result
+                            # Set path in GCS to include user ID for better organization
+                            blob_name = f"users/{user_id}/{filename}"  # Use 'users/' prefix for better organization
 
-                        # Update progress to 80% after video generation
-                        safe_update_progress(video_id, 80, 'uploading')
+                            # Upload to Cloud Storage with user_id metadata
+                            gcs_path = cloud_storage.upload_file(
+                                video_path,
+                                blob_name,
+                                bucket_name=cloud_storage.media_bucket,  # Explicitly use media bucket
+                                user_id=user_id,
+                                metadata={
+                                    'prompt': prompt,
+                                    'duration': str(duration),
+                                    'video_id': str(video_id)
+                                }
+                            )
 
-                        # Get comprehensive content from the generation function if it's available
-                        # This should be added to the shorts_main.py function to return both the video path
-                        # and the comprehensive content
+                            # For local storage, format as gs:// path for consistency
+                            if cloud_storage.use_local_storage and not gcs_path.startswith('gs://'):
+                                gcs_path = f"gs://{cloud_storage.media_bucket}/{blob_name}"
 
-                        # Check if video was generated successfully
-                        if not video_path or not os.path.exists(video_path):
-                            raise FileNotFoundError(f"Generated video file not found at {video_path}")
+                            # Try to extract and store comprehensive content from the video generation process
+                            try:
+                                # If we have comprehensive_content from the video generation
+                                if comprehensive_content:
+                                    # Ensure script is included in comprehensive_content
+                                    if 'script' in comprehensive_content:
+                                        # Log script info
+                                        script = comprehensive_content['script']
+                                        logger.info(f"Using actual script with {len(script.split())} words for video {video_id}")
 
-                        # Create a unique filename
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        safe_prompt = re.sub(r'[^\w\s-]', '', prompt.lower()).strip().replace(' ', '_')[:50]
-                        filename = f"{safe_prompt}_{timestamp}.mp4"
+                                    logger.info(f"Storing actual comprehensive content for video {video_id}")
 
-                        # Set path in GCS to include user ID for better organization
-                        blob_name = f"users/{user_id}/{filename}"  # Use 'users/' prefix for better organization
+                                    # Update the database with the actual comprehensive content used
+                                    videos_collection.update_one(
+                                        {'_id': ObjectId(video_id)},
+                                        {'$set': {
+                                            'comprehensive_content': comprehensive_content
+                                        }}
+                                    )
+                                else:
+                                    logger.warning(f"No comprehensive content returned for video {video_id}, generating new content")
 
-                        # Update progress to 80% before upload
-                        safe_update_progress(video_id, 80, 'uploading')
+                                    # Import here to avoid circular imports
+                                    from .video_gen.makers.content_generator import generate_comprehensive_content
 
-                        # Upload to Cloud Storage with user_id metadata
-                        gcs_path = cloud_storage.upload_file(
-                            video_path,
-                            blob_name,
-                            bucket_name=cloud_storage.media_bucket,  # Explicitly use media bucket
-                            user_id=user_id,
-                            metadata={
-                                'prompt': prompt,
-                                'duration': str(duration),
-                                'video_id': str(video_id)
-                            }
-                        )
+                                    # Generate fallback comprehensive content
+                                    fallback_content = generate_comprehensive_content(
+                                        topic=prompt,
+                                        max_duration=duration
+                                    )
 
-                        # For local storage, format as gs:// path for consistency
-                        if cloud_storage.use_local_storage and not gcs_path.startswith('gs://'):
-                            gcs_path = f"gs://{cloud_storage.media_bucket}/{blob_name}"
+                                    videos_collection.update_one(
+                                        {'_id': ObjectId(video_id)},
+                                        {'$set': {
+                                            'comprehensive_content': fallback_content
+                                        }}
+                                    )
+                            except Exception as content_error:
+                                logger.error(f"Error storing comprehensive content for video {video_id}: {content_error}")
+                                # Continue without comprehensive content - it's optional
 
-                        # Try to extract and store comprehensive content from the video generation process
-                        try:
-                            # If we have comprehensive_content from the video generation
-                            if comprehensive_content:
-                                # Ensure script is included in comprehensive_content
-                                if 'script' in comprehensive_content:
-                                    # Log script info
-                                    script = comprehensive_content['script']
-                                    logger.info(f"Using actual script with {len(script.split())} words for video {video_id}")
+                            # Update the database with completed status and file info using safe progress update
+                            safe_update_progress(video_id, 100, 'completed')
+                            videos_collection.update_one(
+                                {'_id': ObjectId(video_id)},
+                                {'$set': {
+                                    'filename': filename,
+                                    'path': gcs_path,
+                                    'thumbnail_path': thumbnail_path,
+                                    'user_id': user_id,
+                                    'completed_at': datetime.now(timezone.utc)
+                                }}
+                            )
 
-                                logger.info(f"Storing actual comprehensive content for video {video_id}")
+                            logger.info(f"Video generation completed for user {user_id}, video {video_id}")
+                            socketio.emit('progress_update', {'progress': 100, 'message': 'Video generation complete!', 'status': 'completed'}, room=video_id)
 
-                                # Update the database with the actual comprehensive content used
-                                videos_collection.update_one(
-                                    {'_id': ObjectId(video_id)},
-                                    {'$set': {
-                                        'comprehensive_content': comprehensive_content
-                                    }}
-                                )
-                            else:
-                                logger.warning(f"No comprehensive content returned for video {video_id}, generating new content")
-
-                                # Import here to avoid circular imports
-                                from .video_gen.makers.content_generator import generate_comprehensive_content
-
-                                # Generate fallback comprehensive content
-                                fallback_content = generate_comprehensive_content(
-                                    topic=prompt,
-                                    max_duration=duration
-                                )
-
-                                videos_collection.update_one(
-                                    {'_id': ObjectId(video_id)},
-                                    {'$set': {
-                                        'comprehensive_content': fallback_content
-                                    }}
-                                )
-                        except Exception as content_error:
-                            logger.error(f"Error storing comprehensive content for video {video_id}: {content_error}")
-                            # Continue without comprehensive content - it's optional
-
-                        # Update the database with completed status and file info using safe progress update
-                        safe_update_progress(video_id, 100, 'completed')
-                        videos_collection.update_one(
-                            {'_id': ObjectId(video_id)},
-                            {'$set': {
-                                'filename': filename,
-                                'path': gcs_path,
-                                'user_id': user_id,
-                                'completed_at': datetime.now(timezone.utc)
-                            }}
-                        )
-
-                        logger.info(f"Video generation completed for user {user_id}, video {video_id}")
-
-                        # Notify frontend that generation is complete
-                        try:
-                            # Create a copy of request values for use outside request context
-                            req_origin = request.headers.get('Origin', 'http://localhost:3500')
-
-                            # Define function for app context
-                            def send_notification():
-                                try:
-                                    callback_url = f"{req_origin}/api/generation-complete-callback/{video_id}"
-                                    requests.post(callback_url, json={
-                                        'status': 'success',
-                                        'video_id': str(video_id),
-                                        'filename': filename,
-                                        'path': gcs_path
-                                    }, timeout=5)
-                                    logger.info(f"Successfully notified frontend of completion: {callback_url}")
-                                except Exception as cb_error:
-                                    logger.error(f"Failed to notify frontend of completion in app context: {cb_error}")
-
-                            # Run in a separate thread to avoid blocking
-                            notification_thread = threading.Thread(target=send_notification)
-                            notification_thread.daemon = True
-                            notification_thread.start()
-
-                        except Exception as callback_error:
-                            logger.error(f"Failed to setup frontend notification: {callback_error}")
-                    except Exception as gen_error:
-                        logger.error(f"Error in video generation for video {video_id}: {gen_error}")
-                        # Update database with error status
-                        safe_update_progress(video_id, 0, 'error')
-                        videos_collection.update_one(
-                            {'_id': ObjectId(video_id)},
-                            {'$set': {
-                                'status': 'error',
-                                'error_message': str(gen_error)
-                            }}
-                        )
+                        except Exception as gen_error:
+                            logger.error(f"Error in video generation for video {video_id}: {gen_error}")
+                            # Update database with error status
+                            safe_update_progress(video_id, 0, 'error')
+                            videos_collection.update_one(
+                                {'_id': ObjectId(video_id)},
+                                {'$set': {
+                                    'status': 'error',
+                                    'error_message': str(gen_error)
+                                }}
+                            )
+                            socketio.emit('generation_failed', {'error': str(gen_error)}, room=video_id)
 
             except Exception as e:
                 logger.error(f"Error in background processing for video {video_id}: {e}")
@@ -653,9 +621,10 @@ def generate_short(current_user):
                         'error_message': str(e)
                     }}
                 )
+                socketio.emit('generation_failed', {'error': str(e)}, room=video_id)
 
         # Start the background thread and return immediately
-        thread = threading.Thread(target=process_video)
+        thread = threading.Thread(target=process_video, args=(str(video_id), user_id, prompt, duration, background_type, background_source, background_path))
         thread.daemon = True
 
         # Register thread for tracking

@@ -1,6 +1,6 @@
 import openai # for OpenAI API whihc is used to generate the script
 import os  # for environment variables here
-# from dotenv import load_dotenv # No longer needed
+from dotenv import load_dotenv 
 import logging
 import time  # for exponential backoff which mwans if the script fails to generate, it will try again after some time
 import re  # for filtering instructional labels
@@ -9,9 +9,8 @@ import json # for parsing JSON responses
 # Configure logging - don't use basicConfig since main.py handles this
 logger = logging.getLogger(__name__)
 
-# The OpenAI API key is now expected to be set globally by the main application
-# load_dotenv()
-# openai.api_key = os.getenv("OPENAI_API_KEY")
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def filter_instructional_labels(script):
     """

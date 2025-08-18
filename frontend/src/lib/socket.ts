@@ -1,4 +1,5 @@
 import axios from "axios";
+import { io, Socket } from "socket.io-client";
 import {
   shouldRefreshToken,
   refreshToken,
@@ -20,15 +21,43 @@ export const getWebSocketURL = (): string => {
   const wsUrl = import.meta.env.VITE_WEBSOCKET_URL;
   if (wsUrl) return wsUrl;
   const apiBase = getAPIBaseURL().replace(/^http/, "ws");
-  return apiBase.replace(/\/api$/, "/ws");
+  return apiBase.replace(/\/api$/, "");
 };
 
-// Add WebSocket client (example integration)
-export const connectWebSocket = () => {
-  const ws = new WebSocket(getWebSocketURL());
-  ws.onmessage = (event) => console.log("WS Message:", event.data);
-  ws.onerror = (error) => console.error("WS Error:", error);
-  return ws;
+let socket: Socket;
+
+export const connectWebSocket = (token: string) => {
+  if (socket && socket.connected) {
+    return socket;
+  }
+
+  socket = io(getWebSocketURL(), {
+    auth: {
+      token,
+    },
+  });
+
+  socket.on("connect", () => {
+    console.log("WebSocket connected");
+  });
+
+  socket.on("disconnect", () => {
+    console.log("WebSocket disconnected");
+  });
+
+  return socket;
+};
+
+export const joinVideoRoom = (videoId: string) => {
+  if (socket) {
+    socket.emit("join", { room: videoId });
+  }
+};
+
+export const leaveVideoRoom = (videoId: string) => {
+  if (socket) {
+    socket.emit("leave", { room: videoId });
+  }
 };
 
 // Rest of your axios configuration...
