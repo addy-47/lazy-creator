@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      FLASK_APP: main.py
+      FLASK_ENV: production # Set to production for deployment
+      SECRET_KEY: your-secret-key-replace-me # IMPORTANT: Replace with a strong, unique secret key
+      MONGODB_URI: mongodb+srv://addy:Chocoluv1@lazy-creator-mdb-1.ksvzvmv.mongodb.net/?retryWrites=true&w=majority&appName=lazy-creator-mdb-1
+      GOOGLE_APPLICATION_CREDENTIALS: /app/lazycreator-1.json # Assuming this is copied into the image
+      YOUTUBE_CLIENT_SECRETS: /app/client_secret.json # Assuming this is copied into the image
+      FRONTEND_URL: http://frontend:3500 # Points to the frontend service within the Docker network
+      # Other environment variables from your .env file that the backend needs
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PEXELS_API_KEY: ${PEXELS_API_KEY}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      GCS_SERVICE_ACCOUNT: ${GCS_SERVICE_ACCOUNT}
+      YOUTUBE_CLIENT_SECRET_ID: ${YOUTUBE_CLIENT_SECRET_ID}
+      ENABLE_YOUTUBE_UPLOAD: ${ENABLE_YOUTUBE_UPLOAD}
+      USE_GOOGLE_TTS: ${USE_GOOGLE_TTS}
+      GOOGLE_VOICE: ${GOOGLE_VOICE}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      NEWS_API_KEY: ${NEWS_API_KEY}
+      PIXABAY_API_KEY: ${PIXABAY_API_KEY}
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY}
+      HF_MODEL: ${HF_MODEL}
+      UNSPLASH_API_KEY: ${UNSPLASH_API_KEY}
+      TEMP_DIR: /tmp
+    networks:
+      - lazycreator_network
+    # volumes:
+    #   - ./backend/app:/app # Uncomment for development hot-reloading, but be careful in production
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3500:80" # Map host port 3500 to container's port 80 (where Nginx/Vite serves)
+    environment:
+      VITE_API_URL: http://backend:4000 # Points to the backend service within the Docker network
+      # IMPORTANT: Fill in your Firebase environment variables here
+      VITE_FIREBASE_API_KEY: your_firebase_api_key
+      VITE_FIREBASE_AUTH_DOMAIN: your_app.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: your_project_id
+      VITE_FIREBASE_APP_ID: your_app_id
+    networks:
+      - lazycreator_network
+    depends_on:
+      - backend # Ensure backend starts before frontend
+
+networks:
+  lazycreator_network:
+    driver: bridge

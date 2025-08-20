@@ -487,31 +487,21 @@ function GalleryPage() {
 
   const handleDownload = async (videoId: string) => {
     try {
-      setDownloadingVideoId(videoId); // Set the downloading video ID
+      setDownloadingVideoId(videoId);
       const response = await api.get(`/api/download/${videoId}`, {
         responseType: "blob",
       });
 
-      // Create a blob URL and trigger download
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
+      const url = window.URL.createObjectURL(new Blob([response.data], {type: 'video/mp4'}));
+      window.open(url, '_blank');
+      
+      toast.success("Your video is opening in a new tab.");
 
-      // Get video info for filename
-      const video = videos.find((v) => v.id === videoId);
-      const filename = video ? video.filename : "youtube-short.mp4";
-
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      toast.success("Download started!");
     } catch (error: any) {
       console.error("Error downloading video:", error);
       toast.error("Failed to download video");
     } finally {
-      setDownloadingVideoId(null); // Clear the downloading state
+      setDownloadingVideoId(null);
     }
   };
 
@@ -845,6 +835,13 @@ function GalleryPage() {
 
   // Function to handle showing the upload form
   const handleShowUploadForm = (videoId: string) => {
+    if (youtubeChannels.length === 0) {
+      toast.error("You don't have a YouTube channel.", {
+        description: "Please create a channel on YouTube and try again.",
+      });
+      return;
+    }
+
     const video = videos.find((v) => v.id === videoId);
     if (!video) return;
 

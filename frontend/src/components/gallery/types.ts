@@ -1,6 +1,7 @@
 export interface Video {
   id: string;
   filename: string;
+  gcs_path: string;
   original_prompt: string;
   display_title?: string;
   duration: number;
