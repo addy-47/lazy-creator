@@ -6,14 +6,11 @@ from moviepy  import VideoFileClip
 import logging
 import time
 from .minor_helper import measure_time
+import tempfile
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-from ... import storage
-# Get temp directory from environment variable or use default
-video_temp_dir = storage.cloud_storage.get_temp_gcs_path("video_downloads")
 
 # Try to load API keys from environment variables
 try:
@@ -131,7 +128,7 @@ def _download_with_retry(url, output_path, headers=None, max_retries=MAX_RETRIES
         chunk_size (int): Size of chunks to download
 
     Returns:
-        bool: True if download successful, False otherwise
+        str: Path to the downloaded file, or None if download fails
     """
     for attempt in range(max_retries):
         try:
@@ -140,7 +137,7 @@ def _download_with_retry(url, output_path, headers=None, max_retries=MAX_RETRIES
                 with open(output_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=chunk_size):
                         f.write(chunk)
-            return True
+            return output_path
         except (requests.exceptions.RequestException, requests.exceptions.HTTPError) as e:
             logger.warning(f"Download attempt {attempt+1}/{max_retries} failed: {e}")
             if attempt < max_retries - 1:
@@ -149,10 +146,10 @@ def _download_with_retry(url, output_path, headers=None, max_retries=MAX_RETRIES
                 time.sleep(sleep_time)
             else:
                 logger.error(f"Failed to download after {max_retries} attempts: {url}")
-                return False
+                return None
         except Exception as e:
             logger.error(f"Unexpected error downloading {url}: {e}")
-            return False
+            return None
 
 @measure_time
 def _fetch_from_pixabay(query, count, min_duration):
@@ -167,6 +164,7 @@ def _fetch_from_pixabay(query, count, min_duration):
     Returns:
         list: Paths to downloaded video files
     """
+    temp_dir = tempfile.mkdtemp(prefix="pixabay_downloads_")
     try:
         url = f"https://pixabay.com/api/videos/?key={pixabay_api_key}&q={query}&min_width=1080&min_height=1920&per_page=20"
         response = requests.get(url)
@@ -185,7 +183,7 @@ def _fetch_from_pixabay(query, count, min_duration):
             def download_and_check_video(video):
                 try:
                     video_url = video["videos"]["large"]["url"]
-                    video_path = os.path.join(video_temp_dir, f"pixabay_{video['id']}.mp4")
+                    video_path = os.path.join(temp_dir, f"pixabay_{video['id']}.mp4")
 
                     # Skip download if the file already exists and is valid
                     if os.path.exists(video_path):
@@ -204,21 +202,22 @@ def _fetch_from_pixabay(query, count, min_duration):
                                 os.remove(video_path)
 
                     # Download the video with retry
-                    if _download_with_retry(video_url, video_path):
+                    downloaded_path = _download_with_retry(video_url, video_path)
+                    if downloaded_path:
                         # Check duration
                         try:
-                            clip = VideoFileClip(video_path)
+                            clip = VideoFileClip(downloaded_path)
                             if clip.duration >= min_duration:
                                 clip.close()
-                                return video_path
+                                return downloaded_path
                             clip.close()
                             # Remove the video if it's too short
-                            if os.path.exists(video_path):
-                                os.remove(video_path)
+                            if os.path.exists(downloaded_path):
+                                os.remove(downloaded_path)
                         except Exception as e:
                             logger.error(f"Error checking video duration: {e}")
-                            if os.path.exists(video_path):
-                                os.remove(video_path)
+                            if os.path.exists(downloaded_path):
+                                os.remove(downloaded_path)
                     return None
                 except Exception as e:
                     logger.error(f"Error downloading video from Pixabay: {e}")
@@ -233,6 +232,7 @@ def _fetch_from_pixabay(query, count, min_duration):
                 for future in concurrent.futures.as_completed(future_to_video):
                     video_path = future.result()
                     if video_path:
+                        logger.info(f"Downloaded video from Pixabay: {video_path}")
                         video_paths.append(video_path)
 
             return video_paths
@@ -245,7 +245,7 @@ def _fetch_from_pixabay(query, count, min_duration):
         return []
 
 @measure_time
-def _fetch_from_pexels(query, count=5, min_duration=15):
+def _fetch_from_pexels(query, count, min_duration):
     """
     Fetch background videos from Pexels API
 
@@ -257,6 +257,7 @@ def _fetch_from_pexels(query, count=5, min_duration=15):
     Returns:
         list: Paths to downloaded video files
     """
+    temp_dir = tempfile.mkdtemp(prefix="pexels_downloads_")
     try:
         url = f"https://api.pexels.com/videos/search?query={query}&per_page=20&orientation=portrait"
         headers = {"Authorization": pexels_api_key}
@@ -290,7 +291,7 @@ def _fetch_from_pexels(query, count=5, min_duration=15):
                     if not video_url:
                         return None
 
-                    video_path = os.path.join(video_temp_dir, f"pexels_{video['id']}.mp4")
+                    video_path = os.path.join(temp_dir, f"pexels_{video['id']}.mp4")
 
                     # Skip download if the file already exists and is valid
                     if os.path.exists(video_path):
@@ -309,21 +310,22 @@ def _fetch_from_pexels(query, count=5, min_duration=15):
                                 os.remove(video_path)
 
                     # Download the video with retry
-                    if _download_with_retry(video_url, video_path, headers=headers):
+                    downloaded_path = _download_with_retry(video_url, video_path, headers=headers)
+                    if downloaded_path:
                         # Check duration
                         try:
-                            clip = VideoFileClip(video_path)
+                            clip = VideoFileClip(downloaded_path)
                             if clip.duration >= min_duration:
                                 clip.close()
-                                return video_path
+                                return downloaded_path
                             clip.close()
                             # Remove the video if it's too short
-                            if os.path.exists(video_path):
-                                os.remove(video_path)
+                            if os.path.exists(downloaded_path):
+                                os.remove(downloaded_path)
                         except Exception as e:
                             logger.error(f"Error checking video duration: {e}")
-                            if os.path.exists(video_path):
-                                os.remove(video_path)
+                            if os.path.exists(downloaded_path):
+                                os.remove(downloaded_path)
                     return None
                 except Exception as e:
                     logger.error(f"Error downloading video from Pexels: {e}")
@@ -338,6 +340,7 @@ def _fetch_from_pexels(query, count=5, min_duration=15):
                 for future in concurrent.futures.as_completed(future_to_video):
                     video_path = future.result()
                     if video_path:
+                        logger.info(f"Downloaded video from Pexels: {video_path}")
                         video_paths.append(video_path)
 
             return video_paths
@@ -348,4 +351,3 @@ def _fetch_from_pexels(query, count=5, min_duration=15):
     except Exception as e:
         logger.error(f"Error fetching videos from Pexels: {e}")
         return []
-

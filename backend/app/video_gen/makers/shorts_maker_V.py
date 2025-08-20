@@ -188,12 +188,13 @@ class YTShortsCreator_V:
             parallel_executor.add_task("fetch_videos", fetch_videos_task)
             parallel_executor.add_task("generate_audio", generate_audio_task)
 
-            # Execute all tasks in parallel and wait for results
-            results = parallel_executor.execute()
-
-            # Extract results
-            videos_by_query = results.get("fetch_videos", {})
-            audio_data = results.get("generate_audio", [])
+            # Execute tasks sequentially
+            if progress_callback:
+                progress_callback(30, "Fetching background videos...", 0)
+            videos_by_query = fetch_videos_task()
+            if progress_callback:
+                progress_callback(35, "Generating audio files...", 0)
+            audio_data = generate_audio_task()
 
             # Check if we have necessary components before continuing
             if not videos_by_query:
@@ -415,7 +416,7 @@ class YTShortsCreator_V:
                 parallel=True,
                 memory_per_worker_gb=1.0,
                 options={
-                    'clean_temp': True,
+                    'clean_temp': False,
                     'section_info': section_info
                 }
             )
@@ -474,11 +475,11 @@ class YTShortsCreator_V:
             cleanup_temp_directories([self.temp_dir])
             return None
 
-    def cleanup(self):
+    def cleanup(self, video_temp_dir=None):
         """Clean up temporary files"""
         try:
-            cleanup_temp_directories([self.temp_dir])
-            logger.info(f"Cleaned up temporary files in {self.temp_dir}")
+            cleanup_temp_directories([self.temp_dir, video_temp_dir])
+            logger.info(f"Cleaned up temporary files in {self.temp_dir} and {video_temp_dir}")
         except Exception as e:
             logger.error(f"Error cleaning up temporary files: {e}")
 

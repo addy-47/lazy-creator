@@ -8,6 +8,7 @@ import { UserCircle2 } from "lucide-react";
 interface Video {
   id: string;
   filename: string;
+  gcs_path: string;
   original_prompt: string;
   duration: number;
   created_at: string;

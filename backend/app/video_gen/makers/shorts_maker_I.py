@@ -242,10 +242,14 @@ class YTShortsCreator_I:
             parallel_executor.add_task("generate_audio", generate_audio_task)
 
             # Execute all tasks in parallel and wait for results
+            if progress_callback:
+                progress_callback(30, "Generating background images...", 0)
             results = parallel_executor.execute()
 
             # Extract results
             images_by_query = results.get("generate_images")
+            if progress_callback:
+                progress_callback(35, "Generating audio files...", 0)
             audio_data = results.get("generate_audio")
 
             # Check if we have enough images or need to fallback to video mode
@@ -562,7 +566,7 @@ class YTShortsCreator_I:
                 parallel=True,
                 memory_per_worker_gb=1.0,
                 options={
-                    'clean_temp': True,
+                    'clean_temp': False,
                     'section_info': section_info
                 }
             )

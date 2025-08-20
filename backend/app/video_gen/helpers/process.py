@@ -121,6 +121,7 @@ def _process_background_clip_wrapper(clip_info, blur_background=False, edge_blur
     Returns:
         VideoClip: Processed clip
     """
+    logger.info(f"Processing clip with info: {clip_info}")
     try:
         # Handle both path strings and VideoClip objects
         if 'clip' in clip_info:
@@ -159,6 +160,7 @@ def process_background_clips_parallel(video_info , blur_background=False, edge_b
     """
     start_time = time.time()
     logger.info(f"Processing {len(video_info )} background clips in parallel")
+    logger.info(f"Video info: {video_info}")
 
     # Determine number of workers based on CPU cores
     if not max_workers:

@@ -14,6 +14,10 @@ def generate_youtube_short(topic: str, max_duration: int, background_type: str, 
     Generate a YouTube Short.
     This function creates the video and thumbnail but does not upload them.
     """
+    output_dir = ensure_output_directory()
+    # Initial progress
+    if progress_callback:
+        progress_callback(0, "Initializing video generation...", 0)
     try:
         # Determine creator type from background_type
         if background_type == 'video':
@@ -21,10 +25,9 @@ def generate_youtube_short(topic: str, max_duration: int, background_type: str, 
         else:
             creator = YTShortsCreator_I()
 
-        output_dir = ensure_output_directory()
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
         logger.info(f"Generating comprehensive content for : {topic}")
+        if progress_callback:
+            progress_callback(5, "Generating script and content...", 0)
         content_package = generate_comprehensive_content(topic, max_tokens=800)
 
         script = content_package["script"]
@@ -32,13 +35,17 @@ def generate_youtube_short(topic: str, max_duration: int, background_type: str, 
         
         logger.info("Content package generated successfully:")
         logger.info(f"Title: {title}")
+        if progress_callback:
+            progress_callback(10, "Content generated successfully!", 0)
 
         safe_title = title.replace(' ', '_').replace(':', '').replace('?', '').replace('!', '')[:30]
-        output_filename = f"yt_shorts_{safe_title}_{timestamp}.mp4"
+        output_filename = f"yt_shorts_{safe_title}.mp4"
         output_path = os.path.join(output_dir, output_filename)
 
         script_cards = parse_script_to_cards(script)
         logger.info(f"Script parsed into {len(script_cards)} sections")
+        if progress_callback:
+            progress_callback(15, f"Script parsed into {len(script_cards)} sections", 0)
 
         intro_card = {
             "text": f"LazyCreator presents: {content_package['title']}",
@@ -49,6 +56,8 @@ def generate_youtube_short(topic: str, max_duration: int, background_type: str, 
 
         card_texts = [card['text'] for card in script_cards]
 
+        if progress_callback:
+            progress_callback(20, "Generating background queries...", 0)
         if isinstance(creator, YTShortsCreator_V):
             logger.info("Generating video search queries for each section using AI...")
             batch_query_results = generate_batch_video_queries(card_texts, overall_topic=topic, model="gpt-4o-mini-2024-07-18")
@@ -66,6 +75,9 @@ def generate_youtube_short(topic: str, max_duration: int, background_type: str, 
 
         fallback_query = section_queries[0] if section_queries else default_query
 
+        if progress_callback:
+            progress_callback(25, "Starting main video creation...", 0)
+
         video_path = creator.create_youtube_short(
             title=title,
             script_sections=script_cards,
@@ -77,19 +89,22 @@ def generate_youtube_short(topic: str, max_duration: int, background_type: str, 
             background_queries=section_queries,
             blur_background=False,
             edge_blur=False,
-            custom_background_path=background_path
+            custom_background_path=background_path,
+            progress_callback=progress_callback
         )
 
         thumbnail_path = None
         try:
             logger.info("Generating thumbnail for the short")
+            if progress_callback:
+                progress_callback(85, "Generating thumbnail...", 0)
             thumbnail_dir = os.path.join(output_dir, "thumbnails")
             os.makedirs(thumbnail_dir, exist_ok=True)
             thumbnail_generator = ThumbnailGenerator(output_dir=thumbnail_dir)
             safe_title_thumbnail = safe_title[:20]
             thumbnail_output_path = os.path.join(
                 thumbnail_dir,
-                f"thumbnail_{safe_title_thumbnail}_{timestamp}.jpg"
+                f"thumbnail_{safe_title_thumbnail}.jpg"
             )
             thumbnail_path = thumbnail_generator.generate_thumbnail(
                 title=title,
@@ -107,14 +122,18 @@ def generate_youtube_short(topic: str, max_duration: int, background_type: str, 
                         image_path=unsplash_image_path,
                         output_path=thumbnail_output_path
                     )
-            thumbnail_generator.cleanup()
+            if progress_callback:
+                progress_callback(95, "Thumbnail generated successfully!", 0)
         except Exception as thumbnail_error:
             logger.error(f"Failed to generate thumbnail: {thumbnail_error}")
+            if progress_callback:
+                progress_callback(95, "Failed to generate thumbnail.", 0)
 
         # Return the paths and the content package
         return video_path, thumbnail_path, content_package
-
+    
     except Exception as e:
-        logger.error(f"Error generating YouTube Short: {e}")
-        # Re-raise the exception to be caught by the calling function in main.py
-        raise
+        logger.error(f"Failed to generate video: {e}")
+        if progress_callback:
+            progress_callback(100, "Failed to generate video.", 0)
+        return None, None, None

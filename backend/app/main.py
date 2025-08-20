@@ -213,9 +213,6 @@ def token_required(f):
             # Decode the token
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
 
-            # Log successful token decode
-            logger.info(f"Successfully decoded token for {data.get('email')}")
-
             # Find the user in the database
             current_user = users_collection.find_one({'email': data['email']})
             if not current_user:
@@ -256,6 +253,7 @@ def register():
         'created_at': datetime.now(timezone.utc)
     }
     users_collection.insert_one(user)
+    logger.info(f"Successfully registered user {data.get('email')}")
 
     return jsonify({'message': 'User registered successfully!'}), 201
 
@@ -310,6 +308,8 @@ def login():
 
             # Generate token using the email (which is unique)
             token = create_token(data['email'])
+            logger.info(f"Successfully decoded token for {data.get('email')}")
+
 
             # Fetch the latest user data to return name (handle potential race condition where name might not be set yet on insert)
             final_user_data = users_collection.find_one({'email': data['email']})
@@ -334,6 +334,7 @@ def login():
     if check_password_hash(user['password'], data['password']):
         # Use the new create_token function
         token = create_token(user['email'])
+        logger.info(f"Successfully decoded token for {user.get('email')}")
 
         return jsonify({
             'token': token,
@@ -512,34 +513,43 @@ def generate_short(current_user):
                             safe_update_progress(video_id, 80, 'uploading')
                             socketio.emit('progress_update', {'progress': 80, 'message': 'Uploading video...'}, room=video_id)
 
-                            # Check if video was generated successfully
-                            if not video_path or not os.path.exists(video_path):
+                            # Create a unique ID for this generation process
+                            generation_id = str(uuid.uuid4())
+
+                            # Upload video
+                            if video_path and os.path.exists(video_path):
+                                video_filename = f"{generation_id}.mp4"
+                                video_blob_name = f"users/{user_id}/{generation_id}/{video_filename}"
+                                gcs_path = cloud_storage.upload_file(
+                                    video_path,
+                                    video_blob_name,
+                                    bucket_name=cloud_storage.media_bucket,
+                                    user_id=user_id,
+                                    metadata={
+                                        'prompt': prompt,
+                                        'duration': str(duration),
+                                        'video_id': str(video_id)
+                                    }
+                                )
+                            else:
                                 raise FileNotFoundError(f"Generated video file not found at {video_path}")
 
-                            # Create a unique filename
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            safe_prompt = re.sub(r'[^\w\s-]', '', prompt.lower()).strip().replace(' ', '_')[:50]
-                            filename = f"{safe_prompt}_{timestamp}.mp4"
-
-                            # Set path in GCS to include user ID for better organization
-                            blob_name = f"users/{user_id}/{filename}"  # Use 'users/' prefix for better organization
-
-                            # Upload to Cloud Storage with user_id metadata
-                            gcs_path = cloud_storage.upload_file(
-                                video_path,
-                                blob_name,
-                                bucket_name=cloud_storage.media_bucket,  # Explicitly use media bucket
-                                user_id=user_id,
-                                metadata={
-                                    'prompt': prompt,
-                                    'duration': str(duration),
-                                    'video_id': str(video_id)
-                                }
-                            )
-
-                            # For local storage, format as gs:// path for consistency
-                            if cloud_storage.use_local_storage and not gcs_path.startswith('gs://'):
-                                gcs_path = f"gs://{cloud_storage.media_bucket}/{blob_name}"
+                            # Upload thumbnail
+                            if thumbnail_path and os.path.exists(thumbnail_path):
+                                thumbnail_filename = f"{generation_id}.jpg"
+                                thumbnail_blob_name = f"users/{user_id}/{generation_id}/{thumbnail_filename}"
+                                thumbnail_gcs_path = cloud_storage.upload_file(
+                                    thumbnail_path,
+                                    thumbnail_blob_name,
+                                    bucket_name=cloud_storage.media_bucket,
+                                    user_id=user_id,
+                                    metadata={
+                                        'prompt': prompt,
+                                        'video_id': str(video_id)
+                                    }
+                                )
+                            else:
+                                thumbnail_gcs_path = None
 
                             # Try to extract and store comprehensive content from the video generation process
                             try:
@@ -587,11 +597,11 @@ def generate_short(current_user):
                             videos_collection.update_one(
                                 {'_id': ObjectId(video_id)},
                                 {'$set': {
-                                    'filename': filename,
-                                    'path': gcs_path,
-                                    'thumbnail_path': thumbnail_path,
+                                    'gcs_path': gcs_path,
+                                    'thumbnail_gcs_path': thumbnail_gcs_path,
                                     'user_id': user_id,
-                                    'completed_at': datetime.now(timezone.utc)
+                                    'completed_at': datetime.now(timezone.utc),
+                                    'filename': video_filename
                                 }}
                             )
 
@@ -769,7 +779,7 @@ def get_gallery(current_user):
         # Convert ObjectId to string for JSON serialization
         for video in videos:
             video['id'] = str(video['_id'])
-            video.pop('_id, None')
+            video.pop('_id', None)
 
             # Include generated title in the frontend for display in gallery
             if 'comprehensive_content' in video and 'title' in video['comprehensive_content']:
@@ -1578,7 +1588,6 @@ def youtube_auth_status_compat(current_user):
     # Direct implementation rather than calling the other function to avoid decorator issues
     try:
         user_id = str(current_user['_id'])
-        logger.info(f"Compatibility route: Checking YouTube auth status for user {user_id}")
 
         # Check if credentials exist
         is_authenticated = check_auth_status(user_id, users_collection)
@@ -1998,44 +2007,24 @@ def refresh_token():
         token = auth_header[7:]  # Remove 'Bearer ' prefix
 
         try:
-            # Verify the token is valid (but might be close to expiration)
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            # Decode the token without verifying expiration to check user identity
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={'verify_exp': False})
+            email = data.get('email')
 
-            # Check if user exists
-            user = users_collection.find_one({'email': data['email']})
-            if not user:
-                return jsonify({'message': 'User not found!'}), 401
+            if not email:
+                return jsonify({'message': 'Invalid token payload!'}), 401
 
-            # Generate a new token with fresh expiration
-            new_token = create_token(data['email'])
+            # Generate a new token
+            new_token = create_token(email)
+            return jsonify({'token': new_token}), 200
 
-            # Log the refresh action
-            logger.info(f"Token refreshed for user {data['email']}")
-
-            # Return the new token
-            return jsonify({
-                'token': new_token,
-                'email': data['email'],
-                'user': {
-                    'name': user.get('name', 'User')
-                }
-            }), 200
-
-        except jwt.ExpiredSignatureError:
-            # If token is already expired, we can't refresh - require re-login
-            logger.warning("Attempted to refresh an expired token")
-            return jsonify({'message': 'Token has expired, please log in again!'}), 401
         except jwt.InvalidTokenError:
-            logger.warning("Invalid token provided for refresh")
             return jsonify({'message': 'Invalid token!'}), 401
 
     except Exception as e:
-        logger.error(f"Error in token refresh: {e}")
-        return jsonify({'message': 'Token refresh failed!'}), 500
+        logger.error(f"Error refreshing token: {e}")
+        return jsonify({'message': 'Failed to refresh token!'}), 500
 
 if __name__ == '__main__':
-    # In development, use port 4000
-    # In production (Cloud Run), PORT environment variable will be used by gunicorn
-    port = int(os.getenv('PORT', 4000))
-    debug = os.getenv('DEBUG', 'True').lower() == 'true'
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    # Use SocketIO to run the app
+    socketio.run(app, host='0.0.0.0', port=4000, debug=True)

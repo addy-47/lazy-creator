@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getAPIBaseURL, api, apiWithoutPreflight } from "@/lib/socket";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/Button";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Youtube, ChevronRight } from "lucide-react";
 
@@ -296,74 +296,67 @@ function GalleryPage() {
     console.log(`Loaded ${count} demo videos from ${apiBase}${demoPath}`);
   }, []);
 
-  // Radically simplify the loading workflow to ensure we exit loading state
-  useEffect(() => {
-    const loadGallery = async () => {
-      try {
-        console.log("Starting gallery page loading sequence");
-        setLoading(true);
+  const loadGallery = useCallback(async () => {
+    try {
+      console.log("Starting gallery page loading sequence");
+      setLoading(true);
+      
+      // Handle non-authenticated users immediately
+      if (!isAuthenticated) {
+        console.log("User not authenticated, showing explore section");
+        setActiveSection("explore");
+        setLoading(false);
         
-        // Handle non-authenticated users immediately
-        if (!isAuthenticated) {
-          console.log("User not authenticated, showing explore section");
-          setActiveSection("explore");
-          setLoading(false);
-          
-          // Load demo videos for non-authenticated users with a smaller count
-          loadDemoVideos(isLowEnd.current ? 3 : 6);
-          return;
+        // Load demo videos for non-authenticated users with a smaller count
+        loadDemoVideos(isLowEnd.current ? 3 : 6);
+        return;
+      }
+      
+      // For authenticated users, try to fetch their videos
+      console.log("User authenticated, fetching videos");
+      
+      try {
+        // Simple, direct API call
+        const token = localStorage.getItem("token");
+        if (!token) {
+          throw new Error("No auth token found");
         }
         
-        // For authenticated users, try to fetch their videos
-        console.log("User authenticated, fetching videos");
+        const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
+          headers: {
+            "x-access-token": token,
+            "Content-Type": "application/json"
+          },
+          timeout: 8000 // 8 second timeout
+        });
         
-        try {
-          // Simple, direct API call
-          const token = localStorage.getItem("token");
-          if (!token) {
-            throw new Error("No auth token found");
-          }
-          
-          const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
-            headers: {
-              "x-access-token": token,
-              "Content-Type": "application/json"
-            },
-            timeout: 8000 // 8 second timeout
-          });
-          
-          if (response.data && response.data.videos) {
-            console.log(`Loaded ${response.data.videos.length} videos successfully`);
-            setVideos(response.data.videos);
-          } else {
-            console.warn("API response missing videos array");
-            setVideos([]);
-          }
-        } catch (error) {
-          console.error("Failed to fetch videos:", error);
-          toast.error("Couldn't load your videos. Please try again later.");
+        if (response.data && response.data.videos) {
+          console.log(`Loaded ${response.data.videos.length} videos successfully`);
+          setVideos(response.data.videos);
+        } else {
+          console.warn("API response missing videos array");
           setVideos([]);
         }
-        
-        // Load demo videos for all users
-        loadDemoVideos(isLowEnd.current ? 3 : 6);
-      } catch (e) {
-        console.error("Unexpected error in gallery loading sequence:", e);
-      } finally {
-        // Always exit loading state
-        console.log("Exiting loading state");
-        setLoading(false);
+      } catch (error) {
+        console.error("Failed to fetch videos:", error);
+        toast.error("Couldn't load your videos. Please try again later.");
+        setVideos([]);
       }
-    };
-
-    loadGallery();
-    
-    // Check YouTube auth status if needed
-    const shouldCheck = localStorage.getItem("checkYouTubeAuth");
-    if (shouldCheck === "true") {
-      checkYouTubeAuth();
+      
+      // Load demo videos for all users
+      loadDemoVideos(isLowEnd.current ? 3 : 6);
+    } catch (e) {
+      console.error("Unexpected error in gallery loading sequence:", e);
+    } finally {
+      // Always exit loading state
+      console.log("Exiting loading state");
+      setLoading(false);
     }
-  }, [isAuthenticated, loadDemoVideos]); // Add loadDemoVideos to dependencies
+  }, [isAuthenticated, loadDemoVideos]);
+
+  useEffect(() => {
+    loadGallery();
+  }, [loadGallery]);
 
   // Re-observe video elements when videos or demo videos change
   useEffect(() => {
@@ -1143,6 +1136,7 @@ function GalleryPage() {
             isYouTubeConnected={isYouTubeConnected}
             onConnectYouTube={connectYouTube}
             selectedChannel={selectedYouTubeChannel}
+            onRefresh={loadGallery}
           />
 
           {/* Gallery Tab navigation */}

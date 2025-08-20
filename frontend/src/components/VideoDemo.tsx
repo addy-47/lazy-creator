@@ -592,7 +592,6 @@ const VideoDemo = () => {
               width={1080}
               height={1920}
               className="w-full h-full"
-              loading="lazy"
             ></canvas>
           </div>
 

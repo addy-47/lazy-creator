@@ -6,6 +6,7 @@ import { getAPIBaseURL } from "@/lib/socket";
 interface Video {
   id: string;
   filename: string;
+  gcs_path: string;
   original_prompt: string;
   display_title?: string;
   duration: number;
@@ -50,16 +51,18 @@ const VideoCard: React.FC<VideoCardProps> = ({
   // Generate secure URL with auth token
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (token) {
+    if (token && video.gcs_path) {
+      const filename = video.gcs_path.split("/").pop();
       setVideoUrl(
         `${getAPIBaseURL()}/api/gallery/${
-          video.filename
+          filename
         }?token=${encodeURIComponent(token)}`
       );
-    } else {
-      setVideoUrl(`${getAPIBaseURL()}/api/gallery/${video.filename}`);
+    } else if (video.gcs_path) {
+      const filename = video.gcs_path.split("/").pop();
+      setVideoUrl(`${getAPIBaseURL()}/api/gallery/${filename}`);
     }
-  }, [video.filename]);
+  }, [video.gcs_path]);
 
   const handleVideoLoad = () => {
     setIsLoading(false);

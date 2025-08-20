@@ -20,8 +20,8 @@ export const getAPIBaseURL = (): string => {
 export const getWebSocketURL = (): string => {
   const wsUrl = import.meta.env.VITE_WEBSOCKET_URL;
   if (wsUrl) return wsUrl;
-  const apiBase = getAPIBaseURL().replace(/^http/, "ws");
-  return apiBase.replace(/\/api$/, "");
+  const isProduction = window.location.hostname !== "localhost";
+  return isProduction ? "wss://backend-xyz.run.app" : "ws://localhost:4000";
 };
 
 let socket: Socket;

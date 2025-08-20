@@ -8,13 +8,14 @@ import re
 import time
 import os
 import shutil
+import uuid
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
 # Get temp directory from environment variable or use default
-TEMP_DIR = os.getenv("TEMP_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp"))
+TEMP_DIR = os.getenv("TEMP_DIR", "/tmp")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -161,10 +162,14 @@ def cleanup_temp_directories(max_age_hours=24, specific_dir=None, force_all=Fals
 
     return success
 
-def ensure_output_directory(directory="ai_shorts_output"):
+def ensure_output_directory(directory=None):
     """Ensure the output directory exists."""
-    Path(directory).mkdir(parents=True, exist_ok=True)
-    return directory
+    if directory:
+        output_dir = os.path.join(TEMP_DIR, directory)
+    else:
+        output_dir = os.path.join(TEMP_DIR, str(uuid.uuid4()))
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    return output_dir
 
 def parse_script_to_cards(script):
     """Parse the raw script into a list of cards with text and duration."""

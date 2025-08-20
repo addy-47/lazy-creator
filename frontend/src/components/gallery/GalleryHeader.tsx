@@ -1,5 +1,5 @@
 import React from "react";
-import { SearchIcon, Youtube, ChevronRight } from "lucide-react";
+import { SearchIcon, Youtube, ChevronRight, RefreshCw } from "lucide-react";
 import { Button } from "@/components/Button";
 
 interface GalleryHeaderProps {
@@ -9,6 +9,7 @@ interface GalleryHeaderProps {
   isYouTubeConnected: boolean;
   onConnectYouTube: () => void;
   selectedChannel?: any;
+  onRefresh: () => void;
 }
 
 const GalleryHeader: React.FC<GalleryHeaderProps> = ({
@@ -18,6 +19,7 @@ const GalleryHeader: React.FC<GalleryHeaderProps> = ({
   isYouTubeConnected,
   onConnectYouTube,
   selectedChannel,
+  onRefresh,
 }) => {
   return (
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0 mb-8">
@@ -42,6 +44,14 @@ const GalleryHeader: React.FC<GalleryHeaderProps> = ({
               className="pl-9 py-2 pr-4 rounded-full bg-background border border-input focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none w-full md:w-64"
             />
           </div>
+
+          <Button
+            onClick={onRefresh}
+            className="flex items-center gap-2 rounded-full shrink-0 bg-primary/10 hover:bg-primary/20 text-primary"
+            variant="outline"
+          >
+            <RefreshCw size={16} className="flex-shrink-0" />
+          </Button>
 
           <Button
             onClick={onConnectYouTube}
