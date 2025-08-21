@@ -1,25 +1,24 @@
-FROM node:23-alpine AS build
+# Stage 1: Build the application
+FROM node:20-alpine as build
 
 WORKDIR /app
-COPY package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci
-COPY . .
+COPY frontend/ .
 
-# Build the app for production
 RUN npm run build
 
-# Use Nginx to serve the static files
+# Stage 2: Serve the application with Nginx
 FROM nginx:stable-alpine
 
-# Copy build files from the previous stage
+# Copy built assets from the build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy Nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy the Nginx configuration
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Cloud Run specific: use PORT environment variable
-ENV PORT 8080
+# Expose the port the container will listen on
 EXPOSE 8080
 
-# Update nginx conf to listen on $PORT and start nginx
-CMD sed -i -e 's/$PORT/'"$PORT"'/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]

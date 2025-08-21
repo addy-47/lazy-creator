@@ -1,0 +1,6 @@
+project_id   = "lazycreator-1"
+region       = "us-central1"
+zone         = "us-central1-a"
+vm_name      = "lazycreator"
+sa_email     = "google-credentials@lazycreator-1.iam.gserviceaccount.com"
+ssh_username = "addy"

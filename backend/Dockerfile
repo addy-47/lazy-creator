@@ -1,61 +1,58 @@
-FROM python:3.13-slim
+# Stage 1: Build stage with full build dependencies
+FROM python:3.12-slim as builder
+
+# Install build tools and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    portaudio19-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+WORKDIR /app
+COPY backend/requirements.txt .
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+
+# Stage 2: Final stage with only runtime dependencies
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV FFMPEG_THREADS=2
+ENV FFMPEG_THREADS=4
+ENV MOVIEPY_THREADS=8
+ENV PORT=8080
 
-# Install system dependencies
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    git \
-    portaudio19-dev \
-    python3-dev \
-    gcc \
     imagemagick \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/convert /usr/local/bin/magick
+    && rm -rf /var/lib/apt/lists/*
 
-# Update ImageMagick policy
+# Update ImageMagick policy to allow reading and writing PNGs
 RUN sed -i 's#<policy domain="path" rights="none" pattern="@\*"/>#<policy domain="path" rights="read|write" pattern="@*"/>#g' /etc/ImageMagick-6/policy.xml && \
     sed -i '/<policymap>/a\  <policy domain="coder" rights="read|write" pattern="PNG"/>' /etc/ImageMagick-6/policy.xml
 
+# Copy Python dependencies from builder stage
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/* gunicorn
+
 # Set working directory
 WORKDIR /app
-
-# Copy requirements first
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 # Download NLTK data
 RUN python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
 
 # Copy project files
-COPY . .
+COPY backend/app /app/app
+COPY backend/fonts /app/fonts
 
-# Configure FFmpeg for better performance
-RUN echo "FFREPORT=file=/tmp/ffreport.log:level=32" >> /etc/environment && \
-    mkdir -p /tmp/transcodes && \
-    chmod 777 /tmp/transcodes
+# Expose port
+EXPOSE 8080
 
-# Set environment variables
-ENV USE_AZURE_TTS="false" \
-    AZURE_VOICE="en-US-JennyNeural" \
-    YOUTUBE_TOPIC="Artificial Intelligence" \
-    ENABLE_YOUTUBE_UPLOAD="false" \
-    MEDIA_BUCKET="lazycreator-media" \
-    UPLOADS_BUCKET="lazycreator-uploads" \
-    DEBUG="False" \
-    MONGODB_DB_NAME="lazy-creator" \
-    PORT=8080 \
-    USE_GOOGLE_TTS="true" \
-    GOOGLE_VOICE="en-US-Neural2-D" \
-    MOVIEPY_THREADS=2 \
-    FFMPEG_PRESET=ultrafast \
-    FFMPEG_CRF=28
-
-# Command to run with gunicorn - optimized for video processing
+# Run the application
 CMD exec gunicorn --bind :$PORT \
     --workers 2 \
     --threads 4 \

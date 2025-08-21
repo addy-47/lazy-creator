@@ -1,108 +1,86 @@
+terraform {
+  required_version = ">= 1.6.0"
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.0"
+    }
+  }
+}
+
+provider "google" {
+  project = var.project_id
+  region  = var.region
+  zone    = var.zone
+}
+
+# -------- Static IP --------
+resource "google_compute_address" "public_ip" {
+  name   = "lazycreator-ip"
+  region = var.region
+}
+
+# -------- VM (free-tier) --------
 resource "google_compute_instance" "vm" {
-  project      = var.project_id
   name         = var.vm_name
   machine_type = var.machine_type
   zone         = var.zone
 
   boot_disk {
     initialize_params {
-      image = "debian-cloud/debian-11"
-      size  = 20
+      image = "debian-cloud/debian-12"
+      size  = 10
+      type  = "pd-standard"
     }
   }
 
   network_interface {
     network = "default"
-    access_config {}
+    access_config { nat_ip = google_compute_address.public_ip.address }
   }
 
-  metadata = {
-    ssh-keys = "cloudbuild:${var.ssh_public_key}"
+  # Attach your existing service account to the VM
+  service_account {
+    email  = var.sa_email
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
   }
 
-  metadata_startup_script = <<-EOF
-    #!/bin/bash
-    set -e -x
+  metadata_startup_script = <<-EOT
+    #!/usr/bin/env bash
+    set -euxo pipefail
 
-    # Install dependencies
-    apt-get update
-    apt-get install -y -qq docker.io docker-compose git nginx
+    # Basic updates
+    apt-get update -y
 
-    # Start and enable services
+    # Install Docker
+    apt-get install -y ca-certificates curl gnupg
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+      $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+    apt-get update -y
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+    # Enable Docker at boot
     systemctl enable docker
     systemctl start docker
 
-    # Configure gcloud docker credential helper for the VM's service account
-    gcloud auth configure-docker ${var.region}-docker.pkg.dev
+    # Make a home for app
+    useradd -m -s /bin/bash ${var.ssh_username} || true
+    mkdir -p /opt/lazycreator
+    chown -R ${var.ssh_username}:${var.ssh_username} /opt/lazycreator
 
-    # Set up SSH key for the root user to clone the private GitHub repo
-    mkdir -p /root/.ssh
-    gcloud secrets versions access latest --secret=${var.secret_id} --project=${var.project_id} > /root/.ssh/id_rsa
-    chmod 600 /root/.ssh/id_rsa
-    ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> /root/.ssh/known_hosts
+    # Install Nginx (as reverse proxy)
+    apt-get install -y nginx
+    systemctl enable nginx
+    systemctl start nginx
 
-    # Idempotently clone the repository and set ownership
-    if [ ! -d "/var/www/go-blog-app/.git" ]; then
-      git clone -b cloudbuild git@github.com:${var.github_repo}.git /var/www/go-blog-app
-      chown -R www-data:www-data /var/www/go-blog-app
-    fi
-    EOF
+    # Placeholder nginx until you push real config
+    echo "server { listen 80; server_name _; return 200 'lazycreator placeholder'; }" > /etc/nginx/sites-available/default
+    systemctl reload nginx
+  EOT
 
-  service_account {
-    email  = var.service_account_email
-    scopes = ["cloud-platform"]
-  }
-
-  tags = ["http-server", "ssh"]
-}
-
-variable "project_id" {
-  description = "GCP Project ID"
-  type        = string
-}
-
-variable "region" {
-  description = "GCP Region"
-  type        = string
-}
-
-variable "zone" {
-  description = "GCP Zone"
-  type        = string
-}
-
-variable "vm_name" {
-  description = "Name of the Compute Engine VM"
-  type        = string
-}
-
-variable "machine_type" {
-  description = "Machine type for the VM"
-  type        = string
-}
-
-variable "service_account_email" {
-  description = "Service account email for the VM"
-  type        = string
-}
-
-variable "ssh_public_key" {
-  description = "SSH public key for Cloud Build access to the VM"
-  type        = string
-}
-
-variable "secret_id" {
-  description = "The ID of the Secret Manager secret for the SSH private key."
-  type        = string
-}
-
-variable "github_repo" {
-  description = "The GitHub repository in 'owner/repo' format."
-  type        = string
-}
-
-output "vm_name" { value = google_compute_instance.vm.name }
-
-output "vm_ip" {
-  value = google_compute_instance.vm.network_interface[0].access_config[0].nat_ip
+  tags = ["http-server", "https-server"]
 }
