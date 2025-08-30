@@ -558,7 +558,7 @@ def _create_still_image_clip(image_path, duration, text=None, text_position=('ce
           text=text,
           font_size=font_size,
           color='white',
-          font=r"/home/addy/projects/youtube-shorts-automation/packages/fonts/default_font.ttf",
+          font=r"/app/fonts/default_font.ttf",
           stroke_color='black',
           stroke_width=1,
           method='caption',
@@ -570,7 +570,7 @@ def _create_still_image_clip(image_path, duration, text=None, text_position=('ce
           text=text,
           font_size=font_size,
           color='black',
-          font=r"/home/addy/projects/youtube-shorts-automation/packages/fonts/default_font.ttf",
+          font=r"/app/fonts/default_font.ttf",
           method='caption',
           size=(resolution[0] - 100, None)
       ).with_position((2, 2), relative=True).with_opacity(0.6).with_duration(duration)

@@ -2,6 +2,7 @@ services:
   backend:
     build:
       context: ./backend
+      dockerfile: Dockerfile
     container_name: lazycreator-backend
     env_file:
       - ./backend/app/.env
@@ -11,17 +12,15 @@ services:
       - app-network
     restart: unless-stopped
 
-  frontend:
+  frontend-build:
     build:
       context: ./frontend
-    container_name: lazycreator-frontend
-    command: sh -c "npm run build"
+      dockerfile: Dockerfile
+    container_name: lazycreator-frontend-build
     volumes:
       - ./frontend/dist:/app/dist
     networks:
       - app-network
-    depends_on:
-      - backend
     restart: "no"
 
   proxy:
@@ -39,7 +38,6 @@ services:
       - app-network
     depends_on:
       - backend
-      - frontend
     restart: unless-stopped
 
   certbot:
@@ -48,12 +46,18 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c"
-    command: >
-      "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;"
-    depends_on:
-      - proxy
-    restart: unless-stopped
+    entrypoint: >
+      sh -c "
+        sleep 10;
+        while ! certbot certonly --webroot -w /var/www/certbot --email adhbutg@gmail.com --agree-tos --no-eff-email -d lazycreator.in; do
+          echo 'Certbot failed. Retrying in 5 seconds...'
+          sleep 5
+        done
+        trap exit TERM; while :; do 
+          certbot renew --webroot -w /var/www/certbot; 
+          sleep 12h & wait $${!}; 
+        done
+      "
 
 networks:
   app-network:
