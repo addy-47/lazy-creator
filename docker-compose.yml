@@ -24,7 +24,9 @@ services:
     restart: "no"
 
   proxy:
-    image: nginx:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
     container_name: lazycreator-proxy
     ports:
       - "80:80"
@@ -39,6 +41,27 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    command: >
+      /bin/sh -c "
+        echo 'Starting proxy...';
+        if [ ! -f /etc/letsencrypt/live/lazycreator.in/fullchain.pem ]; then
+          echo 'No certificate found. Generating a self-signed certificate...';
+          mkdir -p /etc/letsencrypt/live/lazycreator.in;
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout /etc/letsencrypt/live/lazycreator.in/privkey.pem \
+            -out /etc/letsencrypt/live/lazycreator.in/fullchain.pem \
+            -subj '/CN=localhost';
+        fi;
+        echo 'Starting Nginx...';
+        nginx -g 'daemon off;' &
+        echo 'Starting certificate watcher...';
+        while true;
+          do
+            inotifywait -e create,modify,delete -r /etc/letsencrypt/live/lazycreator.in;
+            echo 'Certificate files changed. Reloading Nginx.';
+            nginx -s reload;
+          done
+      "
 
   certbot:
     image: certbot/certbot
