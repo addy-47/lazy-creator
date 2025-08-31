@@ -35,7 +35,7 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
       - ./frontend/dist:/usr/share/nginx/html   # serve frontend build
       - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
+      - certbot-www:/var/www/certbot
     networks:
       - app-network
     depends_on:
@@ -68,7 +68,7 @@ services:
     container_name: lazycreator-certbot
     volumes:
       - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
+      - certbot-www:/var/www/certbot
     entrypoint: >
       sh -c "
         sleep 10;
@@ -85,3 +85,6 @@ services:
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  certbot-www:
