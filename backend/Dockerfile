@@ -25,4 +25,5 @@ COPY fonts /app/fonts
 EXPOSE 8000
 
 # Run with gunicorn
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
+
+CMD ["gunicorn", "--workers=2", "--threads=4", "--bind=0.0.0.0:$PORT", "app.main:app"]

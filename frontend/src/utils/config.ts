@@ -10,7 +10,7 @@ export const getAPIBaseURL = (): string => {
   }
 
   // For production
-  return "/api";
+  return import.meta.env.VITE_API_URL || "/api";
 };
 
 /**

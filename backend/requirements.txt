@@ -25,6 +25,7 @@ google-auth-oauthlib==1.2.1
 google-cloud-storage>=2.15.0
 google-cloud-texttospeech>=2.24.0
 googleapis-common-protos>=1.68.0
+google-cloud-secret-manager
 grpcio>=1.57.0
 grpcio-status>=1.57.0
 gTTS==2.5.4

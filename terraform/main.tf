@@ -46,40 +46,25 @@ resource "google_compute_instance" "vm" {
   }
 
   metadata_startup_script = <<-EOT
-    #!/usr/bin/env bash
-    set -euxo pipefail
+    #!/bin/bash
+    set -e
 
-    # Basic updates
+    # Update package list
     apt-get update -y
 
     # Install Docker
-    apt-get install -y ca-certificates curl gnupg
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-      $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
-    apt-get update -y
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    apt-get install -y docker.io
+    usermod -aG docker $USER
 
-    # Enable Docker at boot
+    # Enable and start Docker service
     systemctl enable docker
     systemctl start docker
 
-    # Make a home for app
-    useradd -m -s /bin/bash ${var.ssh_username} || true
-    mkdir -p /opt/lazycreator
-    chown -R ${var.ssh_username}:${var.ssh_username} /opt/lazycreator
-
-    # Install Nginx (as reverse proxy)
-    apt-get install -y nginx
-    systemctl enable nginx
-    systemctl start nginx
-
-    # Placeholder nginx until you push real config
-    echo "server { listen 80; server_name _; return 200 'lazycreator placeholder'; }" > /etc/nginx/sites-available/default
-    systemctl reload nginx
+    # (Optional) Install Docker Compose v2 (built into Docker CLI)
+    # Check if already available
+    if ! docker compose version >/dev/null 2>&1; then
+        apt-get install -y docker-compose
+    fi
   EOT
 
   tags = ["http-server", "https-server"]

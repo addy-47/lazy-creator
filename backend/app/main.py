@@ -651,41 +651,6 @@ def generate_short(current_user):
         logger.error(f"Error in generate-short endpoint: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Check video status
-@app.route('/api/video-status/<video_id>', methods=['GET'])
-@token_required
-def check_video_status(current_user, video_id):
-    try:
-        # Find the video
-        video = videos_collection.find_one({
-            '_id': ObjectId(video_id),
-            'user_id': str(current_user['_id'])  # Ensure video belongs to current user
-        })
-
-        if not video:
-            return jsonify({"status": "error", "message": "Video not found"}), 404
-
-        # Prepare response based on video status
-        status_data = {
-            "status": video.get('status', 'unknown'),
-            "progress": video.get('progress', 0)
-        }
-
-        # If video is completed, include the video details
-        if video.get('status') == 'completed':
-            status_data["video"] = {
-                "id": str(video['_id']),
-                "filename": video.get('filename'),
-                "path": video.get('path'),
-                "created_at": video.get('created_at').strftime('%Y-%m-%d %H:%M:%S')
-            }
-
-        return jsonify(status_data)
-
-    except Exception as e:
-        logger.error(f"Error checking video status: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
 # Get status for a specific video
 @app.route('/api/video-status/<video_id>', methods=['GET'])
 @token_required
