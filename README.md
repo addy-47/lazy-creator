@@ -1,5 +1,9 @@
 # LazyCreator - Automated YouTube Shorts Creation Platform
 
+
+<img width="1825" height="913" alt="Screenshot from 2025-11-01 11-24-27" src="https://github.com/user-attachments/assets/e649efe9-91f9-4c2f-90c4-b9f11adea17b" />
+
+
 LazyCreator is a full-stack application designed to automate the creation of YouTube Shorts. It combines modern frontend technologies with powerful backend services to provide a seamless user experience for content creation.
 
 ## Features
