@@ -1,7 +1,7 @@
 # Lazy Creator Python Director - Core Dependencies
+# Video Generation Engine Only - No Auth, No Database, No Cloud Storage
 Flask
 Flask-Cors
-flask_socketio
 gunicorn
 python-dotenv
 
@@ -9,10 +9,7 @@ python-dotenv
 openai
 google-api-python-client
 google-auth
-google-auth-oauthlib
-google-cloud-storage
 google-cloud-texttospeech
-google-cloud-secret-manager
 moviepy
 Pillow
 numpy
@@ -24,15 +21,10 @@ pydub
 pydantic
 
 # Data & Utilities
-pymongo
-PyJWT
 requests
-requests-oauthlib
 httpx
 psutil
 tqdm
-schedule
 scipy
-sentry-sdk
 nltk
 gTTS

@@ -38,6 +38,48 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Track all video generation tasks
 active_tasks = {}
 
+# Get Go Orchestrator URL for callbacks
+ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:8888")
+
+def notify_orchestrator_completion(task_data: Dict[str, Any]):
+    """
+    Notify the Go orchestrator that video generation is complete.
+    The orchestrator will handle metadata storage and file retrieval.
+    """
+    try:
+        import requests
+        
+        callback_url = f"{ORCHESTRATOR_URL}/api/v1/lzy-director/video-complete"
+        
+        # Prepare payload with video metadata
+        payload = {
+            "task_id": task_data.get("task_id"),
+            "status": "completed",
+            "video_path": task_data.get("video_path"),
+            "thumbnail_path": task_data.get("thumbnail_path"),
+            "metadata": {
+                "title": task_data.get("content", {}).get("title", "Untitled"),
+                "description": task_data.get("content", {}).get("description", ""),
+                "script": task_data.get("content", {}).get("script", ""),
+                "duration_seconds": 0,  # Will be calculated from video
+                "resolution": [1080, 1920],
+                "fps": 30,
+                "background_type": task_data.get("background_type", "video"),
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+        
+        # Send completion notification
+        response = requests.post(callback_url, json=payload, timeout=10)
+        
+        if response.status_code == 200:
+            logger.info(f"Successfully notified orchestrator for task {task_data.get('task_id')}")
+        else:
+            logger.warning(f"Orchestrator callback failed with status {response.status_code}")
+            
+    except Exception as e:
+        logger.error(f"Failed to notify orchestrator: {str(e)}")
+
 # Signal handler for graceful shutdown
 def handle_shutdown_signal(signum, frame):
     logger.info(f"Received shutdown signal {signum}, shutting down gracefully...")
@@ -87,7 +129,7 @@ def generate_short():
         def process_video_task(tid, p, d, bt, bs, bp):
             try:
                 active_tasks[tid] = {"status": "processing", "progress": 0}
-                
+
                 def progress_callback(progress, message, remaining):
                     active_tasks[tid] = {
                         "status": "processing",
@@ -107,15 +149,19 @@ def generate_short():
                     progress_callback=progress_callback
                 )
 
-                # Store result (In a real production environment, this would upload to GCS/S3)
-                # For Phase 3, we keep the file accessible for the Orchestrator to fetch
+                # Store result locally for orchestrator to fetch
                 active_tasks[tid] = {
                     "status": "completed",
                     "progress": 100,
                     "video_path": video_path,
                     "thumbnail_path": thumbnail_path,
-                    "content": comprehensive_content
+                    "content": comprehensive_content,
+                    "background_type": bt
                 }
+                
+                # Notify orchestrator to handle metadata and file retrieval
+                notify_orchestrator_completion(active_tasks[tid])
+                
                 logger.info(f"Task {tid} completed successfully")
 
             except Exception as e:
@@ -138,6 +184,48 @@ def get_task_status(task_id):
     if not task:
         return jsonify({"status": "error", "message": "Task not found"}), 404
     return jsonify(task)
+
+@app.route('/download/<task_id>/video', methods=['GET'])
+def download_video(task_id):
+    """
+    Download video file for a completed task.
+    Called by the Go orchestrator to fetch the video file.
+    """
+    task = active_tasks.get(task_id)
+    if not task or task.get("status") != "completed":
+        return jsonify({"status": "error", "message": "Video not found"}), 404
+    
+    video_path = task.get("video_path")
+    if not video_path or not os.path.exists(video_path):
+        return jsonify({"status": "error", "message": "Video file not found"}), 404
+    
+    return send_file(
+        video_path,
+        mimetype='video/mp4',
+        as_attachment=True,
+        download_name=f"video_{task_id}.mp4"
+    )
+
+@app.route('/download/<task_id>/thumbnail', methods=['GET'])
+def download_thumbnail(task_id):
+    """
+    Download thumbnail file for a completed task.
+    Called by the Go orchestrator to fetch the thumbnail file.
+    """
+    task = active_tasks.get(task_id)
+    if not task or task.get("status") != "completed":
+        return jsonify({"status": "error", "message": "Thumbnail not found"}), 404
+    
+    thumbnail_path = task.get("thumbnail_path")
+    if not thumbnail_path or not os.path.exists(thumbnail_path):
+        return jsonify({"status": "error", "message": "Thumbnail file not found"}), 404
+    
+    return send_file(
+        thumbnail_path,
+        mimetype='image/jpeg',
+        as_attachment=True,
+        download_name=f"thumbnail_{task_id}.jpg"
+    )
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 9999))

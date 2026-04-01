@@ -10,7 +10,6 @@ from .minor_helper import measure_time
 from .text import TextHelper
 from dotenv import load_dotenv
 from typing import Optional, List, Tuple, Dict, Any, Union
-import sys
 import os
 
 load_dotenv()
@@ -45,12 +44,9 @@ logger = logging.getLogger(__name__)
 
 resolution = (1080, 1920)  # Assuming a standard resolution for YouTube Shorts
 
-# Import storage module properly
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from app.video_gen.helpers import storage
-
-# Get temp directory from environment variable or use default
-temp_dir = storage.cloud_storage.get_temp_gcs_path("generated_images")
+# Use local temp directory for generated images
+temp_dir = os.path.join(os.getenv("TEMP_DIR", "/tmp"), "generated_images")
+os.makedirs(temp_dir, exist_ok=True)
 
 @measure_time
 def generate_images_parallel(prompts, style="photorealistic", max_workers=None):

@@ -11,6 +11,7 @@ import (
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/middleware"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/services/auth"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/services/storage"
+	"github.com/addy-47/lazy-creator/lazy-svc/internal/services/video"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/services/youtube"
 	"github.com/gin-gonic/gin"
 )
@@ -40,6 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize storage service: %v", err)
 	}
+	videoHandler := video.NewVideoHandler()
 
 	// 4. Setup Gin
 	gin.SetMode(cfg.GinMode)
@@ -220,6 +222,40 @@ func main() {
 				}
 				c.JSON(http.StatusOK, gin.H{"status": "success", "download_url": url})
 			})
+		}
+
+		// Video Routes (Protected)
+		vd := v1.Group("/videos")
+		vd.Use(middleware.AuthMiddleware(jwtSvc))
+		{
+			// Get user's videos
+			vd.GET("", videoHandler.GetUserVideos)
+			vd.GET("/:id", videoHandler.GetVideo)
+			vd.DELETE("/:id", videoHandler.DeleteVideo)
+
+			// Generate new video
+			vd.POST("/generate", func(c *gin.Context) {
+				// This endpoint calls the Python video generation service
+				// Implementation will forward request to Python service
+				userID := c.GetString("userID")
+
+				// TODO: Implement call to Python service
+				// For now, return placeholder response
+				c.JSON(http.StatusOK, gin.H{
+					"status":  "success",
+					"message": "Video generation request received",
+					"user_id": userID,
+				})
+			})
+		}
+
+		// Python Service Callback Routes (No auth - will use API key in production)
+		lzyDirector := v1.Group("/lzy-director")
+		{
+			// Video completion callback from Python service
+			lzyDirector.POST("/video-complete", videoHandler.VideoComplete)
+			// Progress update callback from Python service
+			lzyDirector.POST("/video-progress", videoHandler.VideoProgress)
 		}
 	}
 
