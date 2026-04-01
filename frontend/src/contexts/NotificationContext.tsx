@@ -50,7 +50,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       // Any other cleanup needed
 
       // Finally redirect to login
-      window.location.href = "/login";
+      window.location.href = "/auth";
     };
 
     // Delay the cleanup and redirect to give the notification time to be seen

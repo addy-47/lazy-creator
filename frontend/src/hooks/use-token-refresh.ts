@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { refreshToken, shouldRefreshToken } from "@/utils/tokenService";
-import { setAuthToken } from "@/lib/socket";
+import { refreshToken, shouldRefreshToken } from "@/services/tokenService";
 
 /**
  * Hook for refreshing the auth token when needed
@@ -29,8 +28,6 @@ export const useTokenRefresh = () => {
       const newToken = await refreshToken();
 
       if (newToken) {
-        // Update axios auth headers
-        setAuthToken(newToken);
         // Update auth context
         refreshAuthState();
         setIsRefreshing(false);
@@ -57,8 +54,6 @@ export const useTokenRefresh = () => {
       const newToken = await refreshToken();
 
       if (newToken) {
-        // Update axios auth headers
-        setAuthToken(newToken);
         // Update auth context
         refreshAuthState();
         setIsRefreshing(false);

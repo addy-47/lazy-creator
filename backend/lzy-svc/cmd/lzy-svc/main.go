@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/config"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/db"
@@ -28,7 +30,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize Firebase service: %v", err)
 	}
-	authHandler := auth.NewAuthHandler(jwtSvc, firebaseSvc)
+	googleOAuthSvc, err := auth.NewGoogleOAuthService(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURI)
+	if err != nil {
+		log.Fatalf("Failed to initialize Google OAuth service: %v", err)
+	}
+	authHandler := auth.NewAuthHandler(jwtSvc, firebaseSvc, googleOAuthSvc)
 	ytSvc := youtube.NewOAuthService(cfg)
 	storageSvc, err := storage.NewStorageService(cfg)
 	if err != nil {
@@ -38,7 +44,7 @@ func main() {
 	// 4. Setup Gin
 	gin.SetMode(cfg.GinMode)
 	r := gin.Default()
-	
+
 	// Add Global Recovery and Logger
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
@@ -74,6 +80,9 @@ func main() {
 		v1.POST("/auth/register", authHandler.Register)
 		v1.POST("/auth/login", authHandler.Login)
 		v1.POST("/auth/firebase-login", authHandler.FirebaseLogin)
+		v1.POST("/auth/google-login", authHandler.GoogleLogin)
+		v1.GET("/auth/google-url", authHandler.GetGoogleAuthURL)
+		v1.GET("/auth/google-callback", authHandler.GoogleAuthCallback)
 		v1.POST("/auth/refresh", authHandler.RefreshToken)
 		v1.POST("/auth/logout", authHandler.Logout)
 
@@ -90,6 +99,59 @@ func main() {
 				})
 			})
 
+			yt.GET("/auth-callback", func(c *gin.Context) {
+				userID := c.GetString("userID")
+				code := c.Query("code")
+				if code == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "authorization code required"})
+					return
+				}
+
+				token, err := ytSvc.ExchangeCode(c.Request.Context(), code, userID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to exchange code: %v", err)})
+					return
+				}
+
+				c.JSON(http.StatusOK, gin.H{
+					"status":     "success",
+					"message":    "YouTube account connected successfully",
+					"token_type": token.TokenType,
+					"expires_in": token.Expiry.Sub(time.Now()).Seconds(),
+				})
+			})
+
+			yt.GET("/channels", func(c *gin.Context) {
+				userID := c.GetString("userID")
+				service, err := ytSvc.GetYouTubeService(c.Request.Context(), userID)
+				if err != nil {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "YouTube account not connected"})
+					return
+				}
+
+				// Get channel information
+				response, err := service.Channels.List([]string{"snippet", "contentDetails"}).Mine(true).Do()
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get channels: %v", err)})
+					return
+				}
+
+				channels := make([]gin.H, 0, len(response.Items))
+				for _, channel := range response.Items {
+					channels = append(channels, gin.H{
+						"id":          channel.Id,
+						"title":       channel.Snippet.Title,
+						"thumbnail":   channel.Snippet.Thumbnails.Default.Url,
+						"subscribers": "hidden", // YouTube API v3 doesn't return subscriber count without additional permissions
+					})
+				}
+
+				c.JSON(http.StatusOK, gin.H{
+					"status":   "success",
+					"channels": channels,
+				})
+			})
+
 			yt.GET("/status", func(c *gin.Context) {
 				userID := c.GetString("userID")
 				authStatus := ytSvc.CheckAuthStatus(c.Request.Context(), userID)
@@ -97,6 +159,32 @@ func main() {
 					"status":        "success",
 					"authenticated": authStatus,
 					"is_connected":  authStatus,
+				})
+			})
+
+			yt.POST("/upload", func(c *gin.Context) {
+				userID := c.GetString("userID")
+
+				// Get YouTube service
+				_, err := ytSvc.GetYouTubeService(c.Request.Context(), userID)
+				if err != nil {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "YouTube account not connected"})
+					return
+				}
+
+				// Get upload URL from query or request body
+				videoURL := c.Query("video_url")
+				if videoURL == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "video_url required"})
+					return
+				}
+
+				// TODO: Implement actual YouTube upload logic
+				// This would download the video from GCS and upload to YouTube
+				c.JSON(http.StatusOK, gin.H{
+					"status":    "success",
+					"message":   "Upload endpoint ready - implementation pending",
+					"video_url": videoURL,
 				})
 			})
 		}

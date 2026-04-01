@@ -240,8 +240,8 @@ def _try_direct_crossfade(
         # Clean up any clips
         try:
             final_clip.close()
-        except:
-            pass
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to close clip during cleanup: {cleanup_err}")
         return False, None
 
 def _try_manual_fades(
@@ -293,8 +293,8 @@ def _try_manual_fades(
             for clip in clips_with_fades:
                 clip.close()
             final_clip.close()
-        except:
-            pass
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to close clips during cleanup: {cleanup_err}")
         return False, None
 
 def _try_simple_concatenation(
@@ -321,8 +321,8 @@ def _try_simple_concatenation(
         logger.error(f"Simple concatenation failed: {e}")
         try:
             final_clip.close()
-        except:
-            pass
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to close clip during cleanup: {cleanup_err}")
         return False, None
 
 def _write_final_clip(clip: Any, output_file: str, preset: str) -> None:

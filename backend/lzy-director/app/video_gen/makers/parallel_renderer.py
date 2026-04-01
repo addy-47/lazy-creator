@@ -249,15 +249,15 @@ def render_clip_with_ffmpeg(
     finally:
         # Clean up any temporary files
         clean_temp_files(temp_files)
-        
+
         # Close MoviePy clip to free memory
         try:
             if hasattr(clip, 'close'):
                 clip.close()
             if hasattr(clip, 'audio') and clip.audio:
                 clip.audio.close()
-        except:
-            pass
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to close clip during cleanup: {cleanup_err}") if logger else None
 
 # ==================== MAIN RENDERING FUNCTION ====================
 

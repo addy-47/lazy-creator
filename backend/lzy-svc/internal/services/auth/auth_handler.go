@@ -11,14 +11,16 @@ import (
 )
 
 type AuthHandler struct {
-	jwtSvc     *JWTService
-	firebaseSvc *FirebaseService
+	jwtSvc         *JWTService
+	firebaseSvc    *FirebaseService
+	googleOAuthSvc *GoogleOAuthService
 }
 
-func NewAuthHandler(jwtSvc *JWTService, firebaseSvc *FirebaseService) *AuthHandler {
+func NewAuthHandler(jwtSvc *JWTService, firebaseSvc *FirebaseService, googleOAuthSvc *GoogleOAuthService) *AuthHandler {
 	return &AuthHandler{
-		jwtSvc:      jwtSvc,
-		firebaseSvc: firebaseSvc,
+		jwtSvc:         jwtSvc,
+		firebaseSvc:    firebaseSvc,
+		googleOAuthSvc: googleOAuthSvc,
 	}
 }
 
@@ -118,7 +120,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header format"})
 		return
 	}
-	
+
 	tokenStr := authHeader[7:]
 	claims, err := h.jwtSvc.ValidateToken(tokenStr)
 	if err != nil {

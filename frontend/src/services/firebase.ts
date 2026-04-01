@@ -4,13 +4,13 @@ import { getAnalytics, isSupported } from "firebase/analytics";
 
 // Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyB940x_nkK1iEjl1jsA4MR-BPXMxmZmgiU",
-  authDomain: "lazycreator.firebaseapp.com",
-  projectId: "lazycreator",
-  storageBucket: "lazycreator.firebasestorage.app",
-  messagingSenderId: "828832636822",
-  appId: "1:828832636822:web:e33a050b533ac72e5247b7",
-  measurementId: "G-SG2LGPMY2E",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize Firebase

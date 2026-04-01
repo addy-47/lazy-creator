@@ -34,7 +34,6 @@ const YouTubeAuthSuccess = lazy(() => import("./pages/YouTubeAuthSuccess"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOFService"));
 const NotFound = lazy(() => import("./pages/NotFound"));
-const DebugLogin = lazy(() => import("./pages/DebugLogin"));
 
 // Loading fallback
 const PageLoader = () => (
@@ -212,7 +211,6 @@ const App = () => {
                         }
                         path="*"
                       />
-                      <Route path="/debug-login" element={<DebugLogin />} />
                     </Routes>
                   </Suspense>
                 </BrowserRouter>

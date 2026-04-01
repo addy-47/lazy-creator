@@ -3,8 +3,8 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
-import { getAPIBaseURL, api, apiWithoutPreflight } from "@/lib/socket";
-import { videoApi, youtubeApi, authApi } from "@/services/apis";
+import { getLzyDirectorBaseURL } from "@/services/config";
+import { videoApi, youtubeApi, authApi, trendingApi, fallbackApi } from "@/services/apis";
 import { useAuth } from "@/contexts/AuthContext";
 
 // Import gallery components
@@ -225,7 +225,7 @@ function GalleryPage() {
   const loadDemoVideos = useCallback((count = 6) => {
     const demos = [];
     // Use the direct path to the demo videos with the API base URL
-    const apiBase = getAPIBaseURL();
+    const apiBase = getLzyDirectorBaseURL();
     const demoPath = "/lazycreator-media/demo/";
     
     // Simple loop to generate demo video objects
@@ -693,7 +693,7 @@ function GalleryPage() {
       if (error.response?.status === 404) {
         // Try alternative endpoint as fallback
         try {
-          const fallbackResponse = await api.delete(`/api/delete/${videoId}`);
+          const fallbackResponse = await fallbackApi.deleteVideo(videoId);
 
           if (
             fallbackResponse.data &&
@@ -730,7 +730,7 @@ function GalleryPage() {
         toast.error(
           "No response from server. The backend service may be down."
         );
-        console.log(`Trying to reach backend at: ${getAPIBaseURL()}`);
+        console.log(`Trying to reach backend at: ${getLzyDirectorBaseURL()}`);
       } else {
         // Error in request setup
         toast.error("Error sending request. Please try again.");
@@ -824,10 +824,8 @@ function GalleryPage() {
         );
 
         try {
-          // Use apiWithoutPreflight to avoid CORS preflight issues
-          const response = await apiWithoutPreflight.get(
-            "/api/youtube-trending-shorts"
-          );
+          // Use trending API from centralized service
+          const response = await trendingApi.getYouTubeShorts();
 
           if (response.data && response.data.shorts) {
             const trendingShorts = response.data.shorts.map((short) => ({

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { getAPIBaseURL } from "../utils/config";
+import { getLzySvcBaseURL } from "@/services/config";
 
 const DebugLogin = () => {
   const [email, setEmail] = useState("");
@@ -14,15 +14,15 @@ const DebugLogin = () => {
     setIsLoading(true);
 
     try {
-      const apiBase = getAPIBaseURL();
+      const apiBase = getLzySvcBaseURL();
       console.log("Using API base:", apiBase);
 
       // Call the real login endpoint
       const response = await axios.post(
-        `${apiBase}/api/login`,
+        `${apiBase}/auth/login`,
         {
           email,
-          password: "debug_password", // Debug password for testing
+          password: import.meta.env.VITE_DEBUG_PASSWORD, // Debug password for testing
           name,
         },
         { headers: { "Content-Type": "application/json" } }

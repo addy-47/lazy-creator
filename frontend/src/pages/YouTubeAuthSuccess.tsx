@@ -3,8 +3,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import axios from "axios";
-import { getAPIBaseURL } from "@/lib/socket";
-import { getToken, setToken } from "@/utils/tokenService";
+import { getLzyDirectorBaseURL } from "@/services/config";
+import { getToken, setToken } from "@/services/tokenService";
 
 export default function YouTubeAuthSuccess() {
   const navigate = useNavigate();
@@ -22,7 +22,7 @@ export default function YouTubeAuthSuccess() {
       pathname: location.pathname,
       search: location.search,
       origin: window.location.origin,
-      apiBaseUrl: getAPIBaseURL(),
+      apiBaseUrl: getLzyDirectorBaseURL(),
       hasOpener: !!window.opener,
     });
 
@@ -171,7 +171,7 @@ export default function YouTubeAuthSuccess() {
         // Redirect the authorization code to our backend
         try {
           // Manually construct callback URL with required params
-          const callbackUrl = `${getAPIBaseURL()}/api/youtube/auth/callback?code=${encodeURIComponent(
+          const callbackUrl = `${getLzyDirectorBaseURL()}/api/youtube/auth/callback?code=${encodeURIComponent(
             code
           )}&state=${encodeURIComponent(
             state
@@ -238,7 +238,7 @@ export default function YouTubeAuthSuccess() {
               // Check if we're connected to YouTube
               console.log("Checking YouTube connection status...");
               const response = await axios.get(
-                `${getAPIBaseURL()}/api/youtube-auth-status`,
+                `${getLzyDirectorBaseURL()}/api/youtube-auth-status`,
                 {
                   headers: {
                     "x-access-token": token,
