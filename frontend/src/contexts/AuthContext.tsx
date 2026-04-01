@@ -5,15 +5,14 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import { setAuthToken, resetSessionExpiredFlag } from "@/lib/socket";
-import {
-  getToken,
-  setToken,
-  clearToken,
-  initializeTokenRefresh,
-  shouldRefreshToken,
-  refreshToken,
-} from "@/utils/tokenService";
+import { 
+  getToken, 
+  setToken, 
+  clearToken, 
+  initializeTokenRefresh, 
+  shouldRefreshToken, 
+  refreshToken 
+} from "@/services/tokenService";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -51,7 +50,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userData = JSON.parse(user);
         setIsAuthenticated(true);
         setUsername(userData.name);
-        setAuthToken(token);
       } catch (e) {
         console.error("Error parsing user data:", e);
         setIsAuthenticated(false);
@@ -71,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const newToken = await refreshToken();
         if (newToken) {
-          setAuthToken(newToken);
           console.log("Token refreshed successfully via AuthContext");
           return true;
         }
@@ -100,12 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = (token: string, user: any) => {
     setToken(token);
     localStorage.setItem("user", JSON.stringify(user));
-    setAuthToken(token);
     setIsAuthenticated(true);
     setUsername(user.name);
-
-    // Reset session expired flag
-    resetSessionExpiredFlag();
 
     // Initialize token refresh mechanism after login
     initializeTokenRefresh();
@@ -114,7 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     clearToken();
     localStorage.removeItem("user");
-    setAuthToken(null);
     setIsAuthenticated(false);
     setIsYouTubeConnected(false);
     setUsername(undefined);

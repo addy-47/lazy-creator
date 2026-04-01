@@ -2,7 +2,6 @@ import React from "react";
 import { Youtube, ExternalLink, Film, RefreshCw } from "lucide-react";
 import { InfiniteMovingCards } from "@/components/ui/infinite-moving-cards";
 import { DemoVideo } from "./types";
-import { getAPIBaseURL } from "@/lib/socket";
 
 interface TrendingYouTubeShortsProps {
   demoVideos: DemoVideo[];

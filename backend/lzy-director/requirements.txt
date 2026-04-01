@@ -1,0 +1,38 @@
+# Lazy Creator Python Director - Core Dependencies
+Flask
+Flask-Cors
+flask_socketio
+gunicorn
+python-dotenv
+
+# AI & Media Processing
+openai
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-cloud-storage
+google-cloud-texttospeech
+google-cloud-secret-manager
+moviepy
+Pillow
+numpy
+opencv-python
+imageio
+imageio-ffmpeg
+ffmpeg-python
+pydub
+pydantic
+
+# Data & Utilities
+pymongo
+PyJWT
+requests
+requests-oauthlib
+httpx
+psutil
+tqdm
+schedule
+scipy
+sentry-sdk
+nltk
+gTTS

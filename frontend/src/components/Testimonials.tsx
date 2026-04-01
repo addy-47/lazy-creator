@@ -6,7 +6,6 @@ import {
   ArrowDown,
   Star,
 } from "lucide-react";
-import StickFigureAnimation from "./StickFigureAnimation";
 
 const testimonialsData = [
   {

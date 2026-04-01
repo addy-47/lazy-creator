@@ -7,7 +7,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreVertical, Download, Youtube, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
 interface VideoActionMenuProps {
   videoId: string;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -15,30 +15,20 @@ import {
 import Logo from "@/components/Logo";
 import { toast } from "sonner";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { AUTH_CHANGE_EVENT } from "@/App";
-import { setAuthToken } from "@/lib/socket";
 import { useAuth } from "@/contexts/AuthContext";
-import { getAPIBaseURL } from "@/lib/socket";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { authApi } from "@/services/apis";
+import { setToken } from "@/services/tokenService";
+
+
 
 // Import Firebase auth functions and providers
 import {
   signInWithPopup,
   GoogleAuthProvider,
-  OAuthProvider,
   FacebookAuthProvider,
 } from "firebase/auth";
-import { auth } from "@/firebase"; // Import the pre-configured auth instance
+import { auth } from "@/services/firebase"; // Import the pre-configured auth instance
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -98,62 +88,44 @@ const Auth = () => {
     setIsSubmitting(true);
 
     try {
-      // Determine which endpoint to call based on whether signing in or signing up
-      const endpoint = isSignIn ? "login" : "register";
+      // Determine which method to call based on whether signing in or signing up
+      const apiCall = isSignIn 
+        ? authApi.login({ email, password })
+        : authApi.register({ email, password, name });
 
-      // Call the actual backend authentication endpoint
-      const response = await fetch(`${getAPIBaseURL()}/api/${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          name: isSignIn ? undefined : name,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Authentication failed");
-      }
+      const response = await apiCall;
+      const data = response.data;
 
       // Use the actual token from the backend
       const token = data.token;
+
+      if (!token) {
+        throw new Error("No token received from server");
+      }
 
       const userData = {
         email,
         name: data.user?.name || (isSignIn ? "User" : name),
       };
 
-      // Store user info and token in localStorage
+      // Store token and user info
+      setToken(token);
       localStorage.setItem("user", JSON.stringify(userData));
-      localStorage.setItem("token", token);
-
-      // Set the auth token for API requests
-      setAuthToken(token);
 
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
       refreshAuthState();
 
       if (isSignIn) {
-        console.log("Sign in successful");
         toast.success("Successfully signed in!");
       } else {
-        console.log("Sign up successful");
         toast.success("Account created successfully!");
       }
 
       navigate("/");
-    } catch (error) {
-      toast.error(
-        isSignIn
-          ? "Failed to sign in. Please try again."
-          : "Failed to create account. Please try again."
-      );
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.message;
+      toast.error(message || (isSignIn ? "Failed to sign in" : "Failed to create account"));
     } finally {
       setIsSubmitting(false);
     }
@@ -166,31 +138,21 @@ const Auth = () => {
     try {
       const result = await signInWithPopup(auth, provider);
 
-      // Use regular login endpoint instead of social-login
-      const response = await fetch(`${getAPIBaseURL()}/api/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: result.user.email,
-          // Use a special password format that indicates this is a social login
-          password: `FIREBASE_AUTH_${result.user.uid}`,
-          name: result.user.displayName || "User",
-          provider: "google",
-          providerId: result.user.uid,
-        }),
-      });
+      // Get the ID token from Firebase
+      const idToken = await result.user.getIdToken();
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Authentication failed");
-      }
+      // Call the actual backend authentication endpoint via authApi
+      const response = await authApi.firebaseLogin(idToken);
+      const data = response.data;
 
       // Use the token from the backend
       const token = data.token;
+      
+      if (!token) {
+        throw new Error("No token received from backend");
+      }
 
+      setToken(token);
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -199,21 +161,16 @@ const Auth = () => {
         })
       );
 
-      // Store token in localStorage
-      localStorage.setItem("token", token);
-
-      // Set the auth token for API requests
-      setAuthToken(token);
-
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
       refreshAuthState();
 
       toast.success("Signed in with Google successfully!");
       navigate("/");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Google sign in failed. Please try again.");
+      const message = error.response?.data?.message || error.message;
+      toast.error(message || "Google sign in failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -226,31 +183,21 @@ const Auth = () => {
     try {
       const result = await signInWithPopup(auth, provider);
 
-      // Use regular login endpoint instead of social-login
-      const response = await fetch(`${getAPIBaseURL()}/api/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: result.user.email,
-          // Use a special password format that indicates this is a social login
-          password: `FIREBASE_AUTH_${result.user.uid}`,
-          name: result.user.displayName || "User",
-          provider: "facebook",
-          providerId: result.user.uid,
-        }),
-      });
+      // Get the ID token from Firebase
+      const idToken = await result.user.getIdToken();
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Authentication failed");
-      }
+      // Call the actual backend authentication endpoint via authApi
+      const response = await authApi.firebaseLogin(idToken);
+      const data = response.data;
 
       // Use the token from the backend
       const token = data.token;
 
+      if (!token) {
+        throw new Error("No token received from backend");
+      }
+
+      setToken(token);
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -259,21 +206,16 @@ const Auth = () => {
         })
       );
 
-      // Store token in localStorage
-      localStorage.setItem("token", token);
-
-      // Set the auth token for API requests
-      setAuthToken(token);
-
       // Dispatch auth change event and refresh auth state
       window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
       refreshAuthState();
 
       toast.success("Signed in with Facebook successfully!");
       navigate("/");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Facebook sign in failed. Please try again.");
+      const message = error.response?.data?.message || error.message;
+      toast.error(message || "Facebook sign in failed");
     } finally {
       setIsSubmitting(false);
     }

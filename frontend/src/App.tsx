@@ -1,3 +1,15 @@
+import { useEffect, lazy, Suspense } from "react";
+import SmoothScroll from "./components/SmoothScroll";
+import PageTransition from "./components/PageTransition";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { 
+  initializeTokenRefresh, 
+  SESSION_EXPIRED_EVENT 
+} from "@/services/tokenService";
+import {
+  NotificationProvider,
+  useNotification,
+} from "./contexts/NotificationContext";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,27 +22,26 @@ import {
   useLocation,
 } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import Index from "./pages/Index";
-import Create from "./pages/Create";
-import Auth from "./pages/Auth";
-import Learn from "./pages/learn";
-import Gallery from "./pages/gallery";
-import Processing from "./pages/Processing";
-import YouTubeAuthSuccess from "./pages/YouTubeAuthSuccess";
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import TermsOfService from "./pages/TermsOFService";
-import NotFound from "./pages/NotFound";
-import { createContext, useEffect, useState, useCallback } from "react";
-import PageTransition from "./components/PageTransition";
-import DebugLogin from "./pages/DebugLogin";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { initializeTokenRefresh } from "@/utils/tokenService";
-import {
-  NotificationProvider,
-  useNotification,
-} from "./contexts/NotificationContext";
-import { SESSION_EXPIRED_EVENT } from "./utils/tokenService";
-import { resetSessionExpiredFlag } from "./lib/socket";
+
+// Lazy load pages for performance
+const Index = lazy(() => import("./pages/Index"));
+const Create = lazy(() => import("./pages/Create"));
+const Auth = lazy(() => import("./pages/Auth"));
+const Learn = lazy(() => import("./pages/learn"));
+const Gallery = lazy(() => import("./pages/gallery"));
+const Processing = lazy(() => import("./pages/Processing"));
+const YouTubeAuthSuccess = lazy(() => import("./pages/YouTubeAuthSuccess"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("./pages/TermsOFService"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const DebugLogin = lazy(() => import("./pages/DebugLogin"));
+
+// Loading fallback
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen bg-background">
+    <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+  </div>
+);
 
 // Create a custom event for auth changes
 export const AUTH_CHANGE_EVENT = "auth-change";
@@ -87,9 +98,6 @@ const SessionExpirationHandler = () => {
     // Add event listener for session expiration
     window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
 
-    // Reset the session expired flag when component mounts
-    resetSessionExpiredFlag();
-
     // Cleanup listener when component unmounts
     return () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
@@ -120,91 +128,95 @@ const App = () => {
             <TooltipProvider>
               <Toaster />
               <Sonner />
-              <BrowserRouter>
-                <Routes>
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <Index />
-                      </RouteTransition>
-                    }
-                    path="/"
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <Create />
-                      </RouteTransition>
-                    }
-                    path="/create"
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <Learn />
-                      </RouteTransition>
-                    }
-                    path="/learn"
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <Gallery />
-                      </RouteTransition>
-                    }
-                    path="/gallery"
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <Processing />
-                      </RouteTransition>
-                    }
-                    path="/processing"
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <YouTubeAuthSuccess />
-                      </RouteTransition>
-                    }
-                    path="/youtube-auth-success"
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <TermsOfService />
-                      </RouteTransition>
-                    }
-                    path="/terms-of-service"
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <PrivacyPolicy />
-                      </RouteTransition>
-                    }
-                    path="/privacy-policy"
-                  />
-                  <Route
-                    path="/auth"
-                    element={
-                      <RouteWithAuth>
-                        <Auth />
-                      </RouteWithAuth>
-                    }
-                  />
-                  <Route
-                    element={
-                      <RouteTransition>
-                        <NotFound />
-                      </RouteTransition>
-                    }
-                    path="*"
-                  />
-                  <Route path="/debug-login" element={<DebugLogin />} />
-                </Routes>
-              </BrowserRouter>
+              <SmoothScroll>
+                <BrowserRouter>
+                  <Suspense fallback={<PageLoader />}>
+                    <Routes>
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <Index />
+                          </RouteTransition>
+                        }
+                        path="/"
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <Create />
+                          </RouteTransition>
+                        }
+                        path="/create"
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <Learn />
+                          </RouteTransition>
+                        }
+                        path="/learn"
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <Gallery />
+                          </RouteTransition>
+                        }
+                        path="/gallery"
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <Processing />
+                          </RouteTransition>
+                        }
+                        path="/processing"
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <YouTubeAuthSuccess />
+                          </RouteTransition>
+                        }
+                        path="/youtube-auth-success"
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <TermsOfService />
+                          </RouteTransition>
+                        }
+                        path="/terms-of-service"
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <PrivacyPolicy />
+                          </RouteTransition>
+                        }
+                        path="/privacy-policy"
+                      />
+                      <Route
+                        path="/auth"
+                        element={
+                          <RouteWithAuth>
+                            <Auth />
+                          </RouteWithAuth>
+                        }
+                      />
+                      <Route
+                        element={
+                          <RouteTransition>
+                            <NotFound />
+                          </RouteTransition>
+                        }
+                        path="*"
+                      />
+                      <Route path="/debug-login" element={<DebugLogin />} />
+                    </Routes>
+                  </Suspense>
+                </BrowserRouter>
+              </SmoothScroll>
             </TooltipProvider>
           </NotificationProvider>
         </AuthProvider>

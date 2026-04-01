@@ -1,13 +1,12 @@
 import { useState, useEffect, useReducer, useCallback, useRef } from "react";
-import { NavLink, useLocation } from "react-router-dom";
-import { Menu, X, Sun, Moon, LogIn, User, Youtube } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { Menu, X, Sun, Moon, LogIn, User } from "lucide-react";
 import { Button } from "@/components/Button";
 import Logo from "./Logo";
 import { AUTH_CHANGE_EVENT } from "../App";
 import { useTheme } from "next-themes";
-import { setAuthToken } from "@/lib/socket";
 import axios from "axios";
-import { getAPIBaseURL } from "@/lib/socket";
+import { getLzySvcBaseURL } from "@/services/config";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface NavbarProps {
@@ -58,6 +57,7 @@ const ConnectionSphere = ({ isConnected }: { isConnected: boolean }) => {
 };
 
 const Navbar = ({ username, disableNavigation }: NavbarProps) => {
+  const navigate = useNavigate();
   // Add forceUpdate function to force re-renders
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
@@ -71,7 +71,7 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   // Initialize from props
-  const { isAuthenticated, setYouTubeConnected, isYouTubeConnected } =
+  const { isAuthenticated, setYouTubeConnected, isYouTubeConnected, logout } =
     useAuth();
 
   // Theme toggle
@@ -111,7 +111,7 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
       console.log("Checking YouTube connection status...");
 
       // Use the consistent endpoint
-      const endpoint = `${getAPIBaseURL()}/api/youtube-auth-status`;
+      const endpoint = `${getLzySvcBaseURL()}/youtube-auth-status`;
 
       // Add error handling with retry
       let attempts = 0;
@@ -259,19 +259,8 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
   ];
 
   const handleSignOut = () => {
-    // Remove user data and token
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
-
-    // Clear the auth token for API requests
-    setAuthToken(null);
-
-    setCurrentUsername(undefined);
-    forceUpdate();
-
-    // Trigger auth change event
-    window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
-    window.location.href = "/"; // Reload the page to update auth state
+    logout();
+    navigate("/"); // Navigate to home
   };
 
   // Check auth status on every render

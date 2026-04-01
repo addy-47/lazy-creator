@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
-import { getAPIBaseURL } from "@/lib/socket";
+import { youtubeApi } from "@/services/apis";
 import { toast } from "sonner";
 import {
   Youtube,
@@ -141,14 +140,7 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
         return;
       }
 
-      const response = await axios.get(
-        `${getAPIBaseURL()}/api/youtube-auth-status`,
-        {
-          headers: {
-            "x-access-token": token,
-          },
-        }
-      );
+      const response = await youtubeApi.getStatus();
 
       if (response.data.status === "success") {
         const connected =
@@ -169,14 +161,11 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
           }
         } else {
           // Don't show an error message for not being connected initially
-          // This is an expected state - only show errors on explicit connection attempts
           console.log("Not connected to YouTube yet");
         }
       }
     } catch (error) {
       console.error("Error checking YouTube connection:", error);
-      // Don't show error message for initial connection check
-      // Only show if this was from an explicit user action
       if (shouldFetchChannels) {
         setErrorMessage("Failed to check YouTube connection status");
       }
@@ -192,22 +181,9 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
 
     setLoadingChannels(true);
     try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        setLoadingChannels(false);
-        return;
-      }
-
       console.log("Fetching YouTube channels...");
 
-      const response = await axios.get(
-        `${getAPIBaseURL()}/api/youtube/channels`,
-        {
-          headers: {
-            "x-access-token": token,
-          },
-        }
-      );
+      const response = await youtubeApi.getChannels();
 
       console.log(
         "YouTube channels response data:",
@@ -311,16 +287,8 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
       }
 
       // Step 1: Get YouTube auth URL
-      const response = await axios.get(
-        `${getAPIBaseURL()}/api/youtube/auth/start`,
-        {
-          headers: {
-            "x-access-token": token,
-          },
-          params: {
-            redirect_uri: `${window.location.origin}/youtube-auth-success`,
-          },
-        }
+      const response = await youtubeApi.startAuth(
+        `${window.location.origin}/youtube-auth-success`
       );
 
       if (response.data.status === "success" && response.data.auth_url) {
@@ -358,15 +326,12 @@ const YouTubeConnect: React.FC<YouTubeConnectProps> = ({
               toast.info("Verifying connection...");
               
               // Use a progressive check system with multiple delays
-              // First attempt after 2 seconds
               setTimeout(() => {
                 checkConnectionStatus(false);
                 
-                // Second attempt after 4 seconds total (2+2)
                 setTimeout(() => {
                   checkConnectionStatus(false);
                   
-                  // Final attempt after 7 seconds total (2+2+3)
                   setTimeout(() => {
                     checkConnectionStatus(true);
                     setIsConnecting(false);

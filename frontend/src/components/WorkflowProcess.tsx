@@ -1,12 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Lightbulb, Settings, MonitorPlay, Upload } from "lucide-react";
-import {
-  throttle,
-  rafScroll,
-  addPassiveEventListener,
-  debounce,
-  isInViewport,
-} from "@/utils/scroll";
+
+
 
 // Pre-define the step data outside the component to avoid recreating on each render
 const workflowSteps = [

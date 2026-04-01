@@ -1,29 +1,23 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
-import axios from "axios";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getAPIBaseURL, api, apiWithoutPreflight } from "@/lib/socket";
+import { videoApi, youtubeApi, authApi } from "@/services/apis";
 import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/use-toast";
-import { Youtube, ChevronRight } from "lucide-react";
 
 // Import gallery components
 import GalleryHeader from "@/components/gallery/GalleryHeader";
 import TabNavigation from "@/components/gallery/TabNavigation";
 import MyVideosSection from "@/components/gallery/MyVideosSection";
 import ExploreSection from "@/components/gallery/ExploreSection";
-import VideoDialog from "@/components/gallery/VideoDialog";
-import UploadFormDialog from "@/components/gallery/UploadFormDialog";
 import {
   Video,
   DemoVideo,
   UploadData,
   YouTubeChannel,
 } from "@/components/gallery/types";
-import YouTubeConnect from "@/components/YouTubeConnect";
 
 // Lazy load non-critical components
 const LazyVideoDialog = React.lazy(() => import("@/components/gallery/VideoDialog"));
@@ -113,59 +107,10 @@ function GalleryPage() {
 
     setIsCheckingAuth(true);
     const toastId = toast.loading("Checking YouTube connection status...");
-
     try {
-      // Check cache first
-      const cacheKey = `youtube-auth-status-${token.substring(0, 10)}`;
-      if (requestCache.current.has(cacheKey)) {
-        const cachedData = requestCache.current.get(cacheKey);
-        const cacheAge = Date.now() - cachedData.timestamp;
-        // Use cache if less than 5 minutes old
-        if (cacheAge < 300000) {
-          toast.dismiss(toastId);
-          handleAuthResponse(cachedData.data);
-          setIsCheckingAuth(false);
-          return;
-        }
-      }
-
-      // Use a progressive retry approach with increasing delays
-      let retryCount = 0;
-      const maxRetries = 3;
-      const tryAuthCheck = async () => {
-        try {
-          // Use direct approach with proper headers
-          const response = await axios.get(
-            `${getAPIBaseURL()}/api/youtube-auth-status`,
-            {
-              headers: {
-                "x-access-token": token,
-                "Content-Type": "application/json",
-              },
-            }
-          );
-
-          // Cache the response
-          requestCache.current.set(cacheKey, {
-            data: response.data,
-            timestamp: Date.now()
-          });
-
-          return response.data;
-        } catch (error) {
-          console.error(`YouTube auth retry ${retryCount} failed:`, error);
-          if (retryCount < maxRetries - 1) {
-            retryCount++;
-            // Increasing delay: 1s, 2s, 4s
-            const delay = Math.pow(2, retryCount - 1) * 1000;
-            await new Promise(r => setTimeout(r, delay));
-            return await tryAuthCheck();
-          }
-          throw error;
-        }
-      };
-
-      const data = await tryAuthCheck();
+      const response = await youtubeApi.getStatus();
+      const data = response.data;
+      
       toast.dismiss(toastId);
       handleAuthResponse(data);
     } catch (error: any) {
@@ -316,19 +261,7 @@ function GalleryPage() {
       console.log("User authenticated, fetching videos");
       
       try {
-        // Simple, direct API call
-        const token = localStorage.getItem("token");
-        if (!token) {
-          throw new Error("No auth token found");
-        }
-        
-        const response = await axios.get(`${getAPIBaseURL()}/api/gallery`, {
-          headers: {
-            "x-access-token": token,
-            "Content-Type": "application/json"
-          },
-          timeout: 8000 // 8 second timeout
-        });
+        const response = await videoApi.getGallery();
         
         if (response.data && response.data.videos) {
           console.log(`Loaded ${response.data.videos.length} videos successfully`);
@@ -488,15 +421,8 @@ function GalleryPage() {
   const handleDownload = async (videoId: string) => {
     try {
       setDownloadingVideoId(videoId);
-      const response = await api.get(`/api/download/${videoId}`, {
-        responseType: "blob",
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data], {type: 'video/mp4'}));
-      window.open(url, '_blank');
-      
-      toast.success("Your video is opening in a new tab.");
-
+      await videoApi.download(videoId, "video.mp4");
+      toast.success("Download started!");
     } catch (error: any) {
       console.error("Error downloading video:", error);
       toast.error("Failed to download video");
@@ -525,15 +451,7 @@ function GalleryPage() {
 
       // Use direct approach with proper headers
       console.log("Making API request to fetch channels");
-      const response = await axios.get(
-        `${getAPIBaseURL()}/api/youtube/channels`,
-        {
-          headers: {
-            "x-access-token": token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const response = await youtubeApi.getChannels();
 
       console.log("Channel API response data:", JSON.stringify(response.data));
 
@@ -650,21 +568,14 @@ function GalleryPage() {
 
       try {
         // Send upload request to the server with video metadata
-        const response = await api.post(
-          `/api/upload-to-youtube/${videoId}`,
-          {
-            title,
-            description,
-            tags: tags.split(",").map((tag) => tag.trim()),
-            useThumbnail,
-            privacyStatus,
-            channelId,
-          },
-          {
-            // Add a longer timeout for uploads
-            timeout: 120000, // 2 minutes
-          }
-        );
+        const response = await youtubeApi.upload(videoId, {
+          title,
+          description,
+          tags: tags.split(",").map((tag) => tag.trim()),
+          useThumbnail,
+          privacyStatus,
+          channelId,
+        });
 
         // Dismiss the loading toast
         toast.dismiss(toastId);
@@ -761,23 +672,17 @@ function GalleryPage() {
     const toastId = toast.loading("Deleting video...");
 
     try {
-      // Make API request using api instance
-      const response = await api.delete(`/api/delete-video/${videoId}`);
+      const response = await videoApi.delete(videoId);
 
       // Handle success
       toast.dismiss(toastId);
 
-      if (
-        response.data &&
-        (response.data.status === "success" || response.status === 200)
-      ) {
-        // Remove from state
+      if (response.data?.status === "success" || response.status === 200) {
         setVideos((prevVideos) =>
           prevVideos.filter((video) => video.id !== videoId)
         );
         toast.success("Video deleted successfully");
       } else {
-        console.error("Delete response:", response.data);
         toast.error(response.data?.message || "Failed to delete video");
       }
     } catch (error: any) {

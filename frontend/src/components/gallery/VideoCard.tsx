@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Film, Youtube } from "lucide-react";
+import { Youtube } from "lucide-react";
 import VideoActionMenu from "@/components/VideoActionMenu";
-import { getAPIBaseURL } from "@/lib/socket";
+import { videoApi } from "@/services/apis";
 
 interface Video {
   id: string;
@@ -50,19 +50,13 @@ const VideoCard: React.FC<VideoCardProps> = ({
 
   // Generate secure URL with auth token
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token && video.gcs_path) {
-      const filename = video.gcs_path.split("/").pop();
-      setVideoUrl(
-        `${getAPIBaseURL()}/api/gallery/${
-          filename
-        }?token=${encodeURIComponent(token)}`
-      );
+    if (video.filename) {
+      setVideoUrl(videoApi.getVideoUrl(video.filename));
     } else if (video.gcs_path) {
-      const filename = video.gcs_path.split("/").pop();
-      setVideoUrl(`${getAPIBaseURL()}/api/gallery/${filename}`);
+      const filename = video.gcs_path.split("/").pop() || "";
+      setVideoUrl(videoApi.getVideoUrl(filename));
     }
-  }, [video.gcs_path]);
+  }, [video.filename, video.gcs_path]);
 
   const handleVideoLoad = () => {
     setIsLoading(false);

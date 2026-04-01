@@ -1,13 +1,8 @@
 import { useState, useEffect } from "react";
 import { MessageSquare } from "lucide-react";
 import { Textarea } from "./ui/textarea";
-import { ScrollArea } from "./ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
+
 
 const predefinedPrompts = [
   {

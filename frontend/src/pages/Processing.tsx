@@ -1,18 +1,17 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { api, connectWebSocket, joinVideoRoom, leaveVideoRoom } from "@/lib/socket";
+import { videoApi } from "@/services/apis";
+import { PollingService } from "@/services/pollingService";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { motion } from "framer-motion";
 import { X, Info } from "lucide-react";
 import LazyCreatorLoader from "@/components/LazyCreatorLoader";
-import { getToken } from "@/utils/tokenService";
 
 const ProcessingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -75,42 +74,32 @@ const ProcessingPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [startTime, status]);
 
-  // WebSocket connection
+  // Polling for status
   useEffect(() => {
     if (!videoId || !isAuthenticated) return;
 
-    const token = getToken();
-    if (!token) return;
-
-    const socket = connectWebSocket(token);
-    joinVideoRoom(videoId);
-
-    socket.on("progress_update", (data) => {
-      setProgress(data.progress);
-      setProgressStage(data.message);
-      if (data.estimated_time_remaining) {
-        setEstimatedTime(data.estimated_time_remaining);
+    // Use PollingService instead of WebSocket
+    PollingService.startPolling(videoId, {
+      onUpdate: (data) => {
+        if (data.progress !== undefined) setProgress(data.progress || 0);
+        if (data.status_message) setProgressStage(data.status_message);
+        if (data.estimated_time !== undefined) setEstimatedTime(data.estimated_time);
+        if (data.status) setStatus(data.status);
+      },
+      onSuccess: () => {
+        toast.success("Video generation completed!");
+        localStorage.removeItem("videoCreationInProgress");
+        setTimeout(() => navigate("/gallery"), 1500);
+      },
+      onError: (error) => {
+        setStatus("error");
+        toast.error(error.message || "Generation failed");
+        localStorage.removeItem("videoCreationInProgress");
       }
-      if (data.status) {
-        setStatus(data.status);
-        if (data.status === "completed") {
-          toast.success("Video generation completed!");
-          localStorage.removeItem("videoCreationInProgress");
-          setTimeout(() => navigate("/gallery"), 1500);
-        }
-      }
-    });
-
-    socket.on("generation_failed", (data) => {
-      setStatus("error");
-      toast.error(data.error);
-      localStorage.removeItem("videoCreationInProgress");
     });
 
     return () => {
-      leaveVideoRoom(videoId);
-      socket.off("progress_update");
-      socket.off("generation_failed");
+      PollingService.stopPolling(videoId);
     };
   }, [videoId, isAuthenticated, navigate]);
 
@@ -120,18 +109,14 @@ const ProcessingPage: React.FC = () => {
 
     setIsCancelling(true);
     try {
-      const response = await api.post(`/api/cancel-video/${videoId}`);
-      if (response.data.status === "success") {
+      const response = await videoApi.cancel(videoId);
+      if (response.data.status === "success" || response.status === 200) {
         toast.success("Video generation cancelled");
         setStatus("cancelled");
-        // Clear the in-progress flag
         localStorage.removeItem("videoCreationInProgress");
-        // Redirect to create page
         setTimeout(() => navigate("/create"), 1500);
       } else {
-        throw new Error(
-          response.data.message || "Failed to cancel video generation"
-        );
+        throw new Error(response.data.message || "Failed to cancel");
       }
     } catch (error) {
       console.error("Error cancelling video:", error);

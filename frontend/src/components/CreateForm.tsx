@@ -1,18 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { ArrowRight, Info } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "./Button";
 import PromptSelector from "./PromptSelector";
 import DurationSlider from "./DurationSlider";
 import BackgroundSelector from "./BackgroundSelector";
 import { toast } from "sonner";
-import { getAPIBaseURL } from "@/lib/socket";
+import { videoApi } from "@/services/apis";
 import { scrollToStep } from "@/utils/step-transition";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,7 +21,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { StepCard } from "./ui/step-card";
 import { FormProgress } from "./ui/form-progress";
-import { LoadingSpinner } from "./ui/loading-spinner";
 import { LiveRegion } from "./ui/live-region";
 import { useNavigate } from "react-router-dom";
 import { useStepFocus } from "@/hooks/use-step-focus";
@@ -346,44 +341,21 @@ const CreateForm = () => {
         formData.append("background_file", backgroundFile);
       }
 
-      // Get authentication token
-      const token = localStorage.getItem("token");
-      if (!token) {
-        toast.error(
-          "You need to be logged in to create videos. Please log in and try again."
-        );
-        setIsGenerating(false);
-        navigate("/auth");
-        return;
-      }
-
-      // Start the video generation process with authentication
-      const response = await fetch(`${getAPIBaseURL()}/api/generate-short`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          "x-access-token": token,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to generate video");
-      }
-
-      const data = await response.json();
+      // Start the video generation process via videoApi
+      const response = await videoApi.generate(formData);
+      const data = response.data;
+      
       console.log("Generation started:", data);
 
-      if (data.status === "processing") {
+      if (data.status === "processing" || data.video_id) {
         // Set flag that video creation is in progress
         localStorage.setItem("videoCreationInProgress", "true");
 
-        // Show toast notification that the process has started
         toast.success(
           "Video creation started! You'll be redirected to the processing page."
         );
 
-        // Navigate to processing page with video ID and additional context
+        // Navigate to processing page
         const videoContext = {
           prompt: prompt,
           duration: duration,
@@ -391,7 +363,8 @@ const CreateForm = () => {
           customPrompt: isCustomPrompt
         };
         
-        navigate(`/processing?id=${data.video_id}&duration=${duration * 6}&context=${encodeURIComponent(JSON.stringify(videoContext))}`);
+        const videoId = data.video_id || data.id;
+        navigate(`/processing?id=${videoId}&duration=${duration * 6}&context=${encodeURIComponent(JSON.stringify(videoContext))}`);
       } else {
         throw new Error(data.message || "Failed to start video generation");
       }
@@ -460,11 +433,7 @@ const CreateForm = () => {
           <div className="aspect-[9/16] max-w-[280px] mx-auto rounded-lg overflow-hidden bg-black flex items-center justify-center">
             {videoData ? (
               <video
-                src={`${getAPIBaseURL()}/api/gallery/${
-                  videoData.filename
-                }?token=${encodeURIComponent(
-                  localStorage.getItem("token") || ""
-                )}`}
+                src={videoApi.getVideoUrl(videoData.filename)}
                 controls
                 autoPlay
                 className="w-full h-full object-contain"
@@ -479,46 +448,10 @@ const CreateForm = () => {
           <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
             {videoData && (
               <Button
-                onClick={async () => {
-                  try {
-                    // Get authentication token
-                    const token = localStorage.getItem("token");
-                    if (!token) {
-                      toast.error("Authentication required to download");
-                      return;
-                    }
-
-                    // Use the download API which handles authentication
-                    const response = await fetch(
-                      `${getAPIBaseURL()}/api/download/${videoData.id}`,
-                      {
-                        headers: {
-                          "x-access-token": token,
-                        },
-                      }
-                    );
-
-                    if (!response.ok) {
-                      throw new Error("Failed to download video");
-                    }
-
-                    const blob = await response.blob();
-                    const url = URL.createObjectURL(blob);
-
-                    // Create download link
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.download = videoData.filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    URL.revokeObjectURL(url);
-
-                    toast.success("Download started!");
-                  } catch (error) {
-                    console.error("Download error:", error);
-                    toast.error("Failed to download video");
-                  }
+                onClick={() => {
+                  videoApi.download(videoData.id, videoData.filename)
+                    .then(() => toast.success("Download started!"))
+                    .catch(() => toast.error("Failed to download video"));
                 }}
               >
                 Download

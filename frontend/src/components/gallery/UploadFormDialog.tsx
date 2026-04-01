@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import {
   Youtube,
   Info,
-  Image as ImageIcon,
   Globe,
   Lock,
   EyeOff,

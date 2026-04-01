@@ -1,5 +1,4 @@
 import axios from "axios";
-import { io, Socket } from "socket.io-client";
 import {
   shouldRefreshToken,
   refreshToken,
@@ -7,60 +6,20 @@ import {
   SESSION_EXPIRED_EVENT,
 } from "@/utils/tokenService";
 
+/**
+ * Centrally managed API base URL configuration.
+ * Prioritizes VITE_API_URL and provides a generic fallback if not set.
+ */
 export const getAPIBaseURL = (): string => {
-  const apiUrl = import.meta.env.VITE_API_URL;
-  return (
-    apiUrl ||
-    (window.location.hostname === "localhost"
-      ? "http://localhost:4000"
-      : "https://backend-xyz.run.app/api")
-  );
+  return import.meta.env.VITE_API_URL || "/api";
 };
 
-export const getWebSocketURL = (): string => {
-  const wsUrl = import.meta.env.VITE_WEBSOCKET_URL;
-  if (wsUrl) return wsUrl;
-  const isProduction = window.location.hostname !== "localhost";
-  return isProduction ? "wss://backend-xyz.run.app" : "ws://localhost:4000";
-};
+// Legacy support for getWebSocketURL removed in favor of polling architecture.
 
-let socket: Socket;
-
-export const connectWebSocket = (token: string) => {
-  if (socket && socket.connected) {
-    return socket;
-  }
-
-  socket = io(getWebSocketURL(), {
-    auth: {
-      token,
-    },
-  });
-
-  socket.on("connect", () => {
-    console.log("WebSocket connected");
-  });
-
-  socket.on("disconnect", () => {
-    console.log("WebSocket disconnected");
-  });
-
-  return socket;
-};
-
-export const joinVideoRoom = (videoId: string) => {
-  if (socket) {
-    socket.emit("join", { room: videoId });
-  }
-};
-
-export const leaveVideoRoom = (videoId: string) => {
-  if (socket) {
-    socket.emit("leave", { room: videoId });
-  }
-};
-
-// Rest of your axios configuration...
+/**
+ * Core Axios instance for API communication.
+ * Includes standardized headers, timeout, and interceptors for JWT management.
+ */
 export const api = axios.create({
   baseURL: getAPIBaseURL(),
   timeout: 15000,
@@ -71,12 +30,12 @@ export const api = axios.create({
   withCredentials: false,
 });
 
-// ... (rest of apiWithoutPreflight, interceptors, setAuthToken)
-
-// Fix CORS issues by directly calling api without preflight when possible
+/**
+ * Collection of helper methods to perform API requests without triggering preflight
+ * by using token-in-query-parameter fallback for GET/DELETE where applicable.
+ */
 export const apiWithoutPreflight = {
   get: async (url: string, config?: any) => {
-    // For GET requests, we can attach the token directly to the URL to avoid preflight
     const token = getToken();
     const separator = url.includes("?") ? "&" : "?";
     const tokenParam = token
@@ -90,7 +49,6 @@ export const apiWithoutPreflight = {
     return api.post(url, data, config);
   },
   delete: async (url: string, config?: any) => {
-    // For DELETE requests, similar to GET
     const token = getToken();
     const separator = url.includes("?") ? "&" : "?";
     const tokenParam = token
@@ -102,36 +60,31 @@ export const apiWithoutPreflight = {
   },
 };
 
-// Variable to track if a token refresh is in progress
+// Interceptor State
 let isRefreshing = false;
-// Store pending requests that should be retried after token refresh
 let pendingRequests: any[] = [];
-// Track if session expired notification was already shown
 let sessionExpiredNotificationShown = false;
 
-// Function to process pending requests after token refresh
+/**
+ * Processes the queue of pending requests after a successful token refresh.
+ */
 const processPendingRequests = (token: string | null) => {
   pendingRequests.forEach(({ config, resolve, reject }) => {
     if (token) {
-      // Update the token in the request
       config.headers["x-access-token"] = token;
       config.headers["Authorization"] = `Bearer ${token}`;
-      // Retry the request
       axios(config).then(resolve).catch(reject);
     } else {
-      // If token refresh failed, reject all pending requests
       reject(new Error("Token refresh failed"));
     }
   });
 
-  // Clear pending requests
   pendingRequests = [];
 };
 
-// Add request interceptor to handle auth properly
+// Request Interceptor: Handles token refresh before requests if needed
 api.interceptors.request.use(
   async (config) => {
-    // Check if token needs refresh before sending the request
     if (
       shouldRefreshToken() &&
       !isRefreshing &&
@@ -140,11 +93,9 @@ api.interceptors.request.use(
       isRefreshing = true;
 
       try {
-        // Attempt to refresh the token
         const newToken = await refreshToken();
         isRefreshing = false;
 
-        // Update the request with the new token
         if (newToken) {
           config.headers["x-access-token"] = newToken;
           config.headers["Authorization"] = `Bearer ${newToken}`;
@@ -154,10 +105,7 @@ api.interceptors.request.use(
         isRefreshing = false;
       }
     } else {
-      // Get token from localStorage for each request
       const token = getToken();
-
-      // Add token to headers if it exists
       if (token) {
         config.headers["x-access-token"] = token;
         config.headers["Authorization"] = `Bearer ${token}`;
@@ -171,7 +119,7 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor to handle token errors
+// Response Interceptor: Handles 401 errors and triggers token refresh
 api.interceptors.response.use(
   (response) => {
     return response;
@@ -179,7 +127,6 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // If the error is due to an expired token (401) and we haven't tried to refresh yet
     if (
       error.response &&
       error.response.status === 401 &&
@@ -188,7 +135,6 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      // If a refresh is already in progress, queue this request
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           pendingRequests.push({ config: originalRequest, resolve, reject });
@@ -198,29 +144,20 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        // Attempt to refresh the token
         const newToken = await refreshToken();
         isRefreshing = false;
 
         if (newToken) {
-          // Process any pending requests with the new token
           processPendingRequests(newToken);
-
-          // Update the original request with the new token
           originalRequest.headers["x-access-token"] = newToken;
           originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
-
-          // Retry the original request
           return axios(originalRequest);
         } else {
-          // If token refresh failed, handle authentication failure
           isRefreshing = false;
           processPendingRequests(null);
 
-          // Only show the expired session notification once
           if (!sessionExpiredNotificationShown) {
             sessionExpiredNotificationShown = true;
-            // Dispatch the session expired event
             window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
           }
 
@@ -231,10 +168,8 @@ api.interceptors.response.use(
         processPendingRequests(null);
         console.error("Error during token refresh:", refreshError);
 
-        // Only show the expired session notification once
         if (!sessionExpiredNotificationShown) {
           sessionExpiredNotificationShown = true;
-          // Dispatch the session expired event
           window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
         }
 
@@ -242,16 +177,20 @@ api.interceptors.response.use(
       }
     }
 
-    // For any other error, forward it
     return Promise.reject(error);
   }
 );
 
-// Reset session expired notification flag when user logs in
+/**
+ * Resets the session expiration notification flag.
+ */
 export const resetSessionExpiredFlag = () => {
   sessionExpiredNotificationShown = false;
 };
 
+/**
+ * Helper to manually set or clear the auth token in axios headers.
+ */
 export const setAuthToken = (token: string | null) => {
   if (token) {
     api.defaults.headers.common["x-access-token"] = token;

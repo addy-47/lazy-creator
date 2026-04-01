@@ -2,7 +2,6 @@ import { ArrowRight } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { Button } from "./Button";
 import { useEffect, useRef, useState } from "react";
-import StickFigureAnimation from "./StickFigureAnimation";
 
 interface HeroProps {
   username?: string;

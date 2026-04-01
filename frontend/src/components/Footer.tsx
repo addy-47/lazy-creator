@@ -1,6 +1,5 @@
 import { NavLink } from "react-router-dom";
 import { Youtube, Github, Heart, ChevronRight } from "lucide-react";
-import StickFigureAnimation from "./StickFigureAnimation";
 import Logo from "./Logo";
 
 const Footer = () => {

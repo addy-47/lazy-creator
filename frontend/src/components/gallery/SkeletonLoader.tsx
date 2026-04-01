@@ -1,4 +1,3 @@
-import { Video } from "./types";
 
 interface SkeletonLoaderProps {
   message?: string;

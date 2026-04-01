@@ -1,0 +1,54 @@
+# Credentials
+client_secret.json
+google_credentials.json
+token.pickle
+Credentials/
+# Environment variables
+.env
+
+# Virtual environment
+**/*venv*/*
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+MongoDBData/
+logs/
+
+# Output directories
+ai_shorts_output/
+local_storage/
+
+# Large binary files
+ffmpeg/
+
+# IDE files
+.vscode/
+lazycreator-1.json
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+**/*secret.json

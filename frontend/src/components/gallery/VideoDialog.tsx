@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Download, Youtube, X, ChevronDown } from "lucide-react";
-import { Button } from "@/components/Button";
-import { getAPIBaseURL } from "@/lib/socket";
+import { videoApi } from "@/services/apis";
 
 interface Video {
   id: string;
@@ -53,15 +52,8 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
 
   // Generate secure URL with auth token
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      setVideoUrl(
-        `${getAPIBaseURL()}/api/gallery/${
-          video.filename
-        }?token=${encodeURIComponent(token)}`
-      );
-    } else {
-      setVideoUrl(`${getAPIBaseURL()}/api/gallery/${video.filename}`);
+    if (video.filename) {
+      setVideoUrl(videoApi.getVideoUrl(video.filename));
     }
   }, [video.filename]);
 
