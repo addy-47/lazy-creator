@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Youtube } from "lucide-react";
 import VideoActionMenu from "@/components/VideoActionMenu";
-import { videoApi } from "@/services/apis";
+import { videoApi } from "@/services/api";
 
 interface Video {
   id: string;

@@ -1,16 +1,5 @@
 import { lzySvcApi, handleApiError } from "./client";
 
-export interface LoginCredentials {
-  email: string;
-  password: string;
-}
-
-export interface RegisterData {
-  email: string;
-  password: string;
-  name: string;
-}
-
 export interface User {
   id: string;
   email: string;
@@ -28,7 +17,7 @@ export interface AuthResponse {
  * Authentication API
  */
 export const authApi = {
-  login: async (credentials: LoginCredentials): Promise<{ data: AuthResponse }> => {
+  login: async (credentials: any): Promise<{ data: AuthResponse }> => {
     try {
       const response = await lzySvcApi.post('/auth/login', credentials);
       return response;
@@ -37,7 +26,7 @@ export const authApi = {
     }
   },
   
-  register: async (userData: RegisterData): Promise<{ data: AuthResponse }> => {
+  register: async (userData: any): Promise<{ data: AuthResponse }> => {
     try {
       const response = await lzySvcApi.post('/auth/register', userData);
       return response;
@@ -46,25 +35,7 @@ export const authApi = {
     }
   },
   
-  firebaseLogin: async (idToken: string): Promise<{ data: AuthResponse }> => {
-    try {
-      const response = await lzySvcApi.post('/auth/firebase-login', { id_token: idToken });
-      return response;
-    } catch (error) {
-      handleApiError(error);
-    }
-  },
-  
-  googleLogin: async (idToken: string): Promise<{ data: AuthResponse }> => {
-    try {
-      const response = await lzySvcApi.post('/auth/google-login', { id_token: idToken });
-      return response;
-    } catch (error) {
-      handleApiError(error);
-    }
-  },
-  
-  getGoogleAuthUrl: async (): Promise<{ data: { status: string; auth_url: string; state: string } }> => {
+  getGoogleAuthUrl: async (): Promise<{ data: { status: string; url: string } }> => {
     try {
       const response = await lzySvcApi.get('/auth/google-url');
       return response;

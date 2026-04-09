@@ -25,12 +25,13 @@ type Config struct {
 	// YouTube OAuth
 	YoutubeClientID     string
 	YoutubeClientSecret string
-	YoutubeRedirectURI  string
 
-	// Google OAuth (for social login)
+	// Google OAuth (Shared for Social Login and YouTube)
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURI  string
+	YoutubeRedirectURI string
+	GoogleSecretFile   string
 }
 
 func LoadConfig() *Config {
@@ -55,13 +56,11 @@ func LoadConfig() *Config {
 		GCSBucket:    getEnv("GCS_BUCKET_NAME", "lazy-creator-shorts-1"),
 		GSCreds:      getEnv("GOOGLE_APPLICATION_CREDENTIALS", ""),
 
-		YoutubeClientID:     getEnv("YOUTUBE_CLIENT_ID", ""),
-		YoutubeClientSecret: getEnv("YOUTUBE_CLIENT_SECRET", ""),
-		YoutubeRedirectURI:  getEnv("YOUTUBE_REDIRECT_URI", ""),
-
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),
+		YoutubeRedirectURI: getEnv("YOUTUBE_REDIRECT_URI", ""),
+		GoogleSecretFile:   getEnv("GOOGLE_OAUTH_SECRET_FILE", ""),
 	}
 }
 

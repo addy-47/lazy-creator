@@ -17,18 +17,12 @@ import { toast } from "sonner";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
 import { AUTH_CHANGE_EVENT } from "@/App";
 import { useAuth } from "@/contexts/AuthContext";
-import { authApi } from "@/services/apis";
+import { authApi } from "@/services/api";
 import { setToken } from "@/services/tokenService";
 
 
 
-// Import Firebase auth functions and providers
-import {
-  signInWithPopup,
-  GoogleAuthProvider,
-  FacebookAuthProvider,
-} from "firebase/auth";
-import { auth } from "@/services/firebase"; // Import the pre-configured auth instance
+// Native login helpers are in @/services/api and tokenService
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -131,94 +125,100 @@ const Auth = () => {
     }
   };
 
-  // Handler for Google OAuth sign in
+  // Handler for Google OAuth sign in (Native Flow)
   const handleGoogleSignIn = async () => {
     setIsSubmitting(true);
-    const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-
-      // Get the ID token from Firebase
-      const idToken = await result.user.getIdToken();
-
-      // Call the actual backend authentication endpoint via authApi
-      const response = await authApi.firebaseLogin(idToken);
-      const data = response.data;
-
-      // Use the token from the backend
-      const token = data.token;
+      // 1. Get the Auth URL from the backend
+      const response = await authApi.getGoogleAuthUrl();
+      const authUrl = response?.data?.url;
       
-      if (!token) {
-        throw new Error("No token received from backend");
+      if (!authUrl) {
+        throw new Error("Could not retrieve Google authentication URL");
       }
 
-      setToken(token);
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          email: result.user.email,
-          name: result.user.displayName || "User",
-        })
+      // 2. Open a centered popup window
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      
+      const popup = window.open(
+        authUrl,
+        "google_login",
+        `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no`
       );
 
-      // Dispatch auth change event and refresh auth state
-      window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
-      refreshAuthState();
+      if (!popup) {
+        toast.error("Popup blocked! Please allow popups for this site.");
+        setIsSubmitting(false);
+        return;
+      }
 
-      toast.success("Signed in with Google successfully!");
-      navigate("/");
+      // 3. Listen for the message from the backend bridge
+      const messageListener = async (event: MessageEvent) => {
+        // Simple security check: origin should be our backend
+        // In local dev, this might be localhost:8888 or localhost:3333
+        const isWhitelistedOrigin = event.origin.includes('localhost') || event.origin.includes('lazycreator.in');
+        
+        if (!isWhitelistedOrigin || !event.data || event.data.status !== "success") {
+          return;
+        }
+
+        const data = event.data;
+        const token = data.token;
+
+        if (token) {
+          // Success! Cleanup and complete login
+          window.removeEventListener("message", messageListener);
+          
+          setToken(token);
+          localStorage.setItem(
+            "user",
+            JSON.stringify({
+              email: data.user.email,
+              name: data.user.name || "User",
+            })
+          );
+
+          // Dispatch auth change event and refresh auth state
+          window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
+          refreshAuthState();
+
+          toast.success("Signed in with Google successfully!");
+          navigate("/");
+          setIsSubmitting(false);
+        }
+      };
+
+      window.addEventListener("message", messageListener);
+
+      // 4. Handle popup closure (fallback if message never received)
+      const popupCheckInterval = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(popupCheckInterval);
+          // If we're still submitting, it means we didn't receive the success signal
+          setIsSubmitting((prev) => {
+            if (prev) {
+               // Cleanup listener if closed
+               window.removeEventListener("message", messageListener);
+            }
+            return false;
+          });
+        }
+      }, 1000);
+
     } catch (error: any) {
       console.error(error);
       const message = error.response?.data?.message || error.message;
       toast.error(message || "Google sign in failed");
-    } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Handler for Facebook OAuth sign in
-  const handleFacebookSignIn = async () => {
-    setIsSubmitting(true);
-    const provider = new FacebookAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-
-      // Get the ID token from Firebase
-      const idToken = await result.user.getIdToken();
-
-      // Call the actual backend authentication endpoint via authApi
-      const response = await authApi.firebaseLogin(idToken);
-      const data = response.data;
-
-      // Use the token from the backend
-      const token = data.token;
-
-      if (!token) {
-        throw new Error("No token received from backend");
-      }
-
-      setToken(token);
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          email: result.user.email,
-          name: result.user.displayName || "User",
-        })
-      );
-
-      // Dispatch auth change event and refresh auth state
-      window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
-      refreshAuthState();
-
-      toast.success("Signed in with Facebook successfully!");
-      navigate("/");
-    } catch (error: any) {
-      console.error(error);
-      const message = error.response?.data?.message || error.message;
-      toast.error(message || "Facebook sign in failed");
-    } finally {
-      setIsSubmitting(false);
-    }
+  // Native Facebook login not implemented yet
+  const handleFacebookSignIn = () => {
+    toast.info("Facebook login is coming soon! Please use Google login for now.");
   };
 
   return (

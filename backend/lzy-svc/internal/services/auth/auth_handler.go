@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/db"
@@ -12,14 +14,12 @@ import (
 
 type AuthHandler struct {
 	jwtSvc         *JWTService
-	firebaseSvc    *FirebaseService
 	googleOAuthSvc *GoogleOAuthService
 }
 
-func NewAuthHandler(jwtSvc *JWTService, firebaseSvc *FirebaseService, googleOAuthSvc *GoogleOAuthService) *AuthHandler {
+func NewAuthHandler(jwtSvc *JWTService, googleOAuthSvc *GoogleOAuthService) *AuthHandler {
 	return &AuthHandler{
 		jwtSvc:         jwtSvc,
-		firebaseSvc:    firebaseSvc,
 		googleOAuthSvc: googleOAuthSvc,
 	}
 }
@@ -42,7 +42,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
@@ -82,13 +81,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
 
-	// Generate JWT
 	token, err := h.jwtSvc.GenerateToken(user.ID, user.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
@@ -108,14 +105,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
-	// Extract the existing token from headers
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
 		return
 	}
 
-	// Assuming Bearer token
 	if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header format"})
 		return
@@ -128,7 +123,6 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	// Generate a fresh token
 	newToken, err := h.jwtSvc.GenerateToken(claims.UserID, claims.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to refresh token"})
@@ -140,47 +134,57 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
-type FirebaseLoginRequest struct {
-	IDToken string `json:"id_token" binding:"required"`
+// GetGoogleAuthURL returns the Google OAuth URL for the popup flow
+func (h *AuthHandler) GetGoogleAuthURL(c *gin.Context) {
+	state := uuid.New().String()
+	url := h.googleOAuthSvc.GetAuthURL(state)
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"url":    url,
+	})
 }
 
-func (h *AuthHandler) FirebaseLogin(c *gin.Context) {
-	var req FirebaseLoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+// GoogleLogin is a legacy stub for ID token based login (can be used for mobile later)
+func (h *AuthHandler) GoogleLogin(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "Please use /auth/google-url for the popup flow"})
+}
+
+// GoogleAuthCallback handles the OAuth redirect and communicates with the frontend popup via postMessage
+func (h *AuthHandler) GoogleAuthCallback(c *gin.Context) {
+	code := c.Query("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Code required"})
 		return
 	}
 
 	ctx := c.Request.Context()
-	token, err := h.firebaseSvc.VerifyIDToken(ctx, req.IDToken)
+	_, idToken, err := h.googleOAuthSvc.ExchangeCode(ctx, code)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid firebase token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to exchange code: %v", err)})
 		return
 	}
 
-	email := token.Claims["email"].(string)
-	name, _ := token.Claims["name"].(string)
-	picture, _ := token.Claims["picture"].(string)
+	userInfo, err := ExtractUserInfoFromIDToken(idToken)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to extract user info"})
+		return
+	}
 
+	// Upsert user
 	var user models.User
-	if err := db.DB.Where("email = ?", email).First(&user).Error; err != nil {
-		// User doesn't exist, create one
+	if err := db.DB.Where("email = ?", userInfo.Email).First(&user).Error; err != nil {
 		user = models.User{
 			ID:       uuid.New().String(),
-			Email:    email,
-			Name:     name,
-			Picture:  picture,
-			Provider: "google", // Assume google for social login via firebase for now
+			Email:    userInfo.Email,
+			Name:     userInfo.Name,
+			Picture:  userInfo.Picture,
+			Provider: "google",
 			IsActive: true,
 		}
-		if err := db.DB.Create(&user).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
-			return
-		}
+		db.DB.Create(&user)
 	} else {
-		// User exists, update picture and name if they've changed
-		user.Name = name
-		user.Picture = picture
+		user.Name = userInfo.Name
+		user.Picture = userInfo.Picture
 		db.DB.Save(&user)
 	}
 
@@ -191,7 +195,8 @@ func (h *AuthHandler) FirebaseLogin(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	// Securely marshal auth data to JSON for use in the script
+	authData := gin.H{
 		"status": "success",
 		"token":  jwtToken,
 		"user": gin.H{
@@ -200,12 +205,33 @@ func (h *AuthHandler) FirebaseLogin(c *gin.Context) {
 			"name":    user.Name,
 			"picture": user.Picture,
 		},
-	})
+	}
+	
+	jsonData, _ := json.Marshal(authData)
+
+	// Return HTML/JS bridge for popup flow
+	htmlContent := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head><title>Authentication Successful</title></head>
+		<body>
+			<script>
+				const authData = %s;
+				if (window.opener) {
+					window.opener.postMessage(authData, "*");
+					window.close();
+				} else {
+					document.body.innerHTML = "<h1>Authentication Successful</h1><p>You can close this window now.</p>";
+				}
+			</script>
+		</body>
+		</html>
+	`, string(jsonData))
+
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(htmlContent))
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	// For stateless JWT, logout is primarily handled by the client by clearing the token.
-	// This endpoint provides a consistent API for the logout action.
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "Logged out successfully",

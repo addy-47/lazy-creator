@@ -1,23 +1,7 @@
 import { lzySvcApi, handleApiError } from "./client";
 
-export interface YouTubeChannel {
-  id: string;
-  title: string;
-  thumbnail: string;
-  subscribers?: string;
-}
-
-export interface YouTubeStatus {
-  status: string;
-  authenticated: boolean;
-  is_connected: boolean;
-}
-
-/**
- * YouTube Connection API
- */
 export const youtubeApi = {
-  getStatus: async (): Promise<{ data: YouTubeStatus }> => {
+  getStatus: async (): Promise<{ data: { status: string; authenticated: boolean; is_connected: boolean } }> => {
     try {
       const response = await lzySvcApi.get('/youtube/status');
       return response;
@@ -25,8 +9,8 @@ export const youtubeApi = {
       handleApiError(error);
     }
   },
-  
-  getChannels: async (): Promise<{ data: { status: string; channels: YouTubeChannel[] } }> => {
+
+  getChannels: async (): Promise<{ data: { status: string; channels: any[] } }> => {
     try {
       const response = await lzySvcApi.get('/youtube/channels');
       return response;
@@ -34,7 +18,7 @@ export const youtubeApi = {
       handleApiError(error);
     }
   },
-  
+
   startAuth: async (): Promise<{ data: { status: string; auth_url: string } }> => {
     try {
       const response = await lzySvcApi.get('/youtube/auth-start');
@@ -43,12 +27,11 @@ export const youtubeApi = {
       handleApiError(error);
     }
   },
-  
-  upload: async (videoUrl: string): Promise<{ data: { status: string; message: string } }> => {
+
+  upload: async (videoUrl: string, metadata: any): Promise<{ data: any }> => {
     try {
-      const response = await lzySvcApi.post('/youtube/upload', null, {
-        params: { video_url: videoUrl }
-      });
+      // Backend expects video_url as a query parameter
+      const response = await lzySvcApi.post(`/youtube/upload?video_url=${encodeURIComponent(videoUrl)}`, metadata);
       return response;
     } catch (error) {
       handleApiError(error);

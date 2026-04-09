@@ -4,7 +4,7 @@ import Footer from "@/components/Footer";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getLzyDirectorBaseURL } from "@/services/config";
-import { videoApi, youtubeApi, authApi, trendingApi, fallbackApi } from "@/services/apis";
+import { videoApi, youtubeApi, authApi, trendingApi, fallbackApi } from "@/services/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 // Import gallery components

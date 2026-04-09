@@ -5,7 +5,7 @@ import PromptSelector from "./PromptSelector";
 import DurationSlider from "./DurationSlider";
 import BackgroundSelector from "./BackgroundSelector";
 import { toast } from "sonner";
-import { videoApi } from "@/services/apis";
+import { videoApi } from "@/services/api";
 import { scrollToStep } from "@/utils/step-transition";
 
 

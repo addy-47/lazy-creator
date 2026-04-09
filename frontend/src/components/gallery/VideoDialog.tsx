@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Download, Youtube, X, ChevronDown } from "lucide-react";
-import { videoApi } from "@/services/apis";
+import { videoApi } from "@/services/api";
 
 interface Video {
   id: string;

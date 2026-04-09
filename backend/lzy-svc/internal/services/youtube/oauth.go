@@ -22,8 +22,8 @@ type OAuthService struct {
 func NewOAuthService(cfg *config.Config) *OAuthService {
 	return &OAuthService{
 		config: &oauth2.Config{
-			ClientID:     cfg.YoutubeClientID,
-			ClientSecret: cfg.YoutubeClientSecret,
+			ClientID:     cfg.GoogleClientID,
+			ClientSecret: cfg.GoogleClientSecret,
 			Endpoint:     google.Endpoint,
 			RedirectURL:  cfg.YoutubeRedirectURI,
 			Scopes: []string{

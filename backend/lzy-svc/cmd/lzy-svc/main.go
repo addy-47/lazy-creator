@@ -27,15 +27,11 @@ func main() {
 
 	// 3. Initialize Services
 	jwtSvc := auth.NewJWTService(cfg)
-	firebaseSvc, err := auth.NewFirebaseService()
-	if err != nil {
-		log.Fatalf("Failed to initialize Firebase service: %v", err)
-	}
 	googleOAuthSvc, err := auth.NewGoogleOAuthService(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURI)
 	if err != nil {
 		log.Fatalf("Failed to initialize Google OAuth service: %v", err)
 	}
-	authHandler := auth.NewAuthHandler(jwtSvc, firebaseSvc, googleOAuthSvc)
+	authHandler := auth.NewAuthHandler(jwtSvc, googleOAuthSvc)
 	ytSvc := youtube.NewOAuthService(cfg)
 	storageSvc, err := storage.NewStorageService(cfg)
 	if err != nil {
@@ -81,7 +77,6 @@ func main() {
 		// Auth Routes
 		v1.POST("/auth/register", authHandler.Register)
 		v1.POST("/auth/login", authHandler.Login)
-		v1.POST("/auth/firebase-login", authHandler.FirebaseLogin)
 		v1.POST("/auth/google-login", authHandler.GoogleLogin)
 		v1.GET("/auth/google-url", authHandler.GetGoogleAuthURL)
 		v1.GET("/auth/google-callback", authHandler.GoogleAuthCallback)

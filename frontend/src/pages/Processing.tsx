@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { videoApi } from "@/services/apis";
+import { videoApi } from "@/services/api";
 import { PollingService } from "@/services/pollingService";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
