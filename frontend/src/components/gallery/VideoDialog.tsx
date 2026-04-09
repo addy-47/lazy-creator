@@ -2,10 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Download, Youtube, X, ChevronDown } from "lucide-react";
 import { videoApi } from "@/services/api";
 
-import { Video } from "@/types/video";
+import { Video, YouTubeShort } from "@/types/video";
 
 interface VideoDialogProps {
-  video: Video;
+  video: Video | (YouTubeShort & { video_path?: string, created_at?: string });
   isYouTubeConnected: boolean;
   onClose: () => void;
   onDownload: (videoId: string) => void;
@@ -25,20 +25,39 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
   const [showFullScript, setShowFullScript] = useState(false);
 
   // Get title, description, and script from root properties
-  const title = video.title || video.prompt;
-  const description = video.description || "";
-  const script = video.script || "";
+  const title = video.title || (video as Video).prompt || "Short Video";
+  const description = (video as Video).description || "";
+  const script = (video as Video).script || "";
+
+  // Check if this is a demo video or trending short with a direct URL
+  const directUrl = (video as YouTubeShort).url || (video as YouTubeShort).videoUrl;
 
   // Check if this is an older video without content
-  const isLegacyVideo = !video.script && !video.title;
+  const isLegacyVideo = !script && !title;
 
-  // Generate secure URL with auth token
+  // Generate secure URL with auth token or use direct URL
   useEffect(() => {
     if (video.video_path) {
       const filename = video.video_path.split("/").pop() || "";
       setVideoUrl(videoApi.getVideoUrl(filename));
+    } else if (directUrl) {
+      setVideoUrl(directUrl);
     }
-  }, [video.video_path]);
+  }, [video.video_path, directUrl]);
+
+  // Safe date formatting
+  const formattedDate = video.created_at 
+    ? new Date(video.created_at).toLocaleString() 
+    : "Recently";
+
+  // Helper to get YouTube ID or URL
+  const isUserVideo = 'task_id' in video;
+  const hasYouTubeId = !!(video as Video).youtube_video_id;
+
+  // Action button logic
+  const showDownload = true;
+  const showUpload = isUserVideo && !hasYouTubeId && isYouTubeConnected;
+  const showViewOnYouTube = hasYouTubeId || (!isUserVideo && ((video as YouTubeShort).youtubeUrl || (video as YouTubeShort).id));
 
   return (
     <div
@@ -83,10 +102,10 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
               )}
 
               <p className="text-xs text-foreground/60 mb-3">
-                Created: {new Date(video.created_at).toLocaleString()}
+                Created: {formattedDate}
               </p>
 
-              {isLegacyVideo && (
+              {isLegacyVideo && isUserVideo && (
                 <div className="text-xs text-amber-500 dark:text-amber-400 mb-4 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-md">
                   This is a video created before the AI-generated content
                   feature was added. New videos will include title, description
@@ -121,14 +140,14 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
                     </button>
                   )}
                 </div>
-              ) : isLegacyVideo ? (
+              ) : (isLegacyVideo && isUserVideo && (video as Video).prompt) ? (
                 <div className="mt-2 mb-4">
                   <h4 className="text-sm font-medium mb-2 flex items-center">
                     <span className="mr-2">Original Prompt</span>
                     <div className="h-px bg-border flex-grow"></div>
                   </h4>
                   <p className="text-sm text-foreground/70">
-                    {video.prompt}
+                    {(video as Video).prompt}
                   </p>
                 </div>
               ) : null}
@@ -136,17 +155,19 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
 
             {/* Action buttons - better spacing for small screens */}
             <div className="space-y-2 pt-3 border-t border-border mt-auto">
-              <div className="w-full">
-                <button
-                  onClick={() => onDownload(video.id)}
-                  className="w-full py-1.5 px-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md inline-flex items-center justify-center text-sm font-medium"
-                >
-                  <Download size={16} className="mr-2" />
-                  Download
-                </button>
-              </div>
+              {showDownload && (
+                <div className="w-full">
+                  <button
+                    onClick={() => onDownload(video.id)}
+                    className="w-full py-1.5 px-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md inline-flex items-center justify-center text-sm font-medium"
+                  >
+                    <Download size={16} className="mr-2" />
+                    Download
+                  </button>
+                </div>
+              )}
 
-              {!video.youtube_video_id && isYouTubeConnected && (
+              {showUpload && (
                 <div className="w-full">
                   <button
                     onClick={() => {
@@ -161,10 +182,13 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
                 </div>
               )}
 
-              {video.youtube_video_id && (
+              {showViewOnYouTube && (
                 <div className="w-full">
                   <button
-                    onClick={() => onOpenYouTube(video.youtube_video_id!)}
+                    onClick={() => {
+                      const id = (video as Video).youtube_video_id || (video as YouTubeShort).id;
+                      onOpenYouTube(id);
+                    }}
                     className="w-full py-1.5 px-3 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md inline-flex items-center justify-center text-sm font-medium"
                   >
                     <Youtube size={16} className="mr-2" />

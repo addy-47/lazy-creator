@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { videoApi, youtubeApi, fallbackApi } from "@/services/api";
+import { videoApi, youtubeApi, fallbackApi, trendingApi } from "@/services/api";
 import { useAuth } from "@/contexts/use-auth";
 
 // Import gallery components
@@ -11,6 +11,7 @@ import MyVideosSection from "@/components/gallery/MyVideosSection";
 import ExploreSection from "@/components/gallery/ExploreSection";
 import {
   Video,
+  YouTubeShort,
   YouTubeShort as DemoVideo,
 } from "@/types/video";
 import { UploadData, YouTubeChannel } from "@/types/youtube";
@@ -19,13 +20,6 @@ import { UploadData, YouTubeChannel } from "@/types/youtube";
 const LazyVideoDialog = React.lazy(() => import("@/components/gallery/VideoDialog"));
 const LazyUploadFormDialog = React.lazy(() => import("@/components/gallery/UploadFormDialog"));
 
-// Helper function to detect if device is low-end
-const isLowEndDevice = () => {
-  return (
-    navigator.hardwareConcurrency <= 4 || 
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-  );
-};
 
 function GalleryPage() {
   const navigate = useNavigate();
@@ -33,7 +27,9 @@ function GalleryPage() {
   
   const [videos, setVideos] = useState<Video[]>([]);
   const [demoVideos, setDemoVideos] = useState<DemoVideo[]>([]);
+  const [trendingVideos, setTrendingVideos] = useState<YouTubeShort[]>([]);
   const [loading, setLoading] = useState(true);
+  const [trendingLoading, setTrendingLoading] = useState(false);
   const [downloadingVideoId, setDownloadingVideoId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [showUploadForm, setShowUploadForm] = useState<string | null>(null);
@@ -50,9 +46,6 @@ function GalleryPage() {
   const [activeSection, setActiveSection] = useState<"my-videos" | "explore">("my-videos");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedYouTubeChannel, setSelectedYouTubeChannel] = useState<YouTubeChannel | null>(null);
-  
-  // Low-end device detection
-  const isLowEnd = useRef(isLowEndDevice());
 
   const loadDemoVideos = useCallback((count: number) => {
     const demos: DemoVideo[] = [];
@@ -68,12 +61,32 @@ function GalleryPage() {
     setDemoVideos(demos);
   }, []);
 
+  const fetchTrendingShorts = useCallback(async () => {
+    setTrendingLoading(true);
+    try {
+      const response = await trendingApi.getYouTubeShorts();
+      if (response && response.data && response.data.status === "success") {
+        setTrendingVideos(response.data.shorts);
+      } else {
+        console.warn("Trending API returned non-success status:", response);
+      }
+    } catch (error) {
+      console.error("Failed to fetch trending shorts:", error);
+    } finally {
+      setTrendingLoading(false);
+    }
+  }, []);
+
   const loadGallery = useCallback(async () => {
     try {
       setLoading(true);
+      
+      // Load exploration content first or in parallel
+      loadDemoVideos(6);
+      fetchTrendingShorts();
+
       if (!isAuthenticated) {
         setActiveSection("explore");
-        loadDemoVideos(isLowEnd.current ? 3 : 6);
         return;
       }
       
@@ -88,11 +101,10 @@ function GalleryPage() {
         console.error("Failed to fetch videos:", error);
         setVideos([]);
       }
-      loadDemoVideos(isLowEnd.current ? 3 : 6);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, loadDemoVideos]);
+  }, [isAuthenticated, loadDemoVideos, fetchTrendingShorts]);
 
   useEffect(() => {
     loadGallery();
@@ -252,10 +264,11 @@ function GalleryPage() {
           ) : (
             <ExploreSection 
               demoVideos={demoVideos}
-              trendingVideos={demoVideos} // Using demoVideos as fallback for trending
-              trendingLoading={loading}
+              trendingVideos={trendingVideos} 
+              trendingLoading={trendingLoading}
               isYouTubeConnected={isYouTubeConnected}
               onDemoVideoClick={(video: DemoVideo) => setActiveVideo(video)}
+              onRefreshTrending={fetchTrendingShorts}
             />
           )}
         </div>

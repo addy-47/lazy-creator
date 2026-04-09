@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { motion, useAnimation, useMotionValue, animate } from "framer-motion";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { addScrollKeyframes } from "./infinite-moving-cards-utils";
 
 export interface InfiniteMovingCardsProps {
   items: {
@@ -26,189 +27,155 @@ export function InfiniteMovingCards({
 }: InfiniteMovingCardsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const [start, setStart] = useState(false);
-  const [loopCreated, setLoopCreated] = useState(false);
+  
   const [isHovering, setIsHovering] = useState(false);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const resizeTimeoutRef = useRef<number | null>(null);
-
-  // Make sure we create a loop with just the right amount of items
-  // Don't call this effect on every render - only when needed
-  const createLoop = useCallback(() => {
-    if (!scrollerRef.current || loopCreated) return;
-
-    // Clone the scroller children to create a loop
-    const scrollerContent = Array.from(scrollerRef.current.children);
-    
-    // Check if we have enough content to scroll
-    if (scrollerContent.length <= 1) return;
-
-    // Create a buffer of cloned items to ensure seemless scrolling
-    const contentToAdd = scrollerContent.map((item) => {
-      const clone = item.cloneNode(true) as HTMLElement;
-      clone.setAttribute("aria-hidden", "true");
-      return clone;
-    });
-
-    // Only append clones once to avoid performance issues
-    contentToAdd.forEach((item) => {
-      scrollerRef.current?.appendChild(item);
-    });
-
-    setLoopCreated(true);
-  }, [loopCreated]);
-
-  // Function to get speed value
-  const getSpeed = useCallback(() => {
+  const [isInteracting, setIsInteracting] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  
+  const x = useMotionValue(0);
+  const controls = useAnimation();
+  
+  // Speed multiplier
+  const speedValue = useMemo(() => {
     return {
-      fast: 40,
-      normal: 25,
-      slow: 15,
-    }[speed] || 25;
+      fast: 100,
+      normal: 60,
+      slow: 30,
+    }[speed] || 60;
   }, [speed]);
 
-  useEffect(() => {
+  // Clone items for loop
+  const duplicatedItems = useMemo(() => [...items, ...items, ...items], [items]);
+
+  const startAnimation = useCallback(async (currentX: number) => {
     if (!scrollerRef.current) return;
     
-    // Only create the loop once - this is heavy DOM manipulation
-    if (!loopCreated) {
-      createLoop();
-    }
+    const scrollerWidth = scrollerRef.current.scrollWidth / 3;
+    const targetX = direction === "left" ? -scrollerWidth : scrollerWidth;
+    
+    // Calculate remaining distance and duration
+    const remainingDistance = Math.abs(targetX - currentX);
+    const duration = remainingDistance / speedValue;
 
-    // Use requestAnimationFrame to batch style changes
-    let animationRequest: number;
-    
-    const setupAnimation = () => {
-      if (!scrollerRef.current || !loopCreated) return;
-      
-      // Calculate dimensions once rather than repeatedly accessing scrollWidth
-      const scrollerWidth = scrollerRef.current.scrollWidth;
-      const animationDuration = (scrollerWidth / 50) * (getSpeed() / 25);
-      
-      // Use requestAnimationFrame to batch style changes
-      animationRequest = requestAnimationFrame(() => {
-        if (scrollerRef.current) {
-          const directionValue = direction === "left" ? "forwards" : "backwards";
-          
-          // Set all styles at once to minimize layout thrashing
-          scrollerRef.current.style.animation = `scroll-${direction} ${animationDuration}s linear infinite`;
-          scrollerRef.current.style.animationDirection = directionValue;
-          scrollerRef.current.style.animationPlayState = "paused";
-          
-          // Slight delay to ensure styles are applied before starting animation
-          setTimeout(() => {
-            if (scrollerRef.current) {
-              scrollerRef.current.style.animationPlayState = start ? "running" : "paused";
-            }
-          }, 50);
-        }
-      });
-    };
-    
-    setupAnimation();
-    
-    // Start animation after a short delay to ensure everything is loaded
-    const startTimeout = setTimeout(() => setStart(true), 100);
-    
-    // Handle resize efficiently with debouncing
-    const handleResize = () => {
-      // Clear previous timeout to implement debouncing
-      if (resizeTimeoutRef.current) {
-        window.clearTimeout(resizeTimeoutRef.current);
-      }
-      
-      // Set a new timeout to prevent frequent recalculations
-      resizeTimeoutRef.current = window.setTimeout(() => {
-        if (scrollerRef.current) {
-          // Pause animation during resize to prevent jumps
-          if (scrollerRef.current.style.animationPlayState !== "paused") {
-            scrollerRef.current.style.animationPlayState = "paused";
-          }
-          
-          // Recalculate size and restart animation
-          setupAnimation();
-          
-          // Resume animation if not hovering
-          if (!isHovering && scrollerRef.current) {
-            scrollerRef.current.style.animationPlayState = "running";
-          }
-        }
-      }, 200); // 200ms debounce
-    };
-
-    // Use ResizeObserver instead of window resize for better performance
-    if (containerRef.current && !resizeObserverRef.current) {
-      resizeObserverRef.current = new ResizeObserver(handleResize);
-      resizeObserverRef.current.observe(containerRef.current);
-    }
-
-    return () => {
-      if (startTimeout) clearTimeout(startTimeout);
-      if (animationRequest) cancelAnimationFrame(animationRequest);
-      if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-        resizeObserverRef.current = null;
-      }
-    };
-  }, [direction, getSpeed, start, createLoop, loopCreated, isHovering]);
-
-  // Handle mouse hover with debouncing
-  const handleMouseEnter = useCallback(() => {
-    if (!pauseOnHover || !scrollerRef.current) return;
-    
-    requestAnimationFrame(() => {
-      if (scrollerRef.current) {
-        scrollerRef.current.style.animationPlayState = "paused";
-        setIsHovering(true);
-      }
+    await controls.start({
+      x: targetX,
+      transition: {
+        duration,
+        ease: "linear",
+      },
     });
-  }, [pauseOnHover]);
 
-  const handleMouseLeave = useCallback(() => {
-    if (!pauseOnHover || !scrollerRef.current) return;
-    
-    requestAnimationFrame(() => {
-      if (scrollerRef.current) {
-        scrollerRef.current.style.animationPlayState = "running";
-        setIsHovering(false);
-      }
-    });
-  }, [pauseOnHover]);
+    // Reset position and recurse
+    x.set(0);
+    startAnimation(0);
+  }, [controls, direction, speedValue, x]);
 
-  // Add scroll keyframes at mount instead of on every render
   useEffect(() => {
-    addScrollKeyframes();
-  }, []);
+    if (items.length > 0) {
+      setIsReady(true);
+      if (!isInteracting && (!isHovering || !pauseOnHover)) {
+        startAnimation(x.get());
+      } else {
+        controls.stop();
+      }
+    }
+    return () => controls.stop();
+  }, [items, isInteracting, isHovering, pauseOnHover, startAnimation, controls, x]);
+
+  // Handle manual navigation
+  const handleMove = useCallback((moveDirection: "next" | "prev") => {
+    setIsInteracting(true);
+    controls.stop();
+
+    const scrollerWidth = scrollerRef.current ? scrollerRef.current.scrollWidth / 3 : 300;
+    const moveAmount = 250; // Distance to move per click
+    const currentX = x.get();
+    
+    let newX = moveDirection === "next" 
+      ? currentX - moveAmount 
+      : currentX + moveAmount;
+
+    // Boundary check for infinite feel
+    if (newX < -scrollerWidth) newX += scrollerWidth;
+    if (newX > 0) newX -= scrollerWidth;
+
+    animate(x, newX, {
+      type: "spring",
+      stiffness: 300,
+      damping: 30,
+      onComplete: () => {
+        // Resume auto-scroll after 2 seconds of inactivity
+        setTimeout(() => setIsInteracting(false), 2000);
+      }
+    });
+  }, [controls, x]);
+
+  // De-bounce manual interactions
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const triggerManualMove = (dir: "next" | "prev") => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    handleMove(dir);
+  };
+
+  if (items.length === 0) return null;
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "relative w-full overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_20%,black_80%,transparent)]",
+        "group/container relative w-full overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_20%,black_80%,transparent)]",
         className
       )}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
     >
-      <div
+      {/* Navigation Arrows */}
+      <div className="absolute inset-y-0 left-0 z-20 flex items-center pl-2 opacity-0 group-hover/container:opacity-100 transition-opacity">
+        <button
+          onClick={() => triggerManualMove("prev")}
+          className="p-2 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-accent text-foreground transition-all"
+        >
+          <ChevronLeft size={20} />
+        </button>
+      </div>
+      
+      <div className="absolute inset-y-0 right-0 z-20 flex items-center pr-2 opacity-0 group-hover/container:opacity-100 transition-opacity">
+        <button
+          onClick={() => triggerManualMove("next")}
+          className="p-2 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md hover:bg-accent text-foreground transition-all"
+        >
+          <ChevronRight size={20} />
+        </button>
+      </div>
+
+      <motion.div
         ref={scrollerRef}
+        animate={controls}
+        style={{ x }}
+        drag="x"
+        dragConstraints={{ left: -2000, right: 2000 }} // Large constraints for "infinite" feel
+        onDragStart={() => {
+          setIsInteracting(true);
+          controls.stop();
+        }}
+        onDragEnd={() => {
+          setTimeout(() => setIsInteracting(false), 3000);
+        }}
         className={cn(
-          "flex min-w-full shrink-0 gap-4 py-4 w-max flex-nowrap",
-          start && "animate-scroll",
-          isHovering && "animate-paused"
+          "flex min-w-full shrink-0 gap-4 py-4 w-max flex-nowrap cursor-grab active:cursor-grabbing",
+          !isReady && "opacity-0"
         )}
       >
-        {items.map((item) => (
+        {duplicatedItems.map((item, idx) => (
           <div
-            key={item.id}
+            key={`${item.id}-${idx}`}
             className={cn("flex-shrink-0 w-auto", itemClassName)}
-            style={{ willChange: "transform" }}
           >
             {item.content}
           </div>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
+
