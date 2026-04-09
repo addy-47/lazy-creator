@@ -22,7 +22,6 @@ import {
 // Lazy load non-critical components
 const LazyVideoDialog = React.lazy(() => import("@/components/gallery/VideoDialog"));
 const LazyUploadFormDialog = React.lazy(() => import("@/components/gallery/UploadFormDialog"));
-const LazyYouTubeConnect = React.lazy(() => import("@/components/YouTubeConnect"));
 
 // Helper function to detect if device is low-end
 const isLowEndDevice = () => {
@@ -54,7 +53,6 @@ function GalleryPage() {
     privacyStatus: "public",
   });
   const [youtubeChannels, setYoutubeChannels] = useState<YouTubeChannel[]>([]);
-  const [showYouTubeConnectModal, setShowYouTubeConnectModal] = useState(false);
   const [loadingChannels, setLoadingChannels] = useState(false);
   const [activeVideo, setActiveVideo] = useState<Video | null>(null);
   const [activeSection, setActiveSection] = useState<"my-videos" | "explore">(
@@ -525,20 +523,20 @@ function GalleryPage() {
     }
   }, [isYouTubeConnected]);
 
-  // Updated connectYouTube function with more detailed debugging
-  const connectYouTube = () => {
-    console.log("Opening YouTube connect modal");
-    // Try to refresh channel data when modal opens
-    if (isYouTubeConnected && youtubeChannels.length === 0) {
-      console.log(
-        "YouTube already connected but no channels loaded, refreshing channel data"
-      );
-      setIsFetchingChannelData(true);
-      fetchYouTubeChannels().finally(() => {
-        setIsFetchingChannelData(false);
-      });
+  // Connect to YouTube via Go backend OAuth
+  const connectYouTube = async () => {
+    setIsConnecting(true);
+    try {
+      const response = await youtubeApi.startAuth();
+      if (response.data.auth_url) {
+        window.open(response.data.auth_url, '_blank');
+      }
+    } catch (error: any) {
+      console.error("Error starting YouTube OAuth:", error);
+      toast.error("Failed to start YouTube authentication");
+    } finally {
+      setIsConnecting(false);
     }
-    setShowYouTubeConnectModal(true);
   };
 
   // Updated handleUpload function
@@ -1080,23 +1078,6 @@ function GalleryPage() {
             onClose={() => setShowUploadForm(null)}
             onUpload={handleUpload}
             youtubeChannels={youtubeChannels}
-          />
-        )}
-
-        {showYouTubeConnectModal && (
-          <LazyYouTubeConnect
-            visible={showYouTubeConnectModal}
-            onClose={() => setShowYouTubeConnectModal(false)}
-            onConnectionChange={(connected) => {
-              setYouTubeConnected(connected);
-              if (connected) {
-                fetchYouTubeChannels();
-              }
-            }}
-            onChannelSelect={(channel) => {
-              setSelectedYouTubeChannel(channel);
-            }}
-            selectedChannelId={selectedYouTubeChannel?.id}
           />
         )}
       </Suspense>

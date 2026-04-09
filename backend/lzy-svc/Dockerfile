@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -29,6 +29,7 @@ COPY --from=builder /app/lzy-svc .
 COPY --from=builder /app/.env .
 # Ensure YouTube client secret is available at runtime
 COPY --from=builder /app/yt-client-secret.json .
+COPY --from=builder /app/sa-secret.json .
 
 # Expose the service port
 EXPOSE 8888

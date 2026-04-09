@@ -277,8 +277,8 @@ SECRET_KEY=your-secret-key
 TOKEN_EXPIRATION_SECONDS=2592000
 
 # Databases
-POSTGRES_URI=postgres://user:pass@localhost:5432/lzy
-MONGODB_URI=mongodb://localhost:27017
+POSTGRES_URI=postgres://user:pass@localhost:5500/lzy
+MONGODB_URI=mongodb://localhost:27000
 MONGODB_DB_NAME=lzy
 
 # URLs

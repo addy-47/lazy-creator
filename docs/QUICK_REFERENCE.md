@@ -153,8 +153,8 @@ ORCHESTRATOR_URL=http://localhost:8888
 PORT=8888
 GIN_MODE=release
 SECRET_KEY=your-secret-key
-POSTGRES_URI=postgres://user:pass@localhost:5432/lzy
-MONGODB_URI=mongodb://localhost:27017
+POSTGRES_URI=postgres://user:pass@localhost:5500/lzy
+MONGODB_URI=mongodb://localhost:27000
 MONGODB_DB_NAME=lzy
 FRONTEND_URL=http://localhost:5555
 PYTHON_DIRECTOR_URL=http://localhost:9999
@@ -213,7 +213,7 @@ mongosh
 > db.video_metadata.createIndex({ "user_id": 1 })
 
 # PostgreSQL
-psql postgres://user:pass@localhost:5432/lzy
+psql postgres://user:pass@localhost:5500/lzy
 > SELECT * FROM users WHERE email = 'user@example.com';
 ```
 
@@ -271,7 +271,7 @@ mongosh
 > db.video_metadata.countDocuments()
 
 # Check PostgreSQL connection
-psql postgres://user:pass@localhost:5432/lzy
+psql postgres://user:pass@localhost:5500/lzy
 > SELECT count(*) FROM users;
 ```
 
@@ -353,7 +353,7 @@ mongosh
 > db.dropDatabase()
 
 # PostgreSQL
-psql postgres://user:pass@localhost:5432/lzy
+psql postgres://user:pass@localhost:5500/lzy
 > TRUNCATE users, youtube_credentials RESTART IDENTITY CASCADE;
 ```
 

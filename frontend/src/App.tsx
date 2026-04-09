@@ -1,6 +1,4 @@
 import { useEffect, lazy, Suspense } from "react";
-import SmoothScroll from "./components/SmoothScroll";
-import PageTransition from "./components/PageTransition";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { 
   initializeTokenRefresh, 
@@ -47,14 +45,6 @@ export const AUTH_CHANGE_EVENT = "auth-change";
 export const YOUTUBE_CONNECTED_EVENT = "youtube-connected";
 
 const queryClient = new QueryClient();
-
-// Wrapper component for route transitions
-const RouteTransition = ({ children }: { children: React.ReactNode }) => {
-  const location = useLocation();
-  return (
-    <PageTransition location={location.pathname}>{children}</PageTransition>
-  );
-};
 
 // Token refresh manager component
 const TokenRefreshManager = () => {
@@ -127,94 +117,22 @@ const App = () => {
             <TooltipProvider>
               <Toaster />
               <Sonner />
-              <SmoothScroll>
-                <BrowserRouter>
-                  <Suspense fallback={<PageLoader />}>
-                    <Routes>
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <Index />
-                          </RouteTransition>
-                        }
-                        path="/"
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <Create />
-                          </RouteTransition>
-                        }
-                        path="/create"
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <Learn />
-                          </RouteTransition>
-                        }
-                        path="/learn"
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <Gallery />
-                          </RouteTransition>
-                        }
-                        path="/gallery"
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <Processing />
-                          </RouteTransition>
-                        }
-                        path="/processing"
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <YouTubeAuthSuccess />
-                          </RouteTransition>
-                        }
-                        path="/youtube-auth-success"
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <TermsOfService />
-                          </RouteTransition>
-                        }
-                        path="/terms-of-service"
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <PrivacyPolicy />
-                          </RouteTransition>
-                        }
-                        path="/privacy-policy"
-                      />
-                      <Route
-                        path="/auth"
-                        element={
-                          <RouteWithAuth>
-                            <Auth />
-                          </RouteWithAuth>
-                        }
-                      />
-                      <Route
-                        element={
-                          <RouteTransition>
-                            <NotFound />
-                          </RouteTransition>
-                        }
-                        path="*"
-                      />
-                    </Routes>
-                  </Suspense>
-                </BrowserRouter>
-              </SmoothScroll>
+              <BrowserRouter>
+                <Suspense fallback={<PageLoader />}>
+                  <Routes>
+                    <Route path="/" element={<Index />} />
+                    <Route path="/create" element={<Create />} />
+                    <Route path="/learn" element={<Learn />} />
+                    <Route path="/gallery" element={<Gallery />} />
+                    <Route path="/processing" element={<Processing />} />
+                    <Route path="/youtube-auth-success" element={<YouTubeAuthSuccess />} />
+                    <Route path="/terms-of-service" element={<TermsOfService />} />
+                    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                    <Route path="/auth" element={<RouteWithAuth><Auth /></RouteWithAuth>} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
+              </BrowserRouter>
             </TooltipProvider>
           </NotificationProvider>
         </AuthProvider>
@@ -231,7 +149,7 @@ const RouteWithAuth = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/" />;
   }
 
-  return <RouteTransition>{children}</RouteTransition>;
+  return <>{children}</>;
 };
 
 export default App;

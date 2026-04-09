@@ -53,3 +53,4 @@ dist-ssr
 *.sw?
 **/*secret.json
 .qwen/
+backend/lzy-svc/lzy-svc

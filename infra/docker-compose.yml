@@ -1,69 +1,67 @@
-version: '3.8'
-
 services:
   # 1. Primary Orchestrator (Go)
-  lzy-svc:
-    build:
-      context: ../backend/lzy-svc
-    container_name: lzy-svc
-    restart: unless-stopped
-    ports:
-      - "8888:8888"
-    depends_on:
-      - postgres
-      - mongodb
-    env_file:
-      - ../backend/lzy-svc/.env
-    networks:
-      - lzy-network
+  # lzy-svc:
+  #   build:
+  #     context: ../backend/lzy-svc
+  #   container_name: lzy-svc
+  #   restart: unless-stopped
+  #   expose:
+  #     - "8888"
+  #   depends_on:
+  #     - postgres
+  #     - mongodb
+  #   env_file:
+  #     - ../backend/lzy-svc/.env
+  #   networks:
+  #     - lzy-network
 
-  # 2. Legacy Engine (Python) - Now a stateless generator
-  lzy-director:
-    build:
-      context: ../backend/lzy-director
-    container_name: lzy-director
-    restart: unless-stopped
-    ports:
-      - "9999:9999"
-    depends_on:
-      - mongodb
-    env_file:
-      - ../backend/lzy-director/app/.env
-    environment:
-      - PORT=9999
-    networks:
-      - lzy-network
+  # # 2. Legacy Engine (Python) - Now a stateless generator
+  # lzy-director:
+  #   build:
+  #     context: ../backend/lzy-director
+  #   container_name: lzy-director
+  #   restart: unless-stopped
+  #   expose:
+  #     - "9999"
+  #   depends_on:
+  #     - mongodb
+  #   env_file:
+  #     - ../backend/lzy-director/app/.env
+  #   environment:
+  #     - PORT=9999
+  #   networks:
+  #     - lzy-network
 
-  # 3. Frontend UI (React) - Consolidated build
-  lzy-frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-      target: production
-      args:
-        - VITE_MODE=production
-    container_name: lzy-frontend
-    restart: unless-stopped
-    ports:
-      - "5555:5555" 
-    networks:
-      - lzy-network
+  # # 3. Frontend UI (React) - Consolidated build
+  # lzy-frontend:
+  #   build:
+  #     context: ../frontend
+  #     dockerfile: Dockerfile
+  #     target: production
+  #     args:
+  #       - VITE_MODE=production
+  #   container_name: lzy-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5555" 
+  #   networks:
+  #     - lzy-network
 
-  # 4. Nginx Gateway (Port 3333)
-  nginx:
-    image: nginx:alpine
-    container_name: lzy-gateway
-    restart: unless-stopped
-    ports:
-      - "3333:3333"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - lzy-svc
-      - lzy-director
-      - lzy-frontend
-    networks:
-      - lzy-network
+  # # 4. Nginx Gateway (Port 3333)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: lzy-gateway
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3333:3333"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #   depends_on:
+  #     - lzy-svc
+  #     - lzy-director
+  #     - lzy-frontend
+  #   networks:
+  #     - lzy-network
 
   # 5. Databases
   postgres:
@@ -75,7 +73,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "5500:5432"
     volumes:
       - lzy-postgres-data:/var/lib/postgresql/data
     networks:
@@ -90,7 +88,7 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
       - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
     ports:
-      - "27017:27017"
+      - "27000:27017"
     volumes:
       - lzy-mongo-data:/data/db
     networks:
@@ -102,6 +100,4 @@ networks:
 
 volumes:
   lzy-postgres-data:
-    external: true
   lzy-mongo-data:
-    external: true
