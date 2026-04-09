@@ -32,7 +32,16 @@ export const youtubeApi = {
 
   authCallback: async (code: string, state: string, redirectUri: string): Promise<ApiResponse<{ token?: string }>> => {
     try {
-      const response = await lzySvcApi.get(`/youtube/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
+      const response = await lzySvcApi.get(`/youtube/auth-callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
+      return response.data;
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+
+  disconnect: async (): Promise<ApiResponse<any>> => {
+    try {
+      const response = await lzySvcApi.delete('/youtube/disconnect');
       return response.data;
     } catch (error) {
       return handleApiError(error);

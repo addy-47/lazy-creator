@@ -6,22 +6,24 @@ import (
 	"strconv"
 
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/config"
-	"github.com/addy-47/lazy-creator/lazy-svc/internal/middleware"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/models"
-	"github.com/addy-47/lazy-creator/lazy-svc/internal/services/auth"
 	"github.com/gin-gonic/gin"
 	"fmt"
+	"google.golang.org/api/option"
+	"google.golang.org/api/youtube/v3"
 )
 
 // VideoHandler handles HTTP requests for video operations
 type VideoHandler struct {
 	videoSvc *VideoService
+	apiKey   string
 }
 
 // NewVideoHandler creates a new video handler
 func NewVideoHandler(cfg *config.Config) *VideoHandler {
 	return &VideoHandler{
 		videoSvc: NewVideoService(cfg),
+		apiKey:   cfg.GoogleAPIKey,
 	}
 }
 
@@ -291,23 +293,60 @@ func (h *VideoHandler) GetTaskStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, video)
 }
 
-// SetupVideoRoutes configures video routes in the Gin router
-func SetupVideoRoutes(r *gin.RouterGroup, cfg *config.Config, jwtSvc *auth.JWTService) {
-	handler := NewVideoHandler(cfg)
-	
-	// Public endpoint for Python service callback
-	r.POST("/video-complete", handler.VideoComplete)
-	r.POST("/video-progress", handler.VideoProgress)
-	
-	// Protected endpoints (require authentication)
-	protected := r.Group("/")
-	protected.Use(middleware.AuthMiddleware(jwtSvc))
-	
-	{
-		protected.GET("/videos", handler.GetUserVideos)
-		protected.GET("/videos/status/:task_id", handler.GetTaskStatus)
-		protected.POST("/videos/generate", handler.Generate)
-		protected.GET("/videos/:id", handler.GetVideo)
-		protected.DELETE("/videos/:id", handler.DeleteVideo)
+// GetTrendingShorts fetches trending YouTube shorts using public API search
+func (h *VideoHandler) GetTrendingShorts(c *gin.Context) {
+	if h.apiKey == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"message": "Google API Key is not configured in the backend",
+		})
+		return
 	}
+
+	ctx := c.Request.Context()
+	service, err := youtube.NewService(ctx, option.WithAPIKey(h.apiKey))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"message": fmt.Sprintf("Failed to initialize YouTube service: %v", err),
+		})
+		return
+	}
+
+	// Search for trending shorts
+	// We use "shorts" as a query and filter for short video duration
+	call := service.Search.List([]string{"snippet"}).
+		Q("shorts").
+		Type("video").
+		VideoDuration("short").
+		MaxResults(12).
+		Order("viewCount") // Use viewCount to get popular/trending ones
+
+	response, err := call.Do()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"message": fmt.Sprintf("YouTube API search failed: %v", err),
+		})
+		return
+	}
+
+	shorts := make([]gin.H, 0, len(response.Items))
+	for _, item := range response.Items {
+		shorts = append(shorts, gin.H{
+			"youtube_video_id": item.Id.VideoId,
+			"title":            item.Snippet.Title,
+			"thumbnail_url":    item.Snippet.Thumbnails.High.Url,
+			"channel_title":     item.Snippet.ChannelTitle,
+			"published_at":     item.Snippet.PublishedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": gin.H{
+			"shorts": shorts,
+		},
+	})
 }
+

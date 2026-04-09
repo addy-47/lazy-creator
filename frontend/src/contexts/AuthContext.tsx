@@ -1,4 +1,4 @@
-import React, {
+import  {
   useState,
   useEffect,
   useMemo,
@@ -100,6 +100,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setYouTubeConnected = useCallback((connected: boolean) => {
     setIsYouTubeConnected(connected);
+  }, []);
+
+  // Listen for messages from YouTube OAuth popup
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Basic security check: verify the message type
+      if (event.data && event.data.type === 'YOUTUBE_AUTH_SUCCESS') {
+        console.log("YouTube Auth success received from popup");
+        setIsYouTubeConnected(true);
+        // Dispatch custom event to trigger Navbar/Gallery refreshes
+        window.dispatchEvent(new Event("YOUTUBE_CONNECTION_CHANGED"));
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
   }, []);
 
   // Memoize the context value as an optimization to prevent unnecessary re-renders

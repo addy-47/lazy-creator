@@ -32,6 +32,7 @@ type Config struct {
 	GoogleRedirectURI  string
 	YoutubeRedirectURI string
 	GoogleSecretFile   string
+	GoogleAPIKey       string
 }
 
 func LoadConfig() *Config {
@@ -61,6 +62,7 @@ func LoadConfig() *Config {
 		GoogleRedirectURI:  getEnv("GOOGLE_REDIRECT_URI", ""),
 		YoutubeRedirectURI: getEnv("YOUTUBE_REDIRECT_URI", ""),
 		GoogleSecretFile:   getEnv("GOOGLE_OAUTH_SECRET_FILE", ""),
+		GoogleAPIKey:       getEnv("GOOGLE_API_KEY", ""),
 	}
 }
 

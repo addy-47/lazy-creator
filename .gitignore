@@ -54,3 +54,4 @@ dist-ssr
 **/*secret.json
 .qwen/
 backend/lzy-svc/lzy-svc
+.agents/

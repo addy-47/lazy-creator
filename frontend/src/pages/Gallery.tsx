@@ -111,7 +111,10 @@ function GalleryPage() {
   }, [loadGallery]);
 
   const fetchYouTubeChannels = useCallback(async () => {
-    if (!isYouTubeConnected || loadingChannels) return [];
+    if (!isYouTubeConnected) return [];
+    
+    // Use a local variable to prevent multiple simultaneous calls
+    // since loadingChannels is used for UI state but can trigger cycles
     setLoadingChannels(true);
     try {
       const response = await youtubeApi.getChannels();
@@ -132,12 +135,26 @@ function GalleryPage() {
     } finally {
       setLoadingChannels(false);
     }
-  }, [isYouTubeConnected, loadingChannels]);
+  }, [isYouTubeConnected]); // Removed loadingChannels from dependencies
 
   useEffect(() => {
     if (isYouTubeConnected) {
       fetchYouTubeChannels();
     }
+  }, [isYouTubeConnected, fetchYouTubeChannels]);
+
+  // Listen for YouTube connection changes to refresh data
+  useEffect(() => {
+    const handleSync = () => {
+      if (isYouTubeConnected) {
+        fetchYouTubeChannels();
+      } else {
+        setYoutubeChannels([]);
+        setSelectedYouTubeChannel(null);
+      }
+    };
+    window.addEventListener("YOUTUBE_CONNECTION_CHANGED", handleSync);
+    return () => window.removeEventListener("YOUTUBE_CONNECTION_CHANGED", handleSync);
   }, [isYouTubeConnected, fetchYouTubeChannels]);
 
   const handleDownload = useCallback(async (videoId: string) => {
@@ -217,9 +234,15 @@ function GalleryPage() {
 
   const handleConnectYouTube = useCallback(async () => {
     try {
+      const toastId = toast.loading("Getting YouTube authorization URL...");
       const response = await youtubeApi.startAuth();
+      
+      toast.dismiss(toastId);
+      
       if (response && response.auth_url) {
-        window.open(response.auth_url, '_blank');
+        window.location.href = response.auth_url;
+      } else {
+        toast.error("Failed to get authorization URL");
       }
     } catch {
       toast.error("Failed to start YouTube authentication");
@@ -269,6 +292,7 @@ function GalleryPage() {
               isYouTubeConnected={isYouTubeConnected}
               onDemoVideoClick={(video: DemoVideo) => setActiveVideo(video)}
               onRefreshTrending={fetchTrendingShorts}
+              onConnectYouTube={handleConnectYouTube}
             />
           )}
         </div>

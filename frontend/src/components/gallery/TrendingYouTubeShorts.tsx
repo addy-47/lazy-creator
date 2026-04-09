@@ -15,7 +15,7 @@ const TrendingYouTubeShorts: React.FC<TrendingYouTubeShortsProps> = ({
   onRefresh,
 }) => {
   // Only show this section when there are videos
-  if (demoVideos.length === 0) {
+  if (!demoVideos || demoVideos.length === 0) {
     return null;
   }
 

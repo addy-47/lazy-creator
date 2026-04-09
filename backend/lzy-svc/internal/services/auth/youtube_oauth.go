@@ -1,4 +1,4 @@
-package youtube
+package auth
 
 import (
 	"context"
@@ -15,12 +15,12 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
-type OAuthService struct {
+type YouTubeOAuthService struct {
 	config *oauth2.Config
 }
 
-func NewOAuthService(cfg *config.Config) *OAuthService {
-	return &OAuthService{
+func NewYouTubeOAuthService(cfg *config.Config) *YouTubeOAuthService {
+	return &YouTubeOAuthService{
 		config: &oauth2.Config{
 			ClientID:     cfg.GoogleClientID,
 			ClientSecret: cfg.GoogleClientSecret,
@@ -36,19 +36,27 @@ func NewOAuthService(cfg *config.Config) *OAuthService {
 	}
 }
 
-// GetAuthURL generates the Google OAuth URL
-func (s *OAuthService) GetAuthURL(userID string) string {
-	return s.config.AuthCodeURL(fmt.Sprintf("user-%s", userID), oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+func (s *YouTubeOAuthService) GetAuthURL(userID string) string {
+	return s.config.AuthCodeURL(fmt.Sprintf("user-%s", userID), oauth2.AccessTypeOffline)
+}
+
+func (s *YouTubeOAuthService) GetCredential(userID string) (*models.YouTubeCredential, error) {
+	return db.GetYouTubeCredentialByUserID(userID)
+}
+
+// UnlinkYouTube removes the YouTube credentials for a specific user
+func (s *YouTubeOAuthService) UnlinkYouTube(userID string) error {
+	return db.DeleteYouTubeCredentialByUserID(userID)
 }
 
 // ExchangeCode handles the callback and saves tokens to Postgres
-func (s *OAuthService) ExchangeCode(ctx context.Context, code, userID string) (*oauth2.Token, error) {
+func (s *YouTubeOAuthService) ExchangeCode(ctx context.Context, code, userID string) (*oauth2.Token, error) {
 	token, err := s.config.Exchange(ctx, code)
 	if err != nil {
 		return nil, err
 	}
 
-	// Save to Postgres (Corrected Database strategy)
+	// Save to Postgres
 	err = s.saveTokenToDB(ctx, userID, token)
 	if err != nil {
 		return nil, err
@@ -57,7 +65,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, code, userID string) (*
 	return token, nil
 }
 
-func (s *OAuthService) saveTokenToDB(ctx context.Context, userID string, token *oauth2.Token) error {
+func (s *YouTubeOAuthService) saveTokenToDB(ctx context.Context, userID string, token *oauth2.Token) error {
 	ytCred := models.YouTubeCredential{
 		UserID:       userID,
 		AccessToken:  token.AccessToken,
@@ -82,7 +90,7 @@ func (s *OAuthService) saveTokenToDB(ctx context.Context, userID string, token *
 }
 
 // GetYouTubeService returns an authenticated YouTube client
-func (s *OAuthService) GetYouTubeService(ctx context.Context, userID string) (*youtube.Service, error) {
+func (s *YouTubeOAuthService) GetYouTubeService(ctx context.Context, userID string) (*youtube.Service, error) {
 	var ytCred models.YouTubeCredential
 	result := db.DB.Where("user_id = ?", userID).First(&ytCred)
 	if result.Error != nil {
@@ -110,7 +118,7 @@ func (s *OAuthService) GetYouTubeService(ctx context.Context, userID string) (*y
 }
 
 // CheckAuthStatus verifies if the user has valid/refreshable credentials
-func (s *OAuthService) CheckAuthStatus(ctx context.Context, userID string) bool {
+func (s *YouTubeOAuthService) CheckAuthStatus(ctx context.Context, userID string) bool {
 	var count int64
 	db.DB.Model(&models.YouTubeCredential{}).Where("user_id = ?", userID).Count(&count)
 	return count > 0

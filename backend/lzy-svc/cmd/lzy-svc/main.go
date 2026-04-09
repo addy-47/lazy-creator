@@ -1,10 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"time"
+
 
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/config"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/db"
@@ -32,7 +31,11 @@ func main() {
 		log.Fatalf("Failed to initialize Google OAuth service: %v", err)
 	}
 	authHandler := auth.NewAuthHandler(jwtSvc, googleOAuthSvc)
-	ytSvc := youtube.NewOAuthService(cfg)
+
+	// YouTube Services
+	ytOAuthSvc := auth.NewYouTubeOAuthService(cfg)
+	ytHandler := youtube.NewYouTubeHandler(ytOAuthSvc)
+
 	storageSvc, err := storage.NewStorageService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize storage service: %v", err)
@@ -79,6 +82,7 @@ func main() {
 		v1.POST("/auth/google-login", authHandler.GoogleLogin)
 		v1.GET("/auth/google-url", authHandler.GetGoogleAuthURL)
 		v1.GET("/auth/google-callback", authHandler.GoogleAuthCallback)
+		v1.GET("/youtube/auth-callback", ytHandler.AuthCallback)
 		v1.POST("/auth/refresh", authHandler.RefreshToken)
 		v1.POST("/auth/logout", authHandler.Logout)
 
@@ -86,104 +90,13 @@ func main() {
 		yt := v1.Group("/youtube")
 		yt.Use(middleware.AuthMiddleware(jwtSvc))
 		{
-			yt.GET("/auth-start", func(c *gin.Context) {
-				userID := c.GetString("userID")
-				authURL := ytSvc.GetAuthURL(userID)
-				c.JSON(http.StatusOK, gin.H{
-					"status":   "success",
-					"auth_url": authURL,
-				})
-			})
-
-			yt.GET("/auth-callback", func(c *gin.Context) {
-				userID := c.GetString("userID")
-				code := c.Query("code")
-				if code == "" {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "authorization code required"})
-					return
-				}
-
-				token, err := ytSvc.ExchangeCode(c.Request.Context(), code, userID)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to exchange code: %v", err)})
-					return
-				}
-
-				c.JSON(http.StatusOK, gin.H{
-					"status":     "success",
-					"message":    "YouTube account connected successfully",
-					"token_type": token.TokenType,
-					"expires_in": token.Expiry.Sub(time.Now()).Seconds(),
-				})
-			})
-
-			yt.GET("/channels", func(c *gin.Context) {
-				userID := c.GetString("userID")
-				service, err := ytSvc.GetYouTubeService(c.Request.Context(), userID)
-				if err != nil {
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "YouTube account not connected"})
-					return
-				}
-
-				// Get channel information
-				response, err := service.Channels.List([]string{"snippet", "contentDetails"}).Mine(true).Do()
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get channels: %v", err)})
-					return
-				}
-
-				channels := make([]gin.H, 0, len(response.Items))
-				for _, channel := range response.Items {
-					channels = append(channels, gin.H{
-						"id":          channel.Id,
-						"title":       channel.Snippet.Title,
-						"thumbnail":   channel.Snippet.Thumbnails.Default.Url,
-						"subscribers": "hidden", // YouTube API v3 doesn't return subscriber count without additional permissions
-					})
-				}
-
-				c.JSON(http.StatusOK, gin.H{
-					"status":   "success",
-					"channels": channels,
-				})
-			})
-
-			yt.GET("/status", func(c *gin.Context) {
-				userID := c.GetString("userID")
-				authStatus := ytSvc.CheckAuthStatus(c.Request.Context(), userID)
-				c.JSON(http.StatusOK, gin.H{
-					"status":        "success",
-					"authenticated": authStatus,
-					"is_connected":  authStatus,
-				})
-			})
-
-			yt.POST("/upload", func(c *gin.Context) {
-				userID := c.GetString("userID")
-
-				// Get YouTube service
-				_, err := ytSvc.GetYouTubeService(c.Request.Context(), userID)
-				if err != nil {
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "YouTube account not connected"})
-					return
-				}
-
-				// Get upload URL from query or request body
-				videoURL := c.Query("video_url")
-				if videoURL == "" {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "video_url required"})
-					return
-				}
-
-				// TODO: Implement actual YouTube upload logic
-				// This would download the video from GCS and upload to YouTube
-				c.JSON(http.StatusOK, gin.H{
-					"status":    "success",
-					"message":   "Upload endpoint ready - implementation pending",
-					"video_url": videoURL,
-				})
-			})
+			yt.GET("/auth-start", ytHandler.AuthStart)
+			yt.GET("/channels", ytHandler.GetChannels)
+			yt.GET("/status", ytHandler.GetStatus)
+			yt.DELETE("/disconnect", ytHandler.AuthDisconnect)
+			yt.POST("/upload", ytHandler.Upload)
 		}
+
 
 		// Storage Routes
 		st := v1.Group("/storage")
@@ -219,7 +132,25 @@ func main() {
 		}
 
 		// Video and Python Callback Routes
-		video.SetupVideoRoutes(v1, cfg, jwtSvc)
+		videoHandler := video.NewVideoHandler(cfg)
+
+		// Public Video Callbacks (Internal use by engine)
+		v1.POST("/video-complete", videoHandler.VideoComplete)
+		v1.POST("/video-progress", videoHandler.VideoProgress)
+		
+		// Public Explore/Trending
+		v1.GET("/youtube-trending-shorts", videoHandler.GetTrendingShorts)
+
+		// Protected Video Routes
+		videoGroup := v1.Group("/videos")
+		videoGroup.Use(middleware.AuthMiddleware(jwtSvc))
+		{
+			videoGroup.GET("", videoHandler.GetUserVideos)
+			videoGroup.GET("/status/:task_id", videoHandler.GetTaskStatus)
+			videoGroup.POST("/generate", videoHandler.Generate)
+			videoGroup.GET("/:id", videoHandler.GetVideo)
+			videoGroup.DELETE("/:id", videoHandler.DeleteVideo)
+		}
 	}
 
 	// 6. Start Server

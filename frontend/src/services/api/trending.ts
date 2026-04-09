@@ -10,10 +10,10 @@ import { ApiResponse } from "@/types/common";
 export const trendingApi = {  
   getYouTubeShorts: async (): Promise<AxiosResponse<ApiResponse<{ shorts: YouTubeShort[] }>>> => {
     try {
-      const response = await lzySvcApi.get("/api/youtube-trending-shorts");
+      const response = await lzySvcApi.get("/youtube-trending-shorts");
       return response;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
 };

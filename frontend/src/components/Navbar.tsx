@@ -7,6 +7,7 @@ import { AUTH_CHANGE_EVENT } from "@/utils/events";
 import { useTheme } from "next-themes";
 import { youtubeApi } from "@/services/api";
 import { useAuth } from "@/contexts/use-auth";
+import { toast } from "sonner";
 
 interface NavbarProps {
   username?: string;
@@ -137,6 +138,72 @@ const Navbar = ({ disableNavigation }: NavbarProps) => {
       window.removeEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
     };
   }, [checkYouTubeConnection]);
+
+  // Listen for YouTube connection changes (e.g. from popup bridge)
+  useEffect(() => {
+    const handleSync = () => {
+      checkYouTubeConnection();
+      forceUpdate();
+    };
+    window.addEventListener("YOUTUBE_CONNECTION_CHANGED", handleSync);
+    return () => window.removeEventListener("YOUTUBE_CONNECTION_CHANGED", handleSync);
+  }, [checkYouTubeConnection, forceUpdate]);
+
+  const handleConnectYouTube = async () => {
+    if (!isAuthenticated) {
+      toast.error("Please sign in first to connect your YouTube account");
+      navigate("/auth");
+      return;
+    }
+
+    try {
+      const toastId = toast.loading("Opening YouTube authorization...");
+      const response = await youtubeApi.startAuth();
+      
+      toast.dismiss(toastId);
+      
+      if (response && response.auth_url) {
+        // Open the auth URL in a popup
+        const width = 600;
+        const height = 700;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+        
+        window.open(
+          response.auth_url, 
+          "YouTubeLogin", 
+          `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
+        );
+      } else {
+        toast.error("Failed to get authorization URL");
+      }
+    } catch (error) {
+      console.error("YouTube auth error:", error);
+      toast.error("An error occurred while connecting to YouTube");
+    }
+  };
+
+  const handleDisconnectYouTube = async () => {
+    if (!window.confirm("Are you sure you want to disconnect your YouTube account?")) return;
+    
+    const toastId = toast.loading("Disconnecting YouTube...");
+    try {
+      const response = await youtubeApi.disconnect();
+      if (response.status === "success") {
+        setYouTubeConnected(false);
+        toast.success("YouTube disconnected successfully");
+        // Dispatch event to sync other components
+        window.dispatchEvent(new Event("YOUTUBE_CONNECTION_CHANGED"));
+      } else {
+        toast.error("Failed to disconnect: " + (response.message || "Unknown error"));
+      }
+    } catch (error) {
+      console.error("Disconnect error:", error);
+      toast.error("Failed to disconnect YouTube");
+    } finally {
+      toast.dismiss(toastId);
+    }
+  };
 
   useEffect(() => {
     // Check user's preference
@@ -312,12 +379,15 @@ const Navbar = ({ disableNavigation }: NavbarProps) => {
                   <div className={`w-2.5 h-2.5 rounded-full ${isYouTubeConnected ? 'bg-primary animate-pulse shadow-[0_0_10px_rgba(224,17,95,0.7)]' : 'bg-muted-foreground/30'}`} />
                 </button>
                 <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">
-                  <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+                  <div 
+                    className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
+                    onClick={() => isYouTubeConnected ? handleDisconnectYouTube() : handleConnectYouTube()}
+                  >
                     <ConnectionSphere isConnected={isYouTubeConnected} />
                     <span className="text-xs text-foreground/70">
                       {isYouTubeConnected
-                        ? "YouTube Connected"
-                        : "YouTube Disconnected"}
+                        ? "Disconnect YouTube"
+                        : "Connect YouTube"}
                     </span>
                   </div>
                   <button
@@ -448,12 +518,15 @@ const Navbar = ({ disableNavigation }: NavbarProps) => {
 
             {user ? (
               <>
-                <div className="flex items-center gap-2 py-2 text-sm">
+                <div 
+                  className="flex items-center gap-2 py-2 text-sm cursor-pointer hover:bg-primary/5 rounded-lg px-2"
+                  onClick={() => !isYouTubeConnected && handleConnectYouTube()}
+                >
                   <ConnectionSphere isConnected={isYouTubeConnected} />
                   <span className="text-foreground/70">
                     {isYouTubeConnected
                       ? "YouTube Connected"
-                      : "YouTube Disconnected"}
+                      : "Connect YouTube"}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 py-2">
