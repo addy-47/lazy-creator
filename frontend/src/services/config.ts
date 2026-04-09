@@ -6,13 +6,6 @@ export const getLzySvcBaseURL = (): string => {
 };
 
 /**
- * Returns the base URL for the legacy Python video generation service (lzy-director)
- */
-export const getLzyDirectorBaseURL = (): string => {
-  return import.meta.env.VITE_LZY_DIRECTOR_URL || "/api/v1/lzy-director";
-};
-
-/**
  * Returns the current base URL for the frontend
  */
 export const getFrontendBaseURL = (): string => {

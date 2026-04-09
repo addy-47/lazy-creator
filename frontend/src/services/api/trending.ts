@@ -1,5 +1,4 @@
-import { lzyDirectorApi, handleApiError } from "./client";
-import { getToken } from "../tokenService";
+import { lzySvcApi, handleApiError } from "./client";
 
 export interface YouTubeShort {
   id: string;
@@ -13,17 +12,10 @@ export interface YouTubeShort {
 /**
  * Trending Content API
  */
-export const trendingApi = {
+export const trendingApi = {  
   getYouTubeShorts: async (): Promise<{ data: { status: string; shorts: YouTubeShort[] } }> => {
     try {
-      const token = getToken();
-      const separator = "?";
-      const tokenParam = token
-        ? `${separator}token=${encodeURIComponent(token)}`
-        : "";
-      const fullUrl = `/api/youtube-trending-shorts${tokenParam}`;
-
-      const response = await lzyDirectorApi.get(fullUrl);
+      const response = await lzySvcApi.get("/api/youtube-trending-shorts");
       return response;
     } catch (error) {
       handleApiError(error);

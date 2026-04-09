@@ -7,7 +7,7 @@ import {
   emitSessionExpiredEvent,
   SESSION_EXPIRED_EVENT,
 } from "../tokenService";
-import { getLzySvcBaseURL, getLzyDirectorBaseURL } from "../config";
+import { getLzySvcBaseURL } from "../config";
 
 // Centralized API client configuration
 const createApiClient = (baseURL: string) => {
@@ -24,7 +24,6 @@ const createApiClient = (baseURL: string) => {
 
 // Create centralized API clients
 const lzySvcApi = createApiClient(getLzySvcBaseURL());
-const lzyDirectorApi = createApiClient(getLzyDirectorBaseURL());
 
 // Interceptor State for token refresh
 let isRefreshing = false;
@@ -85,8 +84,6 @@ lzySvcApi.interceptors.request.use(
   }
 );
 
-// Note: lzyDirectorApi (Python service) no longer has auth interceptors 
-// because it is now an internal service orchestrated by lzySvcApi.
 
 // Response interceptor to handle 401 errors and token refresh
 const responseInterceptor = (response: any) => response;
@@ -192,4 +189,4 @@ const handleApiError = (error: any): never => {
 };
 
 // Export base clients and utilities for use in specific API modules
-export { lzySvcApi, lzyDirectorApi, handleApiError, createApiClient };
+export { lzySvcApi, handleApiError, createApiClient };
