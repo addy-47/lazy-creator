@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Download, Youtube, X, ChevronDown } from "lucide-react";
 import { videoApi } from "@/services/api";
 
-import { Video } from "@/services/api/video";
+import { Video } from "@/types/video";
 
 interface VideoDialogProps {
   video: Video;

@@ -25,7 +25,6 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
   const [videoError, setVideoError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const isLocalDemo = demo.url && demo.url.includes("/demo/");
   const isYouTubeThumbnail =
     demo.url &&
     (demo.url.includes("youtube.com") || demo.url.includes("ytimg.com"));

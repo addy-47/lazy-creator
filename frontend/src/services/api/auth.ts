@@ -1,23 +1,14 @@
+import { AxiosResponse } from "axios";
 import { lzySvcApi, handleApiError } from "./client";
+import { AuthResponseData } from "@/types/auth";
+import { ApiResponse, BaseResponse } from "@/types/common";
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  picture?: string;
-}
-
-export interface AuthResponse {
-  status: string;
-  token: string;
-  user: User;
-}
 
 /**
  * Authentication API
  */
 export const authApi = {
-  login: async (credentials: any): Promise<{ data: AuthResponse }> => {
+  login: async (credentials: Record<string, string>): Promise<AxiosResponse<ApiResponse<AuthResponseData>>> => {
     try {
       const response = await lzySvcApi.post('/auth/login', credentials);
       return response;
@@ -26,7 +17,7 @@ export const authApi = {
     }
   },
   
-  register: async (userData: any): Promise<{ data: AuthResponse }> => {
+  register: async (userData: Record<string, unknown>): Promise<AxiosResponse<ApiResponse<AuthResponseData>>> => {
     try {
       const response = await lzySvcApi.post('/auth/register', userData);
       return response;
@@ -35,7 +26,7 @@ export const authApi = {
     }
   },
   
-  getGoogleAuthUrl: async (): Promise<{ data: { status: string; url: string } }> => {
+  getGoogleAuthUrl: async (): Promise<AxiosResponse<ApiResponse<{ url: string }>>> => {
     try {
       const response = await lzySvcApi.get('/auth/google-url');
       return response;
@@ -44,7 +35,7 @@ export const authApi = {
     }
   },
   
-  refreshToken: async (): Promise<{ data: { token: string } }> => {
+  refreshToken: async (): Promise<AxiosResponse<ApiResponse<{ token: string }>>> => {
     try {
       const response = await lzySvcApi.post('/auth/refresh');
       return response;
@@ -53,7 +44,7 @@ export const authApi = {
     }
   },
   
-  logout: async (): Promise<{ data: { status: string; message: string } }> => {
+  logout: async (): Promise<AxiosResponse<BaseResponse>> => {
     try {
       const response = await lzySvcApi.post('/auth/logout');
       return response;

@@ -20,5 +20,5 @@ export const useStepFocus = (
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [step]);
+  }, [step, focusRef]);
 };

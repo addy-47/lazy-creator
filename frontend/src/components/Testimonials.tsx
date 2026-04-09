@@ -90,13 +90,13 @@ const Testimonials = () => {
 
   return (
     <section
-      className="section py-24 dark:bg-[#0A0A0A] light:bg-white relative"
+      className="section py-24 bg-white dark:bg-[#0A0A0A] relative"
       ref={containerRef}
     >
       {/* Background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute left-1/4 top-24 w-64 h-64 rounded-full dark:bg-[#800000]/5 light:bg-[#800000]/5 blur-3xl"></div>
-        <div className="absolute right-1/4 bottom-24 w-64 h-64 rounded-full dark:bg-[#E0115F]/5 light:bg-[#E0115F]/5 blur-3xl"></div>
+        <div className="absolute left-1/4 top-24 w-64 h-64 rounded-full bg-[#800000]/5 dark:bg-[#800000]/5 blur-3xl"></div>
+        <div className="absolute right-1/4 bottom-24 w-64 h-64 rounded-full bg-[#E0115F]/5 dark:bg-[#E0115F]/5 blur-3xl"></div>
 
         {/* Quote decoration */}
         <div className="absolute top-10 left-10 opacity-5">
@@ -116,7 +116,7 @@ const Testimonials = () => {
           <h2 className="font-semibold text-4xl mb-4 text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Hear from Our Creators
           </h2>
-          <p className="text-lg dark:text-gray-300 light:text-gray-700">
+          <p className="text-lg text-gray-700 dark:text-gray-300">
             Real feedback from content creators who have transformed their
             YouTube Shorts strategy
           </p>
@@ -130,13 +130,13 @@ const Testimonials = () => {
         >
           <div className="glass-card-ruby px-6 py-8 md:p-10 relative">
             {/* Quote icon */}
-            <div className="absolute left-6 top-6 dark:text-[#E0115F]/20 light:text-[#E0115F]/40">
+            <div className="absolute left-6 top-6 text-[#E0115F]/40 dark:text-[#E0115F]/20">
               <Quote size={42} />
             </div>
 
             {/* Testimonial content */}
             <div className="pt-10 pb-4 px-6 md:px-10 relative">
-              <p className="text-xl md:text-2xl leading-relaxed dark:text-gray-200 light:text-gray-700 mb-8">
+              <p className="text-xl md:text-2xl leading-relaxed text-gray-700 dark:text-gray-200 mb-8">
                 "{testimonialsData[activeIndex].content}"
               </p>
 
@@ -146,10 +146,10 @@ const Testimonials = () => {
                   {testimonialsData[activeIndex].author.charAt(0)}
                 </div>
                 <div className="ml-4">
-                  <div className="font-medium dark:text-white light:text-gray-800">
+                  <div className="font-medium text-gray-800 dark:text-white">
                     {testimonialsData[activeIndex].author}
                   </div>
-                  <div className="text-sm dark:text-gray-400 light:text-gray-600">
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
                     {testimonialsData[activeIndex].role}
                   </div>
                 </div>
@@ -173,20 +173,20 @@ const Testimonials = () => {
             <div className="absolute right-6 bottom-6 flex space-x-2">
               <button
                 onClick={() => navigateTestimonial("prev")}
-                className="w-10 h-10 rounded-full dark:bg-black/30 light:bg-gray-100 border dark:border-[#722F37]/30 light:border-gray-300 flex items-center justify-center hover:dark:bg-black/50 hover:light:bg-gray-200 transition-colors"
+                className="w-10 h-10 rounded-full dark:bg-black/30 bg-gray-100 border dark:border-[#722F37]/30 border-gray-300 flex items-center justify-center hover:dark:bg-black/50 hover:bg-gray-200 transition-colors"
               >
                 <ArrowUp
                   size={18}
-                  className="dark:text-gray-400 light:text-gray-600"
+                  className="dark:text-gray-400 text-gray-600"
                 />
               </button>
               <button
                 onClick={() => navigateTestimonial("next")}
-                className="w-10 h-10 rounded-full dark:bg-black/30 light:bg-gray-100 border dark:border-[#722F37]/30 light:border-gray-300 flex items-center justify-center hover:dark:bg-black/50 hover:light:bg-gray-200 transition-colors"
+                className="w-10 h-10 rounded-full dark:bg-black/30 bg-gray-100 border dark:border-[#722F37]/30 border-gray-300 flex items-center justify-center hover:dark:bg-black/50 hover:bg-gray-200 transition-colors"
               >
                 <ArrowDown
                   size={18}
-                  className="dark:text-gray-400 light:text-gray-600"
+                  className="dark:text-gray-400 text-gray-600"
                 />
               </button>
             </div>
@@ -214,16 +214,16 @@ const Testimonials = () => {
           }`}
         >
           <div className="glass-card p-8 flex flex-col items-center">
-            <div className="w-16 h-16 rounded-full dark:bg-[#800000]/10 light:bg-[#800000]/10 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full dark:bg-[#800000]/10 bg-[#800000]/10 flex items-center justify-center mb-4">
               <MousePointerClick
                 size={28}
                 className="text-[#E0115F] animate-bounce"
               />
             </div>
-            <h3 className="text-xl font-medium mb-2 dark:text-white light:text-gray-800">
+            <h3 className="text-xl font-medium mb-2 dark:text-white text-gray-800">
               Ready to revolutionize your content?
             </h3>
-            <p className="dark:text-gray-400 light:text-gray-600 mb-6">
+            <p className="dark:text-gray-400 text-gray-600 mb-6">
               Join thousands of creators who've transformed their YouTube Shorts
               strategy.
             </p>

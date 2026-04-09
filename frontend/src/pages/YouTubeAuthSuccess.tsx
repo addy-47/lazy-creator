@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/use-auth";
+import { BaseResponse } from "@/types/common";
 import { toast } from "sonner";
-import axios from "axios";
 import { getLzySvcBaseURL } from "@/services/config";
 import { getToken, setToken } from "@/services/tokenService";
 import { youtubeApi } from "@/services/api";
@@ -13,11 +13,11 @@ export default function YouTubeAuthSuccess() {
   const { setYouTubeConnected } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(true);
-  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
   const [countdownSeconds, setCountdownSeconds] = useState(5);
 
   useEffect(() => {
-    // Add debug info
+    // Add debug info to state instead of just logging
     setDebugInfo({
       currentUrl: window.location.href,
       pathname: location.pathname,
@@ -171,29 +171,20 @@ export default function YouTubeAuthSuccess() {
 
         // Redirect the authorization code to our backend
         try {
-          // Manually construct callback URL with required params
-          const callbackUrl = `${getLzySvcBaseURL()}/api/v1/lzy-svc/youtube/auth-callback?code=${encodeURIComponent(
-            code
-          )}&state=${encodeURIComponent(
-            state
-          )}&redirect_uri=${encodeURIComponent(
-            window.location.origin + "/youtube-auth-success"
-          )}`;
+          // Use youtubeApi for the callback
+          console.log("Sending code to backend to verify...");
+          const response = await youtubeApi.authCallback(code, state, window.location.origin + "/youtube-auth-success");
 
-          console.log("Redirecting code to backend at:", callbackUrl);
+          console.log("Backend callback response:", response);
 
-          const response = await axios.get(callbackUrl);
-
-          console.log("Backend callback response:", response.data);
-
-          if (response.data && response.data.status === "success") {
+          if (response && (response as BaseResponse).status === "success") {
             // Update global state
             setYouTubeConnected(true);
             setProcessing(false);
             toast.success("Successfully connected to YouTube!");
 
             // Send success message and close window
-            const newToken = response.data.token || null;
+            const newToken = (response as { token?: string }).token || null;
             if (newToken) {
               setToken(newToken);
             }
@@ -201,21 +192,25 @@ export default function YouTubeAuthSuccess() {
             sendMessageAndFinish(true, undefined, newToken);
           } else {
             const errorMsg =
-              response.data?.message ||
+              (response as BaseResponse)?.message ||
               "YouTube connection verification failed";
             setError(errorMsg);
             setProcessing(false);
             toast.error("YouTube connection failed: " + errorMsg);
             sendMessageAndFinish(false, errorMsg);
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error("Error sending code to backend:", error);
 
-          // Check if we got a redirect response (older server versions)
+          // Support older server versions that might redirect
+          const errorAsDetailed = error as { 
+            request?: { 
+              responseURL?: string 
+            } 
+          };
+          
           if (
-            error.request &&
-            error.request.responseURL &&
-            error.request.responseURL.includes("youtube_auth=success")
+            errorAsDetailed.request?.responseURL?.includes("youtube_auth=success")
           ) {
             // This was actually a success, but received a redirect instead of JSON
             setYouTubeConnected(true);
@@ -223,7 +218,8 @@ export default function YouTubeAuthSuccess() {
             toast.success("Successfully connected to YouTube!");
 
             // Try to extract token from redirect URL
-            const url = new URL(error.request.responseURL);
+            const responseURL = errorAsDetailed.request.responseURL;
+            const url = new URL(responseURL);
             const token = url.searchParams.get("token");
             if (token) {
               setToken(token);
@@ -240,10 +236,10 @@ export default function YouTubeAuthSuccess() {
               console.log("Checking YouTube connection status...");
               const response = await youtubeApi.getStatus();
 
-              console.log("YouTube auth status response:", response.data);
+              console.log("YouTube auth status response:", response);
 
-              if (response.data.status === "success") {
-                if (response.data.is_connected || response.data.authenticated) {
+              if (response.status === "success") {
+                if (response.is_connected || response.authenticated) {
                   // Update global state
                   setYouTubeConnected(true);
                   setProcessing(false);
@@ -257,7 +253,7 @@ export default function YouTubeAuthSuccess() {
                 }
               } else {
                 setError(
-                  response.data?.message ||
+                  response?.message ||
                     "YouTube connection status check failed"
                 );
                 setProcessing(false);
@@ -273,16 +269,17 @@ export default function YouTubeAuthSuccess() {
             }
           }, 1500);
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("Unexpected error in YouTube auth success:", e);
-        setError("Unexpected error: " + e.message);
+        const errorMessage = e instanceof Error ? e.message : "An unexpected error occurred";
+        setError("Unexpected error: " + errorMessage);
         setProcessing(false);
-        toast.error("YouTube connection error: " + e.message);
+        toast.error("YouTube connection error: " + errorMessage);
       }
     };
 
     checkYouTubeConnection();
-  }, [location.search, navigate, setYouTubeConnected]);
+  }, [location.search, location.pathname, navigate, setYouTubeConnected]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground p-4">

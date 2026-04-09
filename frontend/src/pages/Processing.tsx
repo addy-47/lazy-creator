@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import { useAuth } from "@/contexts/use-auth";
 import { videoApi } from "@/services/api";
 import { PollingService } from "@/services/pollingService";
 import { toast } from "sonner";
@@ -12,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { X, Info } from "lucide-react";
 import LazyCreatorLoader from "@/components/LazyCreatorLoader";
+import { VIDEO_CREATION_IN_PROGRESS } from "@/utils/events";
 
 const ProcessingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -88,13 +87,13 @@ const ProcessingPage: React.FC = () => {
       },
       onSuccess: () => {
         toast.success("Video generation completed!");
-        localStorage.removeItem("videoCreationInProgress");
+        localStorage.removeItem(VIDEO_CREATION_IN_PROGRESS);
         setTimeout(() => navigate("/gallery"), 1500);
       },
       onError: (error) => {
         setStatus("error");
         toast.error(error.message || "Generation failed");
-        localStorage.removeItem("videoCreationInProgress");
+        localStorage.removeItem(VIDEO_CREATION_IN_PROGRESS);
       }
     });
 
@@ -110,13 +109,13 @@ const ProcessingPage: React.FC = () => {
     setIsCancelling(true);
     try {
       const response = await videoApi.cancel(videoId);
-      if (response.data.status === "success" || response.status === 200) {
+      if (response.status === "success") {
         toast.success("Video generation cancelled");
         setStatus("cancelled");
-        localStorage.removeItem("videoCreationInProgress");
+        localStorage.removeItem(VIDEO_CREATION_IN_PROGRESS);
         setTimeout(() => navigate("/create"), 1500);
       } else {
-        throw new Error(response.data.message || "Failed to cancel");
+        throw new Error(response.message || "Failed to cancel");
       }
     } catch (error) {
       console.error("Error cancelling video:", error);
@@ -157,39 +156,25 @@ const ProcessingPage: React.FC = () => {
 
   // Redirect to create page if user refreshes and no video is in progress
   useEffect(() => {
-    const inProgress = localStorage.getItem("videoCreationInProgress");
+    const inProgress = localStorage.getItem(VIDEO_CREATION_IN_PROGRESS);
     if (!inProgress && !videoId) {
       navigate("/create");
     }
   }, [videoId, navigate]);
 
   return (
-    <div className="min-h-screen flex flex-col overflow-hidden text-foreground">
-      {/* Background with brand styling */}
-      <div className="fixed inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-br dark:from-[#800000]/10 dark:via-[#722F37]/5 dark:to-[#0A0A0A] light:from-[#FFF5F5]/70 light:via-[#FFF0F0]/80 light:to-white"></div>
-        <div className="absolute inset-0">
-          <div className="absolute top-0 right-1/4 w-full max-w-3xl aspect-[3/1] bg-[#E0115F]/5 rounded-full blur-[100px] opacity-20 animate-breathe"></div>
-          <div className="absolute bottom-1/4 left-1/4 w-full max-w-2xl aspect-[3/1] bg-[#800000]/10 rounded-full blur-[120px] opacity-10 animate-breathe delay-700"></div>
-        </div>
-        <div className="absolute inset-0 opacity-[0.03]">
-          <div className="h-full w-full bg-[radial-gradient(#E0115F_1px,transparent_1px)] [background-size:24px_24px]"></div>
-        </div>
-      </div>
-
-      <Navbar disableNavigation={true} />
-
-      <main className="flex-grow relative pt-24 md:pt-32 pb-16">
+    <div className="flex flex-col overflow-hidden text-foreground">
+      <main className="flex-grow relative pt-8 md:pt-16 pb-16">
         <div className="container max-w-3xl mx-auto px-4 md:px-6 relative z-10">
           <div className="text-left md:text-center mb-10">
             <div className="inline-block px-4 py-1 mb-4 text-sm font-medium text-[#E0115F] bg-[#E0115F]/10 dark:bg-[#E0115F]/5 border border-[#E0115F]/20 rounded-full">
               Processing Your Video
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold dark:text-white light:text-gray-800 mb-4 leading-tight">
+            <h1 className="text-3xl md:text-4xl font-bold dark:text-white mb-4 leading-tight">
               Creating Your YouTube Short
               <span className="text-[#E0115F]">.</span>
             </h1>
-            <p className="text-base md:text-lg dark:text-gray-400 light:text-gray-600 max-w-2xl mx-auto">
+            <p className="text-base md:text-lg dark:text-gray-400 text-gray-600 max-w-2xl mx-auto">
               Sit back and relax while we generate your video. This process may
               take a few minutes.
             </p>
@@ -261,8 +246,6 @@ const ProcessingPage: React.FC = () => {
           </Card>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 };

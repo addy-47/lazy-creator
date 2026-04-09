@@ -1,42 +1,7 @@
+import { PREDEFINED_PROMPTS } from "@/utils/prompts";
 import { useState, useEffect } from "react";
 import { MessageSquare } from "lucide-react";
 import { Textarea } from "./ui/textarea";
-
-
-
-const predefinedPrompts = [
-  {
-    id: 1,
-    title: "Latest AI News",
-    prompt: "Create a short about the latest developments in AI technology",
-  },
-  {
-    id: 2,
-    title: "Tech Gadget Review",
-    prompt:
-      "Review the latest smartphone features in a compelling short format",
-  },
-  {
-    id: 3,
-    title: "Coding Tips",
-    prompt: "Share 3 essential coding tips for beginners in a brief tutorial",
-  },
-  {
-    id: 4,
-    title: "Daily Motivation",
-    prompt: "Create an inspirational short about overcoming challenges",
-  },
-  {
-    id: 5,
-    title: "Productivity Hack",
-    prompt: "Explain a time-saving productivity technique in under 60 seconds",
-  },
-  {
-    id: 6,
-    title: "Life Hack",
-    prompt: "Demonstrate a clever everyday life hack that saves time or money",
-  },
-];
 
 interface PromptSelectorProps {
   selectedPrompt: string;
@@ -72,12 +37,12 @@ const PromptSelector = ({
     // Check if we're first loading with no prompt selected and not in custom mode
     if (!selectedPrompt && !isCustom) {
       // Set to the first predefined prompt by default only if not in custom mode
-      onPromptChange(predefinedPrompts[0].prompt);
+      onPromptChange(PREDEFINED_PROMPTS[0].prompt);
       return;
     }
 
     // Check if the currently selected prompt matches any predefined prompts
-    const matchingPredefinedPrompt = predefinedPrompts.find(
+    const matchingPredefinedPrompt = PREDEFINED_PROMPTS.find(
       (p) => p.prompt === selectedPrompt
     );
 
@@ -143,25 +108,23 @@ const PromptSelector = ({
 
       <div className="overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-rounded-full scrollbar-thumb-primary/50 scrollbar-track-transparent">
         <div className="flex space-x-2 pb-2 min-w-max">
-          {predefinedPrompts.map((promptItem) => (
+          {PREDEFINED_PROMPTS.map((promptItem) => (
             <button
               key={promptItem.id}
-              className={`flex-shrink-0 px-4 py-2 rounded-full border transition-all focus:outline-none ${
-                !isCustom && selectedPrompt === promptItem.prompt
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background border-border hover:border-primary/50"
-              }`}
+              className={`flex-shrink-0 px-4 py-2 rounded-full border transition-all focus:outline-none ${!isCustom && selectedPrompt === promptItem.prompt
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background border-border hover:border-primary/50"
+                }`}
               onClick={() => handlePredefinedPromptSelect(promptItem.prompt)}
             >
               {promptItem.title}
             </button>
           ))}
           <button
-            className={`flex-shrink-0 px-4 py-2 rounded-full border transition-all focus:outline-none ${
-              isCustom
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background border-border hover:border-primary/50"
-            }`}
+            className={`flex-shrink-0 px-4 py-2 rounded-full border transition-all focus:outline-none ${isCustom
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background border-border hover:border-primary/50"
+              }`}
             onClick={toggleCustomPrompt}
           >
             Custom

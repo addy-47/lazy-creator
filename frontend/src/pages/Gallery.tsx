@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef, Suspense, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { videoApi, youtubeApi, fallbackApi } from "@/services/api";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/use-auth";
 
 // Import gallery components
 import GalleryHeader from "@/components/gallery/GalleryHeader";
@@ -11,10 +11,9 @@ import MyVideosSection from "@/components/gallery/MyVideosSection";
 import ExploreSection from "@/components/gallery/ExploreSection";
 import {
   Video,
-  DemoVideo,
-  UploadData,
-  YouTubeChannel,
-} from "@/components/gallery/types";
+  YouTubeShort as DemoVideo,
+} from "@/types/video";
+import { UploadData, YouTubeChannel } from "@/types/youtube";
 
 // Lazy load non-critical components
 const LazyVideoDialog = React.lazy(() => import("@/components/gallery/VideoDialog"));
@@ -30,7 +29,7 @@ const isLowEndDevice = () => {
 
 function GalleryPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, isYouTubeConnected, setYouTubeConnected } = useAuth();
+  const { isAuthenticated, isYouTubeConnected } = useAuth();
   
   const [videos, setVideos] = useState<Video[]>([]);
   const [demoVideos, setDemoVideos] = useState<DemoVideo[]>([]);
@@ -39,45 +38,23 @@ function GalleryPage() {
   const [uploading, setUploading] = useState<string | null>(null);
   const [showUploadForm, setShowUploadForm] = useState<string | null>(null);
   const [uploadData, setUploadData] = useState<UploadData>({
+    video_id: "",
     title: "",
     description: "",
-    tags: "",
-    useThumbnail: false,
-    privacyStatus: "public",
+    tags: [],
+    privacy_status: "public",
   });
   const [youtubeChannels, setYoutubeChannels] = useState<YouTubeChannel[]>([]);
   const [loadingChannels, setLoadingChannels] = useState(false);
-  const [activeVideo, setActiveVideo] = useState<Video | null>(null);
+  const [activeVideo, setActiveVideo] = useState<Video | DemoVideo | null>(null);
   const [activeSection, setActiveSection] = useState<"my-videos" | "explore">("my-videos");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedYouTubeChannel, setSelectedYouTubeChannel] = useState<any>(null);
+  const [selectedYouTubeChannel, setSelectedYouTubeChannel] = useState<YouTubeChannel | null>(null);
   
   // Low-end device detection
   const isLowEnd = useRef(isLowEndDevice());
 
-  const handleAuthResponse = useCallback((data: any) => {
-    const isPostRedirect = sessionStorage.getItem("checkYouTubeAuth") === "true";
-    
-    if (data.status === "success") {
-      if (data.is_connected || data.authenticated) {
-        setYouTubeConnected(true);
-        if (isPostRedirect) {
-          toast.success("Successfully connected to YouTube!");
-          sessionStorage.removeItem("checkYouTubeAuth");
-        }
-      } else {
-        setYouTubeConnected(false);
-      }
-    } else {
-      if (isPostRedirect) {
-        toast.error(data.message || "Unable to verify YouTube connection status.");
-        sessionStorage.removeItem("checkYouTubeAuth");
-      }
-      setYouTubeConnected(false);
-    }
-  }, [setYouTubeConnected]);
-
-  const loadDemoVideos = useCallback((count = 6) => {
+  const loadDemoVideos = useCallback((count: number) => {
     const demos: DemoVideo[] = [];
     const assetPath = "/assets/";
     
@@ -102,8 +79,8 @@ function GalleryPage() {
       
       try {
         const response = await videoApi.getGallery();
-        if (response.data && response.data.videos) {
-          setVideos(response.data.videos);
+        if (response && response.videos) {
+          setVideos(response.videos);
         } else {
           setVideos([]);
         }
@@ -126,14 +103,14 @@ function GalleryPage() {
     setLoadingChannels(true);
     try {
       const response = await youtubeApi.getChannels();
-      if (response.data.status === "success" && response.data.channels) {
-        setYoutubeChannels(response.data.channels);
-        if (response.data.channels.length > 0) {
+      if (response.status === "success" && response.channels) {
+        setYoutubeChannels(response.channels);
+        if (response.channels.length > 0) {
           const savedChannelId = sessionStorage.getItem("selectedYouTubeChannel");
-          const selectedChannel = response.data.channels.find(c => c.id === savedChannelId) || response.data.channels[0];
+          const selectedChannel = response.channels.find(c => c.id === savedChannelId) || response.channels[0];
           setSelectedYouTubeChannel(selectedChannel);
-          setUploadData(prev => ({ ...prev, channelId: selectedChannel.id }));
-          return response.data.channels;
+          setUploadData((prev: UploadData) => ({ ...prev, channelId: selectedChannel.id }));
+          return response.channels;
         }
       }
       return [];
@@ -151,32 +128,33 @@ function GalleryPage() {
     }
   }, [isYouTubeConnected, fetchYouTubeChannels]);
 
-  const handleDownload = async (videoId: string) => {
+  const handleDownload = useCallback(async (videoId: string) => {
     try {
       setDownloadingVideoId(videoId);
       await videoApi.download(videoId, "video.mp4");
       toast.success("Download started!");
-    } catch (error) {
+    } catch {
       toast.error("Failed to download video");
     } finally {
       setDownloadingVideoId(null);
     }
-  };
+  }, []);
 
-  const handleDelete = async (videoId: string) => {
+  const handleDelete = useCallback(async (videoId: string) => {
     if (!window.confirm("Are you sure you want to delete this video?")) return;
     const toastId = toast.loading("Deleting video...");
     try {
       await videoApi.delete(videoId);
-      setVideos(prev => prev.filter(v => v.id !== videoId));
+      setVideos((prev: Video[]) => prev.filter(v => v.id !== videoId));
       toast.success("Video deleted successfully");
-    } catch (error: any) {
-      if (error.response?.status === 404) {
+    } catch (error: unknown) {
+      const err = error as { response?: { status: number } };
+      if (err.response?.status === 404) {
         try {
           await fallbackApi.deleteVideo(videoId);
-          setVideos(prev => prev.filter(v => v.id !== videoId));
+          setVideos((prev: Video[]) => prev.filter(v => v.id !== videoId));
           toast.success("Video deleted successfully (fallback)");
-        } catch (e) {
+        } catch {
           toast.error("Failed to delete video");
         }
       } else {
@@ -185,29 +163,29 @@ function GalleryPage() {
     } finally {
       toast.dismiss(toastId);
     }
-  };
+  }, []);
 
-  const handleUpload = async (videoId: string) => {
+  const handleUpload = useCallback(async (videoId: string) => {
     setUploading(videoId);
     const toastId = toast.loading("Uploading to YouTube...");
     try {
       const response = await youtubeApi.upload(videoId, uploadData);
-      if (response.data.status === "success") {
-        toast.success("Uploaded successfully!");
-        setVideos(prev => prev.map(v => v.id === videoId ? { ...v, youtube_video_id: response.data.youtube_id } : v));
+      if (response && response.status === "success") {
+        toast.success("Upload started!");
         setShowUploadForm(null);
       } else {
-        toast.error(response.data.message || "Upload failed");
+        toast.error("Upload failed: " + (response?.message || "Unknown error"));
       }
-    } catch (error) {
-      toast.error("Upload failed");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
+      toast.error("Upload failed: " + (err.response?.data?.message || "Unknown error"));
     } finally {
       toast.dismiss(toastId);
       setUploading(null);
     }
-  };
+  }, [uploadData]);
 
-  const handleShowUploadForm = (videoId: string) => {
+  const handleShowUploadForm = useCallback((videoId: string) => {
     if (youtubeChannels.length === 0) {
       toast.error("No YouTube channel found.");
       return;
@@ -215,27 +193,26 @@ function GalleryPage() {
     const video = videos.find(v => v.id === videoId);
     if (!video) return;
 
-    setUploadData(prev => ({
+    setUploadData((prev: UploadData) => ({
       ...prev,
       title: video.title || video.prompt || "Generated Short",
       description: video.description || video.prompt,
-      tags: "shorts,ai",
-      useThumbnail: true,
+      tags: ["shorts", "ai"],
       channelId: selectedYouTubeChannel?.id,
     }));
     setShowUploadForm(videoId);
-  };
+  }, [videos, youtubeChannels, selectedYouTubeChannel]);
 
-  const handleConnectYouTube = async () => {
+  const handleConnectYouTube = useCallback(async () => {
     try {
       const response = await youtubeApi.startAuth();
-      if (response.data && response.data.auth_url) {
-        window.open(response.data.auth_url, '_blank');
+      if (response && response.auth_url) {
+        window.open(response.auth_url, '_blank');
       }
-    } catch (error) {
+    } catch {
       toast.error("Failed to start YouTube authentication");
     }
-  };
+  }, []);
 
   const enhancedMyVideosProps = useMemo(() => ({
     videos,
@@ -251,81 +228,64 @@ function GalleryPage() {
     onDelete: handleDelete,
     onClearSearch: () => setSearchQuery(""),
     isAuthenticated,
-    downloadingVideoId
-  }), [videos, searchQuery, isYouTubeConnected, loading, isAuthenticated, downloadingVideoId]);
-
-  const enhancedExploreSectionProps = useMemo(() => ({
-    demoVideos,
-    trendingVideos: [],
-    trendingLoading: false,
-    isYouTubeConnected,
-    onDemoVideoClick: (demo: DemoVideo) => {
-        // Create a fake Video object from DemoVideo for the dialog
-        const fakeVideo: any = {
-            id: demo.id,
-            title: demo.title,
-            prompt: demo.title,
-            video_path: demo.url,
-            _isDemo: true
-        };
-        setActiveVideo(fakeVideo);
-    }
-  }), [demoVideos, isYouTubeConnected]);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-muted-foreground animate-pulse">Loading gallery...</p>
-      </div>
-    );
-  }
+    downloadingVideoId,
+    uploading,
+  }), [videos, searchQuery, isYouTubeConnected, loading, navigate, handleDownload, handleShowUploadForm, handleConnectYouTube, handleDelete, isAuthenticated, downloadingVideoId, uploading]);
 
   return (
-    <div className="container-wide py-8 px-4">
-      <GalleryHeader
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        isAuthenticated={isAuthenticated}
-        isYouTubeConnected={isYouTubeConnected}
-        onConnectYouTube={handleConnectYouTube}
-        selectedChannel={selectedYouTubeChannel}
-        onRefresh={loadGallery}
-      />
+    <div className="pt-24 pb-20 px-4 md:px-8">
+      <div className="container mx-auto">
+        <GalleryHeader 
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+        />
 
-      <TabNavigation activeSection={activeSection} onTabChange={setActiveSection} />
+        <TabNavigation 
+          activeSection={activeSection}
+          onTabChange={setActiveSection}
+          videoCount={videos.length}
+        />
 
-      <div className="mt-8">
-        {activeSection === "my-videos" ? (
-          <MyVideosSection {...enhancedMyVideosProps} />
-        ) : (
-          <ExploreSection {...enhancedExploreSectionProps} />
-        )}
+        <div className="mt-8">
+          {activeSection === "my-videos" ? (
+            <MyVideosSection {...enhancedMyVideosProps} />
+          ) : (
+            <ExploreSection 
+              demoVideos={demoVideos}
+              trendingVideos={demoVideos} // Using demoVideos as fallback for trending
+              trendingLoading={loading}
+              isYouTubeConnected={isYouTubeConnected}
+              onDemoVideoClick={(video: DemoVideo) => setActiveVideo(video)}
+            />
+          )}
+        </div>
       </div>
 
-      <Suspense fallback={null}>
+      <React.Suspense fallback={null}>
         {activeVideo && (
-          <LazyVideoDialog
-            video={activeVideo as any}
+          <LazyVideoDialog 
+            video={activeVideo as Video}
             isYouTubeConnected={isYouTubeConnected}
             onClose={() => setActiveVideo(null)}
             onDownload={handleDownload}
             onShowUploadForm={handleShowUploadForm}
-            onOpenYouTube={(id) => window.open(`https://youtube.com/watch?v=${id}`, "_blank")}
+            onOpenYouTube={(id: string) => window.open(`https://youtube.com/watch?v=${id}`, "_blank")}
           />
         )}
         {showUploadForm && (
           <LazyUploadFormDialog
-            videoId={showUploadForm}
-            isUploading={uploading === showUploadForm}
-            uploadData={uploadData}
-            onUploadDataChange={setUploadData}
+            isOpen={!!showUploadForm}
             onClose={() => setShowUploadForm(null)}
-            onUpload={handleUpload}
+            uploadData={uploadData}
+            setUploadData={setUploadData}
+            onUpload={() => handleUpload(showUploadForm)}
+            uploading={!!uploading}
             youtubeChannels={youtubeChannels}
+            selectedYouTubeChannel={selectedYouTubeChannel}
+            setSelectedYouTubeChannel={setSelectedYouTubeChannel}
           />
         )}
-      </Suspense>
+      </React.Suspense>
     </div>
   );
 }

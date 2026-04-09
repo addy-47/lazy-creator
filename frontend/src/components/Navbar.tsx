@@ -3,11 +3,10 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { Menu, X, Sun, Moon, LogIn, User } from "lucide-react";
 import { Button } from "@/components/Button";
 import Logo from "./Logo";
-import { AUTH_CHANGE_EVENT } from "../App";
+import { AUTH_CHANGE_EVENT } from "@/utils/events";
 import { useTheme } from "next-themes";
-import axios from "axios";
-import { getLzySvcBaseURL } from "@/services/config";
-import { useAuth } from "@/contexts/AuthContext";
+import { youtubeApi } from "@/services/api";
+import { useAuth } from "@/contexts/use-auth";
 
 interface NavbarProps {
   username?: string;
@@ -56,16 +55,14 @@ const ConnectionSphere = ({ isConnected }: { isConnected: boolean }) => {
   );
 };
 
-const Navbar = ({ username, disableNavigation }: NavbarProps) => {
+const Navbar = ({ disableNavigation }: NavbarProps) => {
   const navigate = useNavigate();
   // Add forceUpdate function to force re-renders
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [currentUsername, setCurrentUsername] = useState<string | undefined>(
-    undefined
-  );
+  
   // Add ref for the mobile navigation menu
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -82,24 +79,8 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
   const displayUsername = user?.name;
 
   // Theme toggle
-  const { setTheme, theme } = useTheme();
+  const { setTheme } = useTheme();
   const [isDarkMode, setIsDarkMode] = useState(false);
-
-  // Function to check and update the username directly from localStorage
-  const updateUsernameFromStorage = () => {
-    try {
-      const userString = localStorage.getItem("user");
-      if (userString) {
-        const userData = JSON.parse(userString);
-        setCurrentUsername(userData.name);
-      } else {
-        setCurrentUsername(undefined);
-      }
-    } catch (e) {
-      console.error("Error parsing user data:", e);
-      setCurrentUsername(undefined);
-    }
-  };
 
   // Check if connected to YouTube - with better error handling
   const checkYouTubeConnection = useCallback(async () => {
@@ -117,44 +98,14 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
     try {
       console.log("Checking YouTube connection status...");
 
-      // Use the consistent endpoint
-      const endpoint = `${getLzySvcBaseURL()}/youtube-auth-status`;
+      const response = await youtubeApi.getStatus();
 
-      // Add error handling with retry
-      let attempts = 0;
-      const maxAttempts = 2;
-
-      while (attempts < maxAttempts) {
-        try {
-          const response = await axios.get(endpoint, {
-            headers: {
-              "x-access-token": token,
-            },
-            // Add timeout to prevent hanging
-            timeout: 5000,
-          });
-
-          if (response.data.authenticated || response.data.is_connected) {
-            setYouTubeConnected(true);
-            console.log("YouTube is connected");
-          } else {
-            setYouTubeConnected(false);
-            console.log("YouTube is not connected");
-          }
-
-          // Success, exit the loop
-          break;
-        } catch (retryError) {
-          attempts++;
-          console.warn(`YouTube connection check attempt ${attempts} failed`);
-
-          if (attempts >= maxAttempts) {
-            throw retryError; // Rethrow the last error
-          }
-
-          // Wait before retrying
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
+      if (response.authenticated || response.is_connected) {
+        setYouTubeConnected(true);
+        console.log("YouTube is connected");
+      } else {
+        setYouTubeConnected(false);
+        console.log("YouTube is not connected");
       }
     } catch (error) {
       console.error("Error checking YouTube connection:", error);
@@ -162,19 +113,14 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
     }
   }, [isAuthenticated, setYouTubeConnected]);
 
-  // Initialize username on mount and when prop changes
+  // Initial check on mount
   useEffect(() => {
-    updateUsernameFromStorage();
-    if (username) {
-      setCurrentUsername(username);
-    }
     checkYouTubeConnection();
-  }, [username]);
+  }, [checkYouTubeConnection]);
 
   // Listen for auth change events
   useEffect(() => {
     const handleAuthChange = () => {
-      updateUsernameFromStorage();
       checkYouTubeConnection();
       forceUpdate(); // Force a re-render
     };
@@ -184,14 +130,13 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
     window.addEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
 
     // Initial check
-    updateUsernameFromStorage();
     checkYouTubeConnection();
 
     return () => {
       window.removeEventListener("storage", handleAuthChange);
       window.removeEventListener(AUTH_CHANGE_EVENT, handleAuthChange);
     };
-  }, []);
+  }, [checkYouTubeConnection]);
 
   useEffect(() => {
     // Check user's preference
@@ -210,8 +155,6 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
         setTheme("light");
       }
 
-      // Also update username when theme changes
-      updateUsernameFromStorage();
       forceUpdate();
     };
 
@@ -242,8 +185,6 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
     setIsDarkMode(!isDarkMode);
     localStorage.theme = newTheme;
 
-    // Check username again after toggling theme
-    updateUsernameFromStorage();
     forceUpdate();
 
     // Force the body to apply either dark or light class immediately
@@ -305,118 +246,117 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
           : "bg-background/0"
       }`}
     >
-      <div className="container-wide flex h-16 md:h-20 items-center justify-between">
+      <div className="container-wide grid grid-cols-3 h-16 md:h-20 items-center">
+        {/* Left: Logo */}
         <div className="flex items-center gap-3">
           <Logo />
           <NavLink
             to="/"
-            className="text-3xl font-bold tracking-tighter hover:opacity-80 transition-all active:scale-95"
+            className="text-2xl md:text-3xl font-bold tracking-tighter hover:opacity-80 transition-all active:scale-95"
           >
             <span className="text-foreground">Lazy</span>
             <span className="text-[#E0115F]">Creator</span>
           </NavLink>
         </div>
 
-        {/* Desktop Navigation */}
-        <div className="hidden md:flex items-center space-x-8">
-          <div className="flex items-center space-x-6">
-            {navItems.map((item) => (
-              disableNavigation ? (
-                <span
-                  key={item.name}
-                  className="text-foreground/50 cursor-not-allowed"
-                  title="Navigation disabled during processing"
-                >
-                  {item.name}
-                </span>
-              ) : (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  className={({ isActive }) =>
-                    `text-lg font-semibold transition-all hover:scale-105 ${
-                      isActive
-                        ? "text-[#E0115F]"
-                        : "text-foreground/80 hover:text-foreground"
-                    }`
-                  }
-                >
-                  {item.name}
-                </NavLink>
-              )
-            ))}
-          </div>
+        {/* Center: Desktop Navigation */}
+        <div className="hidden md:flex items-center justify-center space-x-8">
+          {navItems.map((item) => (
+            disableNavigation ? (
+              <span
+                key={item.name}
+                className="text-lg font-semibold text-foreground/50 cursor-not-allowed"
+                title="Navigation disabled during processing"
+              >
+                {item.name}
+              </span>
+            ) : (
+              <NavLink
+                key={item.name}
+                to={item.path}
+                className={({ isActive }) =>
+                  `text-lg font-semibold transition-all hover:scale-105 ${
+                    isActive
+                      ? "text-[#E0115F]"
+                      : "text-foreground/80 hover:text-foreground"
+                  }`
+                }
+              >
+                {item.name}
+              </NavLink>
+            )
+          ))}
+        </div>
 
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={toggleDarkMode}
-              className="p-2 rounded-full hover:bg-accent/10 transition-colors text-foreground"
-              aria-label={
-                isDarkMode ? "Switch to light mode" : "Switch to dark mode"
-              }
-            >
-              {isDarkMode ? (
-                <Sun className="h-5 w-5" />
-              ) : (
-                <Moon className="h-5 w-5" />
-              )}
-            </button>
+        {/* Right: Actions & User */}
+        <div className="flex items-center justify-end space-x-4">
+
 
             {user ? (
-              <div className="flex items-center space-x-4">
-                <div className="relative group">
-                  <div className="flex items-center">
-                    <button className="flex items-center gap-3 py-1.5 px-4 rounded-full bg-primary/5 hover:bg-primary/10 border border-primary/10 transition-all">
-                      {user.picture ? (
-                        <img 
-                          src={user.picture} 
-                          alt={displayUsername} 
-                          className="w-8 h-8 rounded-full border border-primary/20 object-cover" 
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                          <User className="h-5 w-5 text-primary" />
-                        </div>
-                      )}
-                      <span className="text-lg font-semibold">
-                        {displayUsername}
-                      </span>
-                      <div className={`w-2.5 h-2.5 rounded-full ${isYouTubeConnected ? 'bg-primary animate-pulse shadow-[0_0_10px_rgba(224,17,95,0.7)]' : 'bg-muted-foreground/30'}`} />
-                    </button>
-                  </div>
-                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">
-                    {/* Connection status indicator in dropdown */}
-                    <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
-                      <ConnectionSphere isConnected={isYouTubeConnected} />
-                      <span className="text-xs text-foreground/70">
-                        {isYouTubeConnected
-                          ? "YouTube Connected"
-                          : "YouTube Disconnected"}
-                      </span>
+              <div className="relative group">
+                <button className="flex items-center gap-3 py-1.5 px-4 rounded-full bg-primary/5 hover:bg-primary/10 border border-primary/10 transition-all">
+                  {user.picture ? (
+                    <img 
+                      src={user.picture} 
+                      alt={displayUsername} 
+                      className="w-8 h-8 rounded-full border border-primary/20 object-cover" 
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                      <User className="h-5 w-5 text-primary" />
                     </div>
-                    <button
-                      onClick={handleSignOut}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-800"
-                    >
-                      Sign out
-                    </button>
+                  )}
+                  <span className="text-lg font-semibold max-w-[120px] truncate">
+                    {displayUsername}
+                  </span>
+                  <div className={`w-2.5 h-2.5 rounded-full ${isYouTubeConnected ? 'bg-primary animate-pulse shadow-[0_0_10px_rgba(224,17,95,0.7)]' : 'bg-muted-foreground/30'}`} />
+                </button>
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">
+                  <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+                    <ConnectionSphere isConnected={isYouTubeConnected} />
+                    <span className="text-xs text-foreground/70">
+                      {isYouTubeConnected
+                        ? "YouTube Connected"
+                        : "YouTube Disconnected"}
+                    </span>
                   </div>
+                  <button
+                    onClick={toggleDarkMode}
+                    className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2 transition-colors"
+                  >
+                    {isDarkMode ? (
+                      <>
+                        <Sun className="h-4 w-4" />
+                        <span>Light Mode</span>
+                      </>
+                    ) : (
+                      <>
+                        <Moon className="h-4 w-4" />
+                        <span>Dark Mode</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleSignOut}
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2 transition-colors"
+                  >
+                    <LogIn size={14} className="rotate-180" />
+                    <span>Sign out</span>
+                  </button>
                 </div>
               </div>
             ) : (
               disableNavigation ? (
-                <span className="cursor-not-allowed">
-                  <Button
-                    size="sm"
-                    className="bg-[#E0115F]/50 rounded-full px-4 py-2 h-9 cursor-not-allowed"
-                    disabled
-                  >
-                    <div className="flex items-center space-x-2">
-                      <LogIn size={16} />
-                      <span>Sign In</span>
-                    </div>
-                  </Button>
-                </span>
+                <Button
+                  size="sm"
+                  className="bg-[#E0115F]/50 rounded-full px-4 py-2 h-9 cursor-not-allowed"
+                  disabled
+                >
+                  <div className="flex items-center space-x-2">
+                    <LogIn size={16} />
+                    <span>Sign In</span>
+                  </div>
+                </Button>
               ) : (
                 <NavLink to="/auth">
                   <Button
@@ -432,23 +372,21 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
               )
             )}
           </div>
+
+          {/* Mobile Navigation Toggle */}
+          <button
+            ref={menuButtonRef}
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-foreground"
+            aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+          >
+            {isMenuOpen ? (
+              <X className="h-6 w-6" />
+            ) : (
+              <Menu className="h-6 w-6" />
+            )}
+          </button>
         </div>
-
-        {/* Mobile Navigation Toggle */}
-        <button
-          ref={menuButtonRef}
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-foreground"
-          aria-label={isMenuOpen ? "Close menu" : "Open menu"}
-        >
-          {isMenuOpen ? (
-            <X className="h-6 w-6" />
-          ) : (
-            <Menu className="h-6 w-6" />
-          )}
-        </button>
-      </div>
-
       {/* Mobile Navigation Menu with improved animation */}
       <div
         ref={mobileMenuRef}

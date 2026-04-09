@@ -1,28 +1,9 @@
-import React, {
-  createContext,
-  useContext,
+import {
   ReactNode,
   useCallback,
 } from "react";
 import { toast } from "@/hooks/use-toast";
-
-interface NotificationContextType {
-  showSessionExpiredNotification: () => void;
-}
-
-const NotificationContext = createContext<NotificationContextType | undefined>(
-  undefined
-);
-
-export function useNotification() {
-  const context = useContext(NotificationContext);
-  if (context === undefined) {
-    throw new Error(
-      "useNotification must be used within a NotificationProvider"
-    );
-  }
-  return context;
-}
+import { NotificationContext } from "./use-notification";
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   // Show session expired notification and handle logout

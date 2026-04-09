@@ -1,26 +1,7 @@
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { useState, useEffect } from "react";
-
 const TermsOfService = () => {
-  const [username, setUsername] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser);
-        setUsername(userData.name);
-      } catch (e) {
-        console.error("Error parsing user data from localStorage");
-      }
-    }
-  }, []);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar username={username} />
-      <main className="flex-grow pt-32 pb-16">
+      <div className="py-16">
         <div className="container max-w-3xl mx-auto px-4">
           <h1 className="text-3xl font-bold mb-8">Terms of Service</h1>
 
@@ -129,9 +110,7 @@ const TermsOfService = () => {
               </p>
             </section>
           </div>
-        </div>
-      </main>
-      <Footer />
+      </div>
     </div>
   );
 };

@@ -1,7 +1,5 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,8 +13,8 @@ import {
 import Logo from "@/components/Logo";
 import { toast } from "sonner";
 import StickFigureAnimation from "@/components/StickFigureAnimation";
-import { AUTH_CHANGE_EVENT } from "@/App";
-import { useAuth } from "@/contexts/AuthContext";
+import { AUTH_CHANGE_EVENT } from "@/utils/events";
+import { useAuth } from "@/contexts/use-auth";
 import { authApi } from "@/services/api";
 import { setToken } from "@/services/tokenService";
 
@@ -118,8 +116,8 @@ const Auth = () => {
       }
 
       navigate("/");
-    } catch (error: any) {
-      const message = error.response?.data?.message || error.message;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "An unexpected error occurred";
       toast.error(message || (isSignIn ? "Failed to sign in" : "Failed to create account"));
     } finally {
       setIsSubmitting(false);
@@ -210,10 +208,10 @@ const Auth = () => {
         }
       }, 1000);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      const message = error.response?.data?.message || error.message;
-      toast.error(message || "Google sign in failed");
+      const message = error instanceof Error ? error.message : "Google sign in failed";
+      toast.error(message);
       setIsSubmitting(false);
     }
   };
@@ -224,15 +222,8 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className="fixed inset-0 -z-10 bg-gradient-to-br from-primary/5 via-background/90 to-background">
-        <div className="absolute inset-0 opacity-10">
-          <div className="h-full w-full bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:20px_20px]"></div>
-        </div>
-      </div>
-
-      <Navbar />
-      <main className="flex-grow pt-32 pb-20 px-4">
+    <>
+      <div className="pt-32 pb-20 px-4">
         <div className="container-tight mb-8 text-center">
           <h1 className="text-3xl font-semibold md:text-4xl mb-4">
             {isSignIn ? "Welcome Back" : "Create Your Account"}
@@ -503,9 +494,8 @@ const Auth = () => {
             </div>
           </div>
         </div>
-      </main>
-      <Footer />
-    </div>
+      </div>
+    </>
   );
 };
 

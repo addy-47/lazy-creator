@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/use-auth";
 import { refreshToken, shouldRefreshToken } from "@/services/tokenService";
 
 /**

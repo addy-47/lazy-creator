@@ -1,6 +1,4 @@
 import React, {
-  createContext,
-  useContext,
   useState,
   useEffect,
   useMemo,
@@ -15,35 +13,7 @@ import {
   shouldRefreshToken, 
   refreshToken 
 } from "@/services/tokenService";
-
-interface UserProfile {
-  id: string;
-  email: string;
-  name: string;
-  picture?: string;
-}
-
-interface AuthContextType {
-  isAuthenticated: boolean;
-  isYouTubeConnected: boolean;
-  username: string | undefined;
-  user: UserProfile | null;
-  setYouTubeConnected: (connected: boolean) => void;
-  login: (token: string, user: UserProfile) => void;
-  logout: () => void;
-  refreshAuthState: () => void;
-  refreshTokenIfNeeded: () => Promise<boolean>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-}
+import { AuthContext, type UserProfile } from "./use-auth";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -161,3 +131,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
+export { AuthContext, type UserProfile, type AuthContextType } from "./use-auth";

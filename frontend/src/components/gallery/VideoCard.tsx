@@ -3,7 +3,7 @@ import { Youtube } from "lucide-react";
 import VideoActionMenu from "@/components/VideoActionMenu";
 import { videoApi } from "@/services/api";
 
-import { Video } from "@/services/api/video";
+import { Video } from "@/types/video";
 
 interface VideoCardProps {
   video: Video;

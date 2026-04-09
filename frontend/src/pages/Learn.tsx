@@ -1,20 +1,10 @@
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/Button";
 
 const Learn = () => {
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Enhanced background with gradient and pattern */}
-      <div className="fixed inset-0 -z-10 bg-gradient-to-br from-primary/5 via-background/90 to-background">
-        <div className="absolute inset-0 opacity-10">
-          <div className="h-full w-full bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:20px_20px]"></div>
-        </div>
-      </div>
-
-      <Navbar />
-      <main className="flex-grow container py-16">
+    <>
+      <div className="container py-16">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl md:text-4xl font-bold mb-8 text-center">
             How LazyCreator Works
@@ -218,9 +208,8 @@ const Learn = () => {
             </div>
           </div>
         </div>
-      </main>
-      <Footer />
-    </div>
+      </div>
+    </>
   );
 };
 

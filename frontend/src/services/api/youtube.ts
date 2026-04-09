@@ -1,40 +1,50 @@
 import { lzySvcApi, handleApiError } from "./client";
+import { YouTubeChannel, YouTubeStatus, YouTubeUploadMetadata } from "@/types/youtube";
+import { ApiResponse } from "@/types/common";
 
 export const youtubeApi = {
-  getStatus: async (): Promise<{ data: { status: string; authenticated: boolean; is_connected: boolean; message?: string } }> => {
+  getStatus: async (): Promise<ApiResponse<YouTubeStatus>> => {
     try {
       const response = await lzySvcApi.get('/youtube/status');
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
 
-  getChannels: async (): Promise<{ data: { status: string; channels: any[] } }> => {
+  getChannels: async (): Promise<ApiResponse<{ channels: YouTubeChannel[] }>> => {
     try {
       const response = await lzySvcApi.get('/youtube/channels');
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
 
-  startAuth: async (): Promise<{ data: { status: string; auth_url: string } }> => {
+  startAuth: async (): Promise<ApiResponse<{ auth_url: string }>> => {
     try {
       const response = await lzySvcApi.get('/youtube/auth-start');
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
 
-  upload: async (videoUrl: string, metadata: any): Promise<{ data: any }> => {
+  authCallback: async (code: string, state: string, redirectUri: string): Promise<ApiResponse<{ token?: string }>> => {
     try {
-      // Backend expects video_url as a query parameter
-      const response = await lzySvcApi.post(`/youtube/upload?video_url=${encodeURIComponent(videoUrl)}`, metadata);
-      return response;
+      const response = await lzySvcApi.get(`/youtube/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
+    }
+  },
+
+  upload: async (videoId: string, metadata: YouTubeUploadMetadata): Promise<ApiResponse<{ youtube_id?: string }>> => {
+    try {
+      const response = await lzySvcApi.post(`/youtube/upload/${videoId}`, metadata);
+      return response.data;
+    } catch (error) {
+      return handleApiError(error);
     }
   },
 };

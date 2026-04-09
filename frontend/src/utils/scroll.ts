@@ -7,7 +7,7 @@
  * @param func The function to throttle
  * @param limit The minimum time between function calls in ms
  */
-export function throttle<T extends (...args: any[]) => any>(
+export function throttle<T extends (...args: unknown[]) => unknown>(
   func: T,
   limit: number
 ): (...args: Parameters<T>) => void {
@@ -15,11 +15,9 @@ export function throttle<T extends (...args: any[]) => any>(
   let lastFunc: ReturnType<typeof setTimeout> | null = null;
   let lastRan: number = 0;
 
-  return function (this: any, ...args: Parameters<T>): void {
-    const context = this;
-
+  return function (this: unknown, ...args: Parameters<T>): void {
     if (!inThrottle) {
-      func.apply(context, args);
+      func.apply(this, args as unknown[]);
       lastRan = Date.now();
       inThrottle = true;
 
@@ -27,10 +25,12 @@ export function throttle<T extends (...args: any[]) => any>(
         inThrottle = false;
       }, limit);
     } else {
-      clearTimeout(lastFunc as ReturnType<typeof setTimeout>);
+      if (lastFunc) {
+        clearTimeout(lastFunc);
+      }
       lastFunc = setTimeout(() => {
         if (Date.now() - lastRan >= limit) {
-          func.apply(context, args);
+          func.apply(this, args as unknown[]);
           lastRan = Date.now();
         }
       }, limit - (Date.now() - lastRan));
@@ -41,7 +41,7 @@ export function throttle<T extends (...args: any[]) => any>(
 /**
  * Adds event listener with passive option for better scroll performance
  * @param element The element to attach the event listener to
- * @param eventType The event type to listen for
+ * @param eventName The event name to listen for
  * @param handler The event handler function
  */
 export function addPassiveEventListener(
@@ -85,66 +85,42 @@ export function rafScroll(callback: () => void): () => void {
 }
 
 /**
- * Cancel a previously scheduled rafScroll
- * @param id The ID returned by rafScroll
- */
-export const cancelRafScroll = (id: number): void => {
-  (window.cancelAnimationFrame || window.clearTimeout)(id);
-};
-
-/**
  * Debounces a function to ensure it only runs after a certain period of inactivity
  * @param func The function to debounce
  * @param wait The time to wait after last call in ms
  */
-export const debounce = <T extends (...args: any[]) => any>(
+export function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
   wait: number
-): ((...args: Parameters<T>) => void) => {
-  let timeout: NodeJS.Timeout | null = null;
+): (...args: Parameters<T>) => void {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
 
-  return function (this: any, ...args: Parameters<T>): void {
+  return function (this: unknown, ...args: Parameters<T>): void {
     const later = () => {
       timeout = null;
-      func.apply(this, args);
+      func.apply(this, args as unknown[]);
     };
 
     if (timeout) clearTimeout(timeout);
     timeout = setTimeout(later, wait);
   };
-};
-
-// Helper to clean up multiple scroll event listeners
-export function cleanupScrollListeners(
-  elements: (HTMLElement | Window | null)[]
-): void {
-  const eventNames = ["scroll", "resize", "touchmove"];
-
-  elements.forEach((element) => {
-    if (element) {
-      eventNames.forEach((eventName) => {
-        // This removes all event listeners of that type
-        // In a real app, you'd want to be more specific about which handlers to remove
-        const el = element as any;
-        if (el.getEventListeners && el.getEventListeners(eventName)) {
-          el.getEventListeners(eventName).forEach((listener: any) => {
-            element.removeEventListener(eventName, listener.listener);
-          });
-        }
-      });
-    }
-  });
 }
 
-// Get scroll position with cross-browser support
+/**
+ * Get scroll position with cross-browser support
+ */
 export function getScrollPosition(): { scrollX: number; scrollY: number } {
   return {
-    scrollX: window.scrollX || window.pageXOffset,
-    scrollY: window.scrollY || window.pageYOffset,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
   };
 }
 
-// Detect if an element is in viewport
+/**
+ * Detect if an element is in viewport
+ * @param element The element to check
+ * @param offset The offset to apply to the calculation
+ */
 export function isInViewport(element: HTMLElement, offset = 0): boolean {
   const rect = element.getBoundingClientRect();
 

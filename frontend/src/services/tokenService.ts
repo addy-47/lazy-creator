@@ -1,6 +1,7 @@
 
 import axios from "axios";
 import { getLzySvcBaseURL } from "./config";
+import { JWTPayload } from "@/types/auth";
 
 // Token refresh constants
 const TOKEN_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
@@ -12,7 +13,7 @@ const TOKEN_EXPIRY_KEY = "token_expiry";
 export const SESSION_EXPIRED_EVENT = "session_expired";
 
 // Decode JWT token to get payload data
-export const decodeToken = (token: string): any => {
+export const decodeToken = (token: string): JWTPayload | null => {
   try {
     const base64Url = token.split(".")[1];
     const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");

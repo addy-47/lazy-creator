@@ -1,27 +1,4 @@
-import { Video } from "@/services/api/video";
-export type { Video };
+import { Video, YouTubeShort as DemoVideo } from "@/types/video";
+import { YouTubeChannel, YouTubeUploadRequest as UploadData } from "@/types/youtube";
 
-export interface DemoVideo {
-  id: string;
-  url: string;
-  title?: string;
-  views?: string;
-  youtubeUrl?: string;
-  channel?: string;
-}
-
-export interface UploadData {
-  title: string;
-  description: string;
-  tags: string;
-  useThumbnail?: boolean;
-  privacyStatus: "public" | "private" | "unlisted";
-  channelId?: string;
-}
-
-export interface YouTubeChannel {
-  id: string;
-  title: string;
-  thumbnailUrl?: string;
-  customUrl?: string;
-}
+export type { Video, DemoVideo, UploadData, YouTubeChannel };

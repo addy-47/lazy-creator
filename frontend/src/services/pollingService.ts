@@ -1,11 +1,12 @@
 import { videoApi } from "./api";
+import { TaskStatus } from "@/types/video";
 
 export interface PollingOptions {
   interval?: number;
   maxRetries?: number;
-  onUpdate?: (data: any) => void;
-  onSuccess?: (data: any) => void;
-  onError?: (error: any) => void;
+  onUpdate?: (data: TaskStatus) => void;
+  onSuccess?: (data: TaskStatus) => void;
+  onError?: (error: Error) => void;
 }
 
 /**
@@ -35,7 +36,7 @@ export class PollingService {
     const poll = async () => {
       try {
         const response = await videoApi.getTaskStatus(videoId);
-        const data = response.data;
+        const data = response.data as TaskStatus;
 
         if (onUpdate) onUpdate(data);
 

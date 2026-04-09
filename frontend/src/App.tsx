@@ -1,13 +1,14 @@
 import { useEffect, lazy, Suspense } from "react";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/use-auth";
 import { 
   initializeTokenRefresh, 
-  SESSION_EXPIRED_EVENT 
 } from "@/services/tokenService";
-import {
-  NotificationProvider,
-  useNotification,
-} from "./contexts/NotificationContext";
+import { 
+  SESSION_EXPIRED_EVENT 
+} from "@/utils/events";
+import { NotificationProvider } from "./contexts/NotificationContext";
+import { useNotification } from "./contexts/use-notification";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,7 +18,6 @@ import {
   Routes,
   Route,
   Navigate,
-  useLocation,
 } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 
@@ -25,12 +25,12 @@ import { ThemeProvider } from "next-themes";
 const Index = lazy(() => import("./pages/Index"));
 const Create = lazy(() => import("./pages/Create"));
 const Auth = lazy(() => import("./pages/Auth"));
-const Learn = lazy(() => import("./pages/learn"));
-const Gallery = lazy(() => import("./pages/gallery"));
+const Learn = lazy(() => import("./pages/Learn"));
+const Gallery = lazy(() => import("./pages/Gallery"));
 const Processing = lazy(() => import("./pages/Processing"));
 const YouTubeAuthSuccess = lazy(() => import("./pages/YouTubeAuthSuccess"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
-const TermsOfService = lazy(() => import("./pages/TermsOFService"));
+const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Loading fallback
@@ -40,9 +40,7 @@ const PageLoader = () => (
   </div>
 );
 
-// Create a custom event for auth changes
-export const AUTH_CHANGE_EVENT = "auth-change";
-export const YOUTUBE_CONNECTED_EVENT = "youtube-connected";
+// Use constants from @/utils/events
 
 const queryClient = new QueryClient();
 
@@ -128,10 +126,10 @@ const App = () => {
                     <Route path="/learn" element={<MainLayout><Learn /></MainLayout>} />
                     <Route path="/gallery" element={<MainLayout><Gallery /></MainLayout>} />
                     <Route path="/processing" element={<MainLayout><Processing /></MainLayout>} />
-                    <Route path="/youtube-auth-success" element={<YouTubeAuthSuccess />} />
+                    <Route path="/youtube-auth-success" element={<MainLayout showFooter={false}><YouTubeAuthSuccess /></MainLayout>} />
                     
-                    {/* Routes that don't use the shared layout (e.g. Auth) */}
-                    <Route path="/auth" element={<RouteWithAuth><Auth /></RouteWithAuth>} />
+                    {/* Routes that use the shared layout (Auth also gets it for consistency) */}
+                    <Route path="/auth" element={<RouteWithAuth><MainLayout showFooter={false}><Auth /></MainLayout></RouteWithAuth>} />
                     
                     <Route path="/terms-of-service" element={<MainLayout><TermsOfService /></MainLayout>} />
                     <Route path="/privacy-policy" element={<MainLayout><PrivacyPolicy /></MainLayout>} />

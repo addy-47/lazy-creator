@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Lightbulb, Settings, MonitorPlay, Upload } from "lucide-react";
 
-
-
 // Pre-define the step data outside the component to avoid recreating on each render
 const workflowSteps = [
   {
@@ -32,21 +30,16 @@ const workflowSteps = [
 ];
 
 const WorkflowProcess = () => {
-  // Component re-enabled for testing
-  // return null;
-
   const [activeStep, setActiveStep] = useState(0);
   const sectionRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const mouseMoveListenerRef = useRef<(() => void) | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const gradientRef = useRef<HTMLDivElement>(null);
   const gradientStyleRef = useRef<string>(
     `radial-gradient(circle at 50% 50%, rgba(224,17,95,0.3) 0%, rgba(128,0,0,0.2) 20%, transparent 60%)`
   );
   const isScrolling = useRef(false);
-  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
   const isInView = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const rafIdRef = useRef<number | null>(null);
@@ -93,8 +86,9 @@ const WorkflowProcess = () => {
     }
 
     // OPTIMIZATION: Disable mouse move effect completely for better performance
+    const currentRafId = rafIdRef.current;
     return () => {
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      if (currentRafId) cancelAnimationFrame(currentRafId);
     };
   }, []);
 
@@ -181,7 +175,7 @@ const WorkflowProcess = () => {
 
         return index <= activeStep
           ? `${baseClasses} bg-gradient-to-r from-[#800000] to-[#E0115F] text-white shadow-lg shadow-[#E0115F]/30 transition-colors duration-300`
-          : `${baseClasses} bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-white text-gray-500 border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-300 transition-colors duration-300`;
+          : `${baseClasses} bg-white dark:bg-[#0A0A0A] text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-[#722F37]/30 transition-colors duration-300`;
       }),
     [activeStep]
   );
@@ -194,7 +188,7 @@ const WorkflowProcess = () => {
 
         return index <= activeStep
           ? `${baseClasses} text-[#E0115F]`
-          : `${baseClasses} text-gray-400 dark:text-gray-400 light:text-gray-600`;
+          : `${baseClasses} text-gray-600 dark:text-gray-400`;
       }),
     [activeStep]
   );
@@ -207,7 +201,7 @@ const WorkflowProcess = () => {
 
   return (
     <section
-      className="section py-24 dark:bg-[#0A0A0A] light:bg-gray-100 overflow-hidden relative"
+      className="section py-24 bg-gray-100 dark:bg-[#0A0A0A] overflow-hidden relative"
       ref={sectionRef}
       style={{
         contain: "content",
@@ -232,14 +226,14 @@ const WorkflowProcess = () => {
           <h2 className="font-semibold mb-4 text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Sophisticated Automation Process
           </h2>
-          <p className="text-lg text-black-300 dark:text-gray-300 light:text-gray-700">
+          <p className="text-lg text-gray-300 dark:text-gray-300">
             Our enterprise-grade workflow delivers professional results with
             minimal effort
           </p>
         </div>
 
         <div className="relative mt-16">
-          <div className="absolute left-0 right-0 top-16 h-1 bg-[#0A0A0A] dark:bg-[#0A0A0A] light:bg-gray-200 rounded-full border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-300">
+          <div className="absolute left-0 right-0 top-16 h-1 bg-gray-200 dark:bg-[#0A0A0A] rounded-full border border-gray-300 dark:border-[#722F37]/30">
             <div
               className="h-full bg-gradient-to-r from-[#800000] to-[#E0115F] rounded-full"
               style={{
@@ -270,7 +264,7 @@ const WorkflowProcess = () => {
 
                 <div className="text-center">
                   <h3 className={stepTitleClasses[index]}>{step.title}</h3>
-                  <p className="text-gray-400 dark:text-gray-400 light:text-gray-600 text-sm">
+                  <p className="text-gray-600 dark:text-gray-400 text-sm">
                     {step.description}
                   </p>
                 </div>
@@ -281,7 +275,7 @@ const WorkflowProcess = () => {
 
         <div
           className={`
-            mt-20 p-6 md:p-10 rounded-2xl shadow-xl bg-black/30 dark:bg-black/30 light:bg-white/90 border border-[#722F37]/30 dark:border-[#722F37]/30 light:border-gray-200 backdrop-blur-sm
+            mt-20 p-6 md:p-10 rounded-2xl shadow-xl bg-white/90 dark:bg-black/30 border border-gray-200 dark:border-[#722F37]/30 backdrop-blur-sm
             ${isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"}
             transition-opacity duration-700 delay-300
           `}
@@ -292,7 +286,7 @@ const WorkflowProcess = () => {
           }}
         >
           <div
-            className="aspect-video w-full relative overflow-hidden rounded-lg bg-[#faf9f9] dark:bg-[#0A0A0A] light:bg-gray-100 border border-[#722F37]/20 dark:border-[#722F37]/20 light:border-gray-300"
+            className="aspect-video w-full relative overflow-hidden rounded-lg bg-gray-100 dark:bg-[#0A0A0A] border border-gray-300 dark:border-[#722F37]/20"
             style={{ transform: "translateZ(0)" }}
           >
             <div className="absolute inset-0 flex items-center justify-center">
@@ -301,7 +295,7 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-amber-500/10 flex items-center justify-center mb-4">
                     <Lightbulb className="h-10 w-10 text-amber-500" />
                   </div>
-                  <p className="text-gray-200 dark:text-gray-200 light:text-gray-800 font-medium">
+                  <p className="text-gray-800 dark:text-gray-200 font-medium">
                     Generating ideas...
                   </p>
                 </div>
@@ -312,7 +306,7 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
                     <Settings className="h-10 w-10 text-blue-500" />
                   </div>
-                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
+                  <p className="dark:text-gray-200 text-gray-800 font-medium">
                     Customizing content...
                   </p>
                 </div>
@@ -323,7 +317,7 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                     <MonitorPlay className="h-10 w-10 text-green-500" />
                   </div>
-                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
+                  <p className="dark:text-gray-200 text-gray-800 font-medium">
                     Creating video...
                   </p>
                 </div>
@@ -334,7 +328,7 @@ const WorkflowProcess = () => {
                   <div className="mx-auto w-24 h-24 rounded-full bg-[#E0115F]/10 flex items-center justify-center mb-4">
                     <Upload className="h-10 w-10 text-[#E0115F]" />
                   </div>
-                  <p className="dark:text-gray-200 light:text-gray-800 font-medium">
+                  <p className="dark:text-gray-200 text-gray-800 font-medium">
                     Uploading to YouTube...
                   </p>
                 </div>

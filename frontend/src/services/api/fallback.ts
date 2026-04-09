@@ -9,7 +9,7 @@ export const fallbackApi = {
    * Delete a video directly via the Go orchestrator service
    * @param videoId The ID of the video to delete
    */
-  deleteVideo: async (videoId: string): Promise<any> => {
+  deleteVideo: async (videoId: string): Promise<unknown> => {
     try {
       const response = await lzySvcApi.delete(`/videos/${videoId}`);
       return response;

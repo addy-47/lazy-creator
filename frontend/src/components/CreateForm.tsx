@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "./Button";
 import PromptSelector from "./PromptSelector";
@@ -7,7 +7,15 @@ import BackgroundSelector from "./BackgroundSelector";
 import { toast } from "sonner";
 import { videoApi } from "@/services/api";
 import { scrollToStep } from "@/utils/step-transition";
-
+import {
+  DEFAULT_DURATION,
+  MIN_DURATION,
+  MAX_DURATION,
+  PREDEFINED_PROMPTS
+} from "@/utils/prompts";
+import { 
+  VIDEO_CREATION_IN_PROGRESS, 
+} from "@/utils/events";
 
 import {
   AlertDialog,
@@ -28,7 +36,7 @@ import { useStepFocus } from "@/hooks/use-step-focus";
 const CreateForm = () => {
   const navigate = useNavigate();
   const [prompt, setPrompt] = useState("");
-  const [duration, setDuration] = useState(20);
+  const [duration, setDuration] = useState(DEFAULT_DURATION);
   const [backgroundType, setBackgroundType] = useState<
     "image" | "video" | null
   >(null);
@@ -37,72 +45,66 @@ const CreateForm = () => {
   >(null);
   const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
 
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isGenerated, setIsGenerated] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState(0);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [videoData, setVideoData] = useState<{
     filename: string;
-    path: string;
+    video_path: string;
     id: string;
   } | null>(null);
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   const [activeStep, setActiveStep] = useState(1);
   const [announcement, setAnnouncement] = useState<string>("");
   const [isCustomPrompt, setIsCustomPrompt] = useState(false);
   const [customPromptText, setCustomPromptText] = useState("");
 
-  const stepRefs = {
-    step1: useRef<HTMLDivElement>(null),
-    step2: useRef<HTMLDivElement>(null),
-    step3: useRef<HTMLDivElement>(null),
+  type StepRefs = {
+    [key in 'step1' | 'step2' | 'step3']: React.RefObject<HTMLDivElement>;
   };
 
-  // Add focus management for each step
-  useStepFocus(activeStep, stepRefs[`step${activeStep}`]);
+  const stepRefs = useMemo<StepRefs>(() => ({
+    step1: { current: null },
+    step2: { current: null },
+    step3: { current: null },
+  }), []);
 
-  // Force UI update when relevant states change
-  // This ensures the form progress and step cards update immediately
-  const [stepCompletionStates, setStepCompletionStates] = useState({
-    step1Complete: false,
-    step2Complete: false,
-    step3Complete: false,
+  const step1Ref = useRef<HTMLDivElement>(null);
+  const step2Ref = useRef<HTMLDivElement>(null);
+  const step3Ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    (stepRefs.step1 as React.MutableRefObject<HTMLDivElement | null>).current = step1Ref.current;
+    (stepRefs.step2 as React.MutableRefObject<HTMLDivElement | null>).current = step2Ref.current;
+    (stepRefs.step3 as React.MutableRefObject<HTMLDivElement | null>).current = step3Ref.current;
   });
 
-  // Re-evaluate step completion when relevant states change
-  useEffect(() => {
-    setStepCompletionStates({
-      step1Complete: isStepComplete(1),
-      step2Complete: isStepComplete(2),
-      step3Complete: isStepComplete(3),
-    });
-  }, [prompt, duration, backgroundType, backgroundSource, backgroundFile]);
+  // Add focus management for each step
+  useStepFocus(activeStep, stepRefs[`step${activeStep}` as keyof typeof stepRefs]);
 
-  const isStepComplete = (step: number): boolean => {
+  const isStepComplete = useCallback((step: number): boolean => {
     switch (step) {
       case 1:
         return !!prompt && prompt.trim().length > 0;
       case 2:
-        return duration >= 10 && duration <= 60; // Changed from 15 to 10
+        return duration >= MIN_DURATION && duration <= MAX_DURATION;
       case 3:
         return (
-          backgroundType &&
-          backgroundSource &&
+          !!backgroundType &&
+          !!backgroundSource &&
           (backgroundSource === "provided" ||
             (backgroundSource === "custom" && !!backgroundFile))
         );
       default:
         return false;
     }
-  };
+  }, [prompt, duration, backgroundType, backgroundSource, backgroundFile]);
 
-  const formSteps = [
+  const formSteps = useMemo(() => [
     { title: "Content", isCompleted: isStepComplete(1) },
     { title: "Duration", isCompleted: isStepComplete(2) },
     { title: "Background", isCompleted: isStepComplete(3) },
-  ] as const;
+  ], [isStepComplete]);
 
-  const goToStep = (step: number) => {
+  const goToStep = useCallback((step: number) => {
     if (step === activeStep) return;
 
     // When moving away from step 3 (background), check if the form is in a valid state
@@ -117,16 +119,16 @@ const CreateForm = () => {
 
     // Set the active step immediately without transition animation
     setActiveStep(step);
-    scrollToStep(stepRefs[`step${step}`].current);
+    const ref = stepRefs[`step${step}` as keyof typeof stepRefs].current;
+    if (ref) scrollToStep(ref);
 
     // Announce step change
     const stepData = formSteps[step - 1];
     setAnnouncement(
-      `Moving to step ${step}: ${stepData.title}. ${
-        stepData.isCompleted ? "This step is completed." : ""
+      `Moving to step ${step}: ${stepData.title}. ${stepData.isCompleted ? "This step is completed." : ""
       }`
     );
-  };
+  }, [activeStep, backgroundSource, backgroundFile, backgroundType, formSteps, stepRefs]);
 
   useEffect(() => {
     // Announce step completion
@@ -136,46 +138,10 @@ const CreateForm = () => {
     }
   }, [formSteps, activeStep]);
 
-  // Predefined prompts for checking (same as in PromptSelector)
-  const predefinedPrompts = [
-    {
-      id: 1,
-      title: "Latest AI News",
-      prompt:
-        "Create a short about the latest developments in AI technology",
-    },
-    {
-      id: 2,
-      title: "Tech Gadget Review",
-      prompt:
-        "Review the latest smartphone features in a compelling short format",
-    },
-    {
-      id: 3,
-      title: "Coding Tips",
-      prompt: "Share 3 essential coding tips for beginners in a brief tutorial",
-    },
-    {
-      id: 4,
-      title: "Daily Motivation",
-      prompt: "Create an inspirational short about overcoming challenges",
-    },
-    {
-      id: 5,
-      title: "Productivity Hack",
-      prompt: "Explain a time-saving productivity technique in under 60 seconds",
-    },
-    {
-      id: 6,
-      title: "Life Hack",
-      prompt: "Demonstrate a clever everyday life hack that saves time or money",
-    },
-  ];
-
   // Handle custom prompt state change from PromptSelector
   const handleCustomPromptStateChange = (isCustom: boolean) => {
     setIsCustomPrompt(isCustom);
-    
+
     // If switching to custom mode, stay on step 1
     if (isCustom) {
       setActiveStep(1);
@@ -184,15 +150,15 @@ const CreateForm = () => {
 
   const handlePromptChange = (value: string) => {
     setPrompt(value);
-    
+
     // Check if this is likely a custom prompt (not matching any predefined ones)
-    const isPredefined = predefinedPrompts.some(p => p.prompt === value);
+    const isPredefined = PREDEFINED_PROMPTS.some(p => p.prompt === value);
     if (!isPredefined && value.trim().length > 0) {
       setIsCustomPrompt(true);
       // Save custom prompt text separately
       setCustomPromptText(value);
     }
-    
+
     // Immediately check if this step is now complete
     if (value) {
       setAnnouncement(`Step 1 completed: Content`);
@@ -202,12 +168,9 @@ const CreateForm = () => {
   const handleDurationChange = (value: number) => {
     setDuration(value);
     // Immediately check if this step is now complete
-    if (value >= 10 && value <= 60) {
+    if (value >= MIN_DURATION && value <= MAX_DURATION) {
       setAnnouncement(`Step 2 completed: Duration`);
     }
-    
-    // When moving to step 2, make sure not to reset custom prompt state
-    // The user may return to step 1 later
   };
 
   const handleBackgroundTypeChange = (type: "image" | "video" | null) => {
@@ -243,13 +206,6 @@ const CreateForm = () => {
     }
   };
 
-  // Cleanup poll interval on component unmount
-  useEffect(() => {
-    return () => {
-      if (pollInterval) clearInterval(pollInterval);
-    };
-  }, [pollInterval]);
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Allow keyboard navigation only when not in an input/textarea
@@ -282,7 +238,7 @@ const CreateForm = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeStep]);
+  }, [activeStep, goToStep]);
 
   const handleSubmit = (e: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -302,7 +258,7 @@ const CreateForm = () => {
     }
 
     if (!isStepComplete(2)) {
-      toast.error("Please set a duration between 10 and 60 seconds");
+      toast.error(`Please set a duration between ${MIN_DURATION} and ${MAX_DURATION} seconds`);
       goToStep(2);
       return;
     }
@@ -327,8 +283,6 @@ const CreateForm = () => {
 
   const startGeneration = async () => {
     setShowConfirmDialog(false);
-    setIsGenerating(true);
-    setGenerationProgress(0);
 
     try {
       const formData = new FormData();
@@ -343,13 +297,11 @@ const CreateForm = () => {
 
       // Start the video generation process via videoApi
       const response = await videoApi.generate(formData);
-      const data = response.data;
-      
-      console.log("Generation started:", data);
+      const data = response;
 
-      if (data.status === "processing" || data.video_id) {
+      if (data.status === "processing" || data.task_id) {
         // Set flag that video creation is in progress
-        localStorage.setItem("videoCreationInProgress", "true");
+        localStorage.setItem(VIDEO_CREATION_IN_PROGRESS, "true");
 
         toast.success(
           "Video creation started! You'll be redirected to the processing page."
@@ -362,9 +314,9 @@ const CreateForm = () => {
           backgroundType: backgroundType,
           customPrompt: isCustomPrompt
         };
-        
-        const videoId = data.video_id || data.id;
-        navigate(`/processing?id=${videoId}&duration=${duration * 6}&context=${encodeURIComponent(JSON.stringify(videoContext))}`);
+
+        const taskId = data.task_id;
+        navigate(`/processing?id=${taskId}&duration=${duration * 6}&context=${encodeURIComponent(JSON.stringify(videoContext))}`);
       } else {
         throw new Error(data.message || "Failed to start video generation");
       }
@@ -373,30 +325,10 @@ const CreateForm = () => {
       toast.error(
         error instanceof Error ? error.message : "Failed to generate video"
       );
-      setIsGenerating(false);
     }
-  };
-
-  const handleGenerationComplete = () => {
-    // Ensure the video data is available
-    if (!videoData) {
-      toast.info(
-        "Video processing may still be in progress. Check the gallery later."
-      );
-    }
-
-    // Clear any polling intervals
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      setPollInterval(null);
-    }
-
-    // Navigate to gallery
-    navigateToGallery();
   };
 
   const navigateToGallery = () => {
-    setIsGenerating(false);
     setIsGenerated(true);
 
     toast.success("Video generated successfully!");
@@ -492,22 +424,19 @@ const CreateForm = () => {
       </div>
 
       <div className="space-y-8 pb-20">
-        {/* Apply CSS transitions for smoother step transitions */}
         <div className="transition-all duration-300">
           <StepCard
-            ref={stepRefs.step1}
+            ref={step1Ref}
             step={1}
             title="Choose Your Content"
             description="Select a template or write your own prompt"
             isActive={activeStep === 1}
             isCompleted={isStepComplete(1)}
             onClick={() => goToStep(1)}
-            className={`cursor-pointer transition-all duration-300 ${
-              activeStep !== 1 ? 'opacity-70 hover:opacity-100' : ''
-            }`}
-            aria-label={`Step 1: Choose Your Content ${
-              isStepComplete(1) ? "(Completed)" : ""
-            }`}
+            className={`cursor-pointer transition-all duration-300 ${activeStep !== 1 ? 'opacity-70 hover:opacity-100' : ''
+              }`}
+            aria-label={`Step 1: Choose Your Content ${isStepComplete(1) ? "(Completed)" : ""
+              }`}
           >
             <PromptSelector
               selectedPrompt={isCustomPrompt ? customPromptText : prompt}
@@ -520,19 +449,17 @@ const CreateForm = () => {
 
         <div className="transition-all duration-300">
           <StepCard
-            ref={stepRefs.step2}
+            ref={step2Ref}
             step={2}
             title="Set Duration"
             description="Choose the length of your Short"
             isActive={activeStep === 2}
             isCompleted={isStepComplete(2)}
             onClick={() => goToStep(2)}
-            className={`cursor-pointer transition-all duration-300 ${
-              activeStep !== 2 ? 'opacity-70 hover:opacity-100' : ''
-            }`}
-            aria-label={`Step 2: Set Duration ${
-              isStepComplete(2) ? "(Completed)" : ""
-            }`}
+            className={`cursor-pointer transition-all duration-300 ${activeStep !== 2 ? 'opacity-70 hover:opacity-100' : ''
+              }`}
+            aria-label={`Step 2: Set Duration ${isStepComplete(2) ? "(Completed)" : ""
+              }`}
           >
             <DurationSlider
               selectedDuration={duration}
@@ -545,19 +472,17 @@ const CreateForm = () => {
 
         <div className="transition-all duration-300">
           <StepCard
-            ref={stepRefs.step3}
+            ref={step3Ref}
             step={3}
             title="Choose Background"
             description="Select your video or image background"
             isActive={activeStep === 3}
             isCompleted={isStepComplete(3)}
             onClick={() => goToStep(3)}
-            className={`cursor-pointer transition-all duration-300 ${
-              activeStep !== 3 ? 'opacity-70 hover:opacity-100' : ''
-            }`}
-            aria-label={`Step 3: Choose Background ${
-              isStepComplete(3) ? "(Completed)" : ""
-            }`}
+            className={`cursor-pointer transition-all duration-300 ${activeStep !== 3 ? 'opacity-70 hover:opacity-100' : ''
+              }`}
+            aria-label={`Step 3: Choose Background ${isStepComplete(3) ? "(Completed)" : ""
+              }`}
           >
             <BackgroundSelector
               selectedType={backgroundType}

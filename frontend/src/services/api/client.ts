@@ -1,11 +1,14 @@
-import axios from "axios";
+import axios, { 
+  AxiosError, 
+  AxiosResponse, 
+  InternalAxiosRequestConfig 
+} from "axios";
 import {
   shouldRefreshToken,
   refreshToken,
   getToken,
   clearToken,
   emitSessionExpiredEvent,
-  SESSION_EXPIRED_EVENT,
 } from "../tokenService";
 import { getLzySvcBaseURL } from "../config";
 
@@ -27,7 +30,14 @@ const lzySvcApi = createApiClient(getLzySvcBaseURL());
 
 // Interceptor State for token refresh
 let isRefreshing = false;
-let pendingRequests: any[] = [];
+
+interface PendingRequest {
+  config: InternalAxiosRequestConfig;
+  resolve: (value: AxiosResponse) => void;
+  reject: (reason?: unknown) => void;
+}
+
+let pendingRequests: PendingRequest[] = [];
 let sessionExpiredNotificationShown = false;
 
 /**
@@ -49,7 +59,7 @@ const processPendingRequests = (token: string | null) => {
 
 // Request interceptor to add token and handle refresh
 lzySvcApi.interceptors.request.use(
-  async (config) => {
+  async (config: InternalAxiosRequestConfig) => {
     if (
       shouldRefreshToken() &&
       !isRefreshing &&
@@ -79,16 +89,16 @@ lzySvcApi.interceptors.request.use(
 
     return config;
   },
-  (error) => {
+  (error: AxiosError) => {
     return Promise.reject(error);
   }
 );
 
 
 // Response interceptor to handle 401 errors and token refresh
-const responseInterceptor = (response: any) => response;
-const errorInterceptor = async (error: any) => {
-  const originalRequest = error.config;
+const responseInterceptor = (response: AxiosResponse) => response;
+const errorInterceptor = async (error: AxiosError) => {
+  const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
   if (
     error.response &&
@@ -99,7 +109,7 @@ const errorInterceptor = async (error: any) => {
     originalRequest._retry = true;
 
     if (isRefreshing) {
-      return new Promise((resolve, reject) => {
+      return new Promise<AxiosResponse>((resolve, reject) => {
         pendingRequests.push({ config: originalRequest, resolve, reject });
       });
     }
@@ -157,11 +167,11 @@ export const resetSessionExpiredFlag = () => {
 /**
  * Standardized error handler for API responses
  */
-const handleApiError = (error: any): never => {
-  if (error.response) {
+const handleApiError = (error: unknown): never => {
+  if (axios.isAxiosError(error) && error.response) {
     // Server responded with error status
     const status = error.response.status;
-    const message = error.response.data?.message || error.message;
+    const message = (error.response.data as { message?: string })?.message || error.message;
 
     switch (status) {
       case 401:
@@ -179,12 +189,12 @@ const handleApiError = (error: any): never => {
       default:
         throw new Error(message || `Request failed with status ${status}`);
     }
-  } else if (error.request) {
+  } else if (axios.isAxiosError(error) && error.request) {
     // Network error
     throw new Error("Network error. Please check your connection and try again.");
   } else {
     // Other error
-    throw new Error(error.message || "An unexpected error occurred.");
+    throw new Error((error as Error).message || "An unexpected error occurred.");
   }
 };
 

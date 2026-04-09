@@ -1,91 +1,54 @@
 import { lzySvcApi, handleApiError } from "./client";
 import { getToken } from "../tokenService";
 import { getLzySvcBaseURL } from "../config";
-
-export interface Video {
-  id: string;
-  task_id: string;
-  user_id: string;
-  status: string;
-  progress: number;
-  title: string;
-  description: string;
-  script: string;
-  duration_seconds: number;
-  video_path: string;
-  thumbnail_path: string;
-  resolution: number[];
-  fps: number;
-  background_type: string;
-  background_source: string;
-  prompt: string;
-  created_at: string;
-  updated_at: string;
-  completed_at?: string;
-  error_message?: string;
-  youtube_video_id?: string;
-  youtube_url?: string;
-}
-
-export interface GalleryResponse {
-  status: string;
-  videos: Video[];
-}
-
-export interface TaskStatus {
-  status: string;
-  progress: number;
-  message: string;
-  error?: string;
-  video_url?: string;
-}
+import { Video, GalleryResponse } from "@/types/video";
+import { ApiResponse } from "@/types/common";
 
 /**
  * Video Generation & Management API - Now orchestrated via Go service
  */
 export const videoApi = {
-  generate: async (formData: FormData): Promise<{ data: { status: string; task_id: string; message: string } }> => {
+  generate: async (formData: FormData): Promise<ApiResponse<{ status: string; task_id: string; message: string }>> => {
     try {
       const response = await lzySvcApi.post('/videos/generate', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
-  getTaskStatus: async (taskId: string): Promise<{ data: Video }> => {
+  getTaskStatus: async (taskId: string): Promise<ApiResponse<Video>> => {
     try {
       const response = await lzySvcApi.get(`/videos/status/${taskId}`);
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
-  getVideos: async (limit = 20, skip = 0): Promise<{ data: GalleryResponse }> => {
+  getVideos: async (limit = 20, skip = 0): Promise<ApiResponse<GalleryResponse>> => {
     try {
       const response = await lzySvcApi.get(`/videos?limit=${limit}&skip=${skip}`);
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
-  getGallery: async (limit = 20, skip = 0): Promise<{ data: GalleryResponse }> => {
+  getGallery: async (limit = 20, skip = 0): Promise<ApiResponse<GalleryResponse>> => {
     try {
       const response = await lzySvcApi.get(`/videos?limit=${limit}&skip=${skip}`);
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
   getVideoUrl: (filename: string): string => {
     const token = getToken();
     const base = getLzySvcBaseURL();
-    // For direct video loading (if served by Go)
     return `${base}/api/v1/lzy-svc/videos/download/${filename}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   },
   
@@ -107,21 +70,21 @@ export const videoApi = {
     }
   },
   
-  delete: async (videoId: string): Promise<{ data: { status: string } }> => {
+  delete: async (videoId: string): Promise<ApiResponse<{ status: string }>> => {
     try {
       const response = await lzySvcApi.delete(`/videos/${videoId}`);
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
-  cancel: async (videoId: string): Promise<{ data: { status: string } }> => {
+  cancel: async (videoId: string): Promise<ApiResponse<{ status: string }>> => {
     try {
       const response = await lzySvcApi.post(`/videos/cancel/${videoId}`);
-      return response;
+      return response.data;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
 };

@@ -5,7 +5,7 @@ import CreateNewCard from "./CreateNewCard";
 import SkeletonLoader from "./SkeletonLoader";
 import { UserCircle2 } from "lucide-react";
 
-import { Video } from "@/services/api/video";
+import { Video } from "@/types/video";
 
 interface MyVideosSectionProps {
   videos: Video[];

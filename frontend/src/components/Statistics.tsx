@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { Clock, Users, Video, Award } from "lucide-react";
 
 // Static pre-defined stats to avoid any calculations
@@ -30,12 +29,9 @@ const stats = [
 ];
 
 const Statistics = () => {
-  const sectionRef = useRef<HTMLDivElement>(null);
-
   return (
     <section
-      ref={sectionRef}
-      className="py-24 dark:bg-[#0A0A0A] light:bg-gray-100"
+      className="py-24 bg-gray-100 dark:bg-[#0A0A0A]"
     >
       {/* Static content only */}
       <div className="container-wide">
@@ -43,7 +39,7 @@ const Statistics = () => {
           <h2 className="font-semibold mb-4 text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#800000] via-[#722F37] to-[#E0115F]">
             Performance Metrics
           </h2>
-          <p className="text-lg dark:text-gray-300 light:text-gray-700">
+          <p className="text-base md:text-lg text-gray-600 dark:text-gray-400 max-w-2xl">
             Quantifiable results that demonstrate our platform's
             industry-leading capabilities
           </p>
