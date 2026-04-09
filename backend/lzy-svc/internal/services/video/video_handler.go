@@ -5,9 +5,12 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/addy-47/lazy-creator/lazy-svc/internal/config"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/middleware"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/models"
+	"github.com/addy-47/lazy-creator/lazy-svc/internal/services/auth"
 	"github.com/gin-gonic/gin"
+	"fmt"
 )
 
 // VideoHandler handles HTTP requests for video operations
@@ -16,9 +19,9 @@ type VideoHandler struct {
 }
 
 // NewVideoHandler creates a new video handler
-func NewVideoHandler() *VideoHandler {
+func NewVideoHandler(cfg *config.Config) *VideoHandler {
 	return &VideoHandler{
-		videoSvc: NewVideoService(),
+		videoSvc: NewVideoService(cfg),
 	}
 }
 
@@ -235,20 +238,75 @@ func (h *VideoHandler) DeleteVideo(c *gin.Context) {
 	})
 }
 
-// SetupVideoRoutes configures video routes in the Gin router
-func SetupVideoRoutes(r *gin.RouterGroup) {
-	handler := NewVideoHandler()
+// Generate initiates video generation by forwarding to the Python engine
+func (h *VideoHandler) Generate(c *gin.Context) {
+	userID := c.GetString("userID")
 	
-	// Public endpoint for Python service callback (no auth required, will use API key in future)
+	prompt := c.PostForm("prompt")
+	if prompt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status": "error",
+			"message": "Prompt is required",
+		})
+		return
+	}
+
+	durationStr := c.DefaultPostForm("duration", "25")
+	duration, _ := strconv.Atoi(durationStr)
+	
+	backgroundType := c.DefaultPostForm("background_type", "video")
+	backgroundSource := c.DefaultPostForm("background_source", "pexels")
+
+	ctx := c.Request.Context()
+	taskID, err := h.videoSvc.InitiateGeneration(ctx, userID, prompt, duration, backgroundType, backgroundSource)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"message": fmt.Sprintf("Failed to initiate generation: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"status": "started",
+		"task_id": taskID,
+		"message": "Video generation task initiated",
+	})
+}
+
+// GetTaskStatus retrieves the status of a video generation task from MongoDB
+func (h *VideoHandler) GetTaskStatus(c *gin.Context) {
+	taskID := c.Param("task_id")
+	
+	ctx := c.Request.Context()
+	video, err := h.videoSvc.GetByTaskID(ctx, taskID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "error",
+			"message": "Task not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, video)
+}
+
+// SetupVideoRoutes configures video routes in the Gin router
+func SetupVideoRoutes(r *gin.RouterGroup, cfg *config.Config, jwtSvc *auth.JWTService) {
+	handler := NewVideoHandler(cfg)
+	
+	// Public endpoint for Python service callback
 	r.POST("/video-complete", handler.VideoComplete)
 	r.POST("/video-progress", handler.VideoProgress)
 	
 	// Protected endpoints (require authentication)
 	protected := r.Group("/")
-	protected.Use(middleware.AuthMiddleware(nil)) // JWT middleware will be passed from main
+	protected.Use(middleware.AuthMiddleware(jwtSvc))
 	
 	{
 		protected.GET("/videos", handler.GetUserVideos)
+		protected.GET("/videos/status/:task_id", handler.GetTaskStatus)
+		protected.POST("/videos/generate", handler.Generate)
 		protected.GET("/videos/:id", handler.GetVideo)
 		protected.DELETE("/videos/:id", handler.DeleteVideo)
 	}

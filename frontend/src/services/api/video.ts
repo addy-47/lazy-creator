@@ -1,27 +1,30 @@
-import { lzyDirectorApi, handleApiError } from "./client";
+import { lzySvcApi, handleApiError } from "./client";
 import { getToken } from "../tokenService";
-import { getLzyDirectorBaseURL } from "../config";
+import { getLzySvcBaseURL } from "../config";
 
 export interface Video {
   id: string;
-  title?: string;
-  filename: string;
-  thumbnailUrl?: string;
-  createdAt?: string;
-  status?: string;
-  gcs_path: string;
-  original_prompt: string;
-  display_title?: string;
-  duration: number;
+  task_id: string;
+  user_id: string;
+  status: string;
+  progress: number;
+  title: string;
+  description: string;
+  script: string;
+  duration_seconds: number;
+  video_path: string;
+  thumbnail_path: string;
+  resolution: number[];
+  fps: number;
+  background_type: string;
+  background_source: string;
+  prompt: string;
   created_at: string;
-  uploaded_to_yt: boolean;
-  youtube_id: string | null;
-  comprehensive_content?: {
-    title?: string;
-    description?: string;
-    thumbnail_hf_prompt?: string;
-    thumbnail_unsplash_query?: string;
-  };
+  updated_at: string;
+  completed_at?: string;
+  error_message?: string;
+  youtube_video_id?: string;
+  youtube_url?: string;
 }
 
 export interface GalleryResponse {
@@ -38,12 +41,12 @@ export interface TaskStatus {
 }
 
 /**
- * Video Generation & Management API
+ * Video Generation & Management API - Now orchestrated via Go service
  */
 export const videoApi = {
-  generate: async (formData: FormData): Promise<{ data: { status: string; task_id: string } }> => {
+  generate: async (formData: FormData): Promise<{ data: { status: string; task_id: string; message: string } }> => {
     try {
-      const response = await lzyDirectorApi.post('/api/v1/generate-short', formData, {
+      const response = await lzySvcApi.post('/videos/generate', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       return response;
@@ -52,27 +55,27 @@ export const videoApi = {
     }
   },
   
-  getTaskStatus: async (taskId: string): Promise<{ data: TaskStatus }> => {
+  getTaskStatus: async (taskId: string): Promise<{ data: Video }> => {
     try {
-      const response = await lzyDirectorApi.get(`/api/v1/tasks/${taskId}`);
+      const response = await lzySvcApi.get(`/videos/status/${taskId}`);
       return response;
     } catch (error) {
       handleApiError(error);
     }
   },
   
-  getVideos: async (): Promise<{ data: GalleryResponse }> => {
+  getVideos: async (limit = 20, skip = 0): Promise<{ data: GalleryResponse }> => {
     try {
-      const response = await lzyDirectorApi.get('/api/v1/gallery');
+      const response = await lzySvcApi.get(`/videos?limit=${limit}&skip=${skip}`);
       return response;
     } catch (error) {
       handleApiError(error);
     }
   },
   
-  getGallery: async (): Promise<{ data: GalleryResponse }> => {
+  getGallery: async (limit = 20, skip = 0): Promise<{ data: GalleryResponse }> => {
     try {
-      const response = await lzyDirectorApi.get('/api/v1/gallery');
+      const response = await lzySvcApi.get(`/videos?limit=${limit}&skip=${skip}`);
       return response;
     } catch (error) {
       handleApiError(error);
@@ -81,14 +84,14 @@ export const videoApi = {
   
   getVideoUrl: (filename: string): string => {
     const token = getToken();
-    const base = getLzyDirectorBaseURL();
-    // For direct video loading in <video> tags
-    return `${base}/api/v1/gallery/${filename}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const base = getLzySvcBaseURL();
+    // For direct video loading (if served by Go)
+    return `${base}/api/v1/lzy-svc/videos/download/${filename}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   },
   
   download: async (videoId: string, filename: string): Promise<void> => {
     try {
-      const response = await lzyDirectorApi.get(`/api/v1/download/${videoId}`, {
+      const response = await lzySvcApi.get(`/videos/download/${videoId}`, {
         responseType: 'blob'
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -106,7 +109,7 @@ export const videoApi = {
   
   delete: async (videoId: string): Promise<{ data: { status: string } }> => {
     try {
-      const response = await lzyDirectorApi.delete(`/api/v1/videos/${videoId}`);
+      const response = await lzySvcApi.delete(`/videos/${videoId}`);
       return response;
     } catch (error) {
       handleApiError(error);
@@ -115,7 +118,7 @@ export const videoApi = {
   
   cancel: async (videoId: string): Promise<{ data: { status: string } }> => {
     try {
-      const response = await lzyDirectorApi.post(`/api/v1/cancel-video/${videoId}`);
+      const response = await lzySvcApi.post(`/videos/cancel/${videoId}`);
       return response;
     } catch (error) {
       handleApiError(error);

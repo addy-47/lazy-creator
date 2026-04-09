@@ -3,22 +3,7 @@ import { Youtube } from "lucide-react";
 import VideoActionMenu from "@/components/VideoActionMenu";
 import { videoApi } from "@/services/api";
 
-interface Video {
-  id: string;
-  filename: string;
-  gcs_path: string;
-  original_prompt: string;
-  display_title?: string;
-  duration: number;
-  created_at: string;
-  uploaded_to_yt: boolean;
-  youtube_id: string | null;
-  comprehensive_content?: {
-    title?: string;
-    description?: string;
-    thumbnail_hf_prompt?: string;
-  };
-}
+import { Video } from "@/services/api/video";
 
 interface VideoCardProps {
   video: Video;
@@ -50,13 +35,11 @@ const VideoCard: React.FC<VideoCardProps> = ({
 
   // Generate secure URL with auth token
   useEffect(() => {
-    if (video.filename) {
-      setVideoUrl(videoApi.getVideoUrl(video.filename));
-    } else if (video.gcs_path) {
-      const filename = video.gcs_path.split("/").pop() || "";
+    if (video.video_path) {
+      const filename = video.video_path.split("/").pop() || "";
       setVideoUrl(videoApi.getVideoUrl(filename));
     }
-  }, [video.filename, video.gcs_path]);
+  }, [video.video_path]);
 
   const handleVideoLoad = () => {
     setIsLoading(false);
@@ -77,8 +60,8 @@ const VideoCard: React.FC<VideoCardProps> = ({
         <VideoActionMenu
           videoId={video.id}
           isYouTubeConnected={isYouTubeConnected}
-          isUploaded={video.uploaded_to_yt}
-          youtubeId={video.youtube_id}
+          isUploaded={!!video.youtube_video_id}
+          youtubeId={video.youtube_video_id}
           onDownload={onDownload}
           onShowUploadForm={() => onShowUploadForm(video.id)}
           onConnectYouTube={onConnectYouTube}
@@ -126,7 +109,7 @@ const VideoCard: React.FC<VideoCardProps> = ({
         )}
 
         {/* YouTube badge if uploaded */}
-        {video.uploaded_to_yt && (
+        {video.youtube_video_id && (
           <div className="absolute top-3 right-3 bg-red-600 text-white text-xs py-0.5 px-2 rounded-full flex items-center gap-1">
             <Youtube size={10} />
             <span>YouTube</span>
@@ -154,7 +137,7 @@ const VideoCard: React.FC<VideoCardProps> = ({
         {/* Video Info Overlay */}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-all duration-300">
           <p className="text-white text-sm font-medium line-clamp-2">
-            {video.display_title || video.original_prompt}
+            {video.title || video.prompt}
           </p>
           <p className="text-white/70 text-xs mt-1 flex items-center">
             <span className="inline-block h-1 w-1 rounded-full bg-primary mr-2"></span>

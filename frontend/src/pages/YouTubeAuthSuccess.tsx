@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import axios from "axios";
-import { getLzyDirectorBaseURL } from "@/services/config";
+import { getLzySvcBaseURL } from "@/services/config";
 import { getToken, setToken } from "@/services/tokenService";
 import { youtubeApi } from "@/services/api";
 
@@ -23,7 +23,7 @@ export default function YouTubeAuthSuccess() {
       pathname: location.pathname,
       search: location.search,
       origin: window.location.origin,
-      apiBaseUrl: getLzyDirectorBaseURL(),
+      apiBaseUrl: getLzySvcBaseURL(),
       hasOpener: !!window.opener,
     });
 
@@ -172,7 +172,7 @@ export default function YouTubeAuthSuccess() {
         // Redirect the authorization code to our backend
         try {
           // Manually construct callback URL with required params
-          const callbackUrl = `${getLzyDirectorBaseURL()}/api/youtube/auth/callback?code=${encodeURIComponent(
+          const callbackUrl = `${getLzySvcBaseURL()}/api/v1/lzy-svc/youtube/auth-callback?code=${encodeURIComponent(
             code
           )}&state=${encodeURIComponent(
             state

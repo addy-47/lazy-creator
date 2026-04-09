@@ -2,22 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Download, Youtube, X, ChevronDown } from "lucide-react";
 import { videoApi } from "@/services/api";
 
-interface Video {
-  id: string;
-  filename: string;
-  original_prompt: string;
-  display_title?: string;
-  duration: number;
-  created_at: string;
-  uploaded_to_yt: boolean;
-  youtube_id: string | null;
-  comprehensive_content?: {
-    title?: string;
-    description?: string;
-    script?: string;
-    thumbnail_hf_prompt?: string;
-  };
-}
+import { Video } from "@/services/api/video";
 
 interface VideoDialogProps {
   video: Video;
@@ -39,23 +24,21 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [showFullScript, setShowFullScript] = useState(false);
 
-  // Get title, description, and script from comprehensive_content if available
-  const title =
-    video.display_title ||
-    video.comprehensive_content?.title ||
-    video.original_prompt;
-  const description = video.comprehensive_content?.description || "";
-  const script = video.comprehensive_content?.script || "";
+  // Get title, description, and script from root properties
+  const title = video.title || video.prompt;
+  const description = video.description || "";
+  const script = video.script || "";
 
-  // Check if this is an older video without comprehensive content
-  const isLegacyVideo = !video.comprehensive_content && !video.display_title;
+  // Check if this is an older video without content
+  const isLegacyVideo = !video.script && !video.title;
 
   // Generate secure URL with auth token
   useEffect(() => {
-    if (video.filename) {
-      setVideoUrl(videoApi.getVideoUrl(video.filename));
+    if (video.video_path) {
+      const filename = video.video_path.split("/").pop() || "";
+      setVideoUrl(videoApi.getVideoUrl(filename));
     }
-  }, [video.filename]);
+  }, [video.video_path]);
 
   return (
     <div
@@ -145,7 +128,7 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
                     <div className="h-px bg-border flex-grow"></div>
                   </h4>
                   <p className="text-sm text-foreground/70">
-                    {video.original_prompt}
+                    {video.prompt}
                   </p>
                 </div>
               ) : null}
@@ -163,7 +146,7 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
                 </button>
               </div>
 
-              {!video.uploaded_to_yt && isYouTubeConnected && (
+              {!video.youtube_video_id && isYouTubeConnected && (
                 <div className="w-full">
                   <button
                     onClick={() => {
@@ -178,10 +161,10 @@ const VideoDialog: React.FC<VideoDialogProps> = ({
                 </div>
               )}
 
-              {video.uploaded_to_yt && video.youtube_id && (
+              {video.youtube_video_id && (
                 <div className="w-full">
                   <button
-                    onClick={() => onOpenYouTube(video.youtube_id!)}
+                    onClick={() => onOpenYouTube(video.youtube_video_id!)}
                     className="w-full py-1.5 px-3 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md inline-flex items-center justify-center text-sm font-medium"
                   >
                     <Youtube size={16} className="mr-2" />

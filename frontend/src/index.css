@@ -157,7 +157,7 @@
   }
 
   h1 {
-    @apply text-3xl leading-tight md:text-4xl lg:text-5xl;
+    @apply text-4xl leading-tight md:text-5xl lg:text-6xl;
   }
 
   h2 {
@@ -290,7 +290,7 @@
   }
 
   .navbar-glass {
-    @apply bg-background/60 border-b border-border/10;
+    @apply bg-white/70 dark:bg-black/40 border-b border-border/10;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
   }

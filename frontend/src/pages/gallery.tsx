@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense, useMemo } from "react";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
-import { getLzyDirectorBaseURL } from "@/services/config";
 import { videoApi, youtubeApi, fallbackApi } from "@/services/api";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -80,13 +79,12 @@ function GalleryPage() {
 
   const loadDemoVideos = useCallback((count = 6) => {
     const demos: DemoVideo[] = [];
-    const apiBase = getLzyDirectorBaseURL();
-    const demoPath = "/lazycreator-media/demo/";
+    const assetPath = "/assets/";
     
     for (let i = 1; i <= count; i++) {
       demos.push({
         id: `demo${i}`,
-        url: `${apiBase}${demoPath}demo${i}.mp4`,
+        url: `${assetPath}demo${i}.mp4`,
         title: `Demo Short #${i}`,
       });
     }
@@ -196,7 +194,7 @@ function GalleryPage() {
       const response = await youtubeApi.upload(videoId, uploadData);
       if (response.data.status === "success") {
         toast.success("Uploaded successfully!");
-        setVideos(prev => prev.map(v => v.id === videoId ? { ...v, uploaded_to_yt: true, youtube_id: response.data.youtube_id } : v));
+        setVideos(prev => prev.map(v => v.id === videoId ? { ...v, youtube_video_id: response.data.youtube_id } : v));
         setShowUploadForm(null);
       } else {
         toast.error(response.data.message || "Upload failed");
@@ -219,8 +217,8 @@ function GalleryPage() {
 
     setUploadData(prev => ({
       ...prev,
-      title: video.comprehensive_content?.title || video.display_title || video.filename,
-      description: video.comprehensive_content?.description || video.original_prompt,
+      title: video.title || video.prompt || "Generated Short",
+      description: video.description || video.prompt,
       tags: "shorts,ai",
       useThumbnail: true,
       channelId: selectedYouTubeChannel?.id,
@@ -265,10 +263,9 @@ function GalleryPage() {
         // Create a fake Video object from DemoVideo for the dialog
         const fakeVideo: any = {
             id: demo.id,
-            filename: demo.title,
-            original_prompt: demo.title,
-            gcs_path: demo.url, // Dialog expects some video path
-            display_title: demo.title,
+            title: demo.title,
+            prompt: demo.title,
+            video_path: demo.url,
             _isDemo: true
         };
         setActiveVideo(fakeVideo);

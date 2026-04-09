@@ -4,6 +4,7 @@ Flask
 Flask-Cors
 gunicorn
 python-dotenv
+asgiref
 
 # AI & Media Processing
 openai

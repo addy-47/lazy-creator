@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Blueprint
 from flask_cors import CORS
 import os
 import sys
@@ -29,14 +29,22 @@ logger = get_app_logger()
 # Load environment variables
 load_dotenv()
 
-# Initialize Flask app
-app = Flask(__name__)
-
-# Configure CORS for the gateway
-CORS(app, resources={r"/*": {"origins": "*"}})
+from asgiref.wsgi import WsgiToAsgi
 
 # Track all video generation tasks
 active_tasks = {}
+
+# Initialize Flask app
+app = Flask(__name__)
+# Create Blueprint for API versioning and service identification
+api_v1 = Blueprint('api_v1', __name__, url_prefix='/api/v1/lzy-director')
+
+# Configure CORS
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+@api_v1.route('/health', methods=['GET', 'HEAD'])
+def health_check():
+    return jsonify({'status': 'ok', 'service': 'lzy-director-engine'}), 200
 
 # Get Go Orchestrator URL for callbacks
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:8888")
@@ -49,7 +57,7 @@ def notify_orchestrator_completion(task_data: Dict[str, Any]):
     try:
         import requests
         
-        callback_url = f"{ORCHESTRATOR_URL}/api/v1/lzy-director/video-complete"
+        callback_url = f"{ORCHESTRATOR_URL}/video-complete"
         
         # Prepare payload with video metadata
         payload = {
@@ -88,12 +96,8 @@ def handle_shutdown_signal(signum, frame):
 signal.signal(signal.SIGINT, handle_shutdown_signal)
 signal.signal(signal.SIGTERM, handle_shutdown_signal)
 
-@app.route('/health', methods=['GET', 'HEAD'])
-def health_check():
-    return jsonify({'status': 'ok', 'service': 'lzy-director-engine'}), 200
-
 # Generate YouTube Short - Stateless Engine Endpoint
-@app.route('/generate', methods=['POST'])
+@api_v1.route('/generate', methods=['POST'])
 def generate_short():
     """
     Triggers the video generation process.
@@ -178,14 +182,14 @@ def generate_short():
         logger.error(f"Error initiating generation: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/status/<task_id>', methods=['GET'])
+@api_v1.route('/status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
     task = active_tasks.get(task_id)
     if not task:
         return jsonify({"status": "error", "message": "Task not found"}), 404
     return jsonify(task)
 
-@app.route('/download/<task_id>/video', methods=['GET'])
+@api_v1.route('/download/<task_id>/video', methods=['GET'])
 def download_video(task_id):
     """
     Download video file for a completed task.
@@ -206,7 +210,7 @@ def download_video(task_id):
         download_name=f"video_{task_id}.mp4"
     )
 
-@app.route('/download/<task_id>/thumbnail', methods=['GET'])
+@api_v1.route('/download/<task_id>/thumbnail', methods=['GET'])
 def download_thumbnail(task_id):
     """
     Download thumbnail file for a completed task.
@@ -227,6 +231,13 @@ def download_thumbnail(task_id):
         download_name=f"thumbnail_{task_id}.jpg"
     )
 
+# Register Blueprint
+app.register_blueprint(api_v1)
+
+# ASGI Wrapper for uvicorn
+asgi_app = WsgiToAsgi(app)
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 9999))
+    logger.info(f"Starting LZY-DIRECTOR on port {port} (WSGI mode)")
     app.run(host='0.0.0.0', port=port)

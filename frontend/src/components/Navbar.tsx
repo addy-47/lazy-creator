@@ -310,7 +310,7 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
           <Logo />
           <NavLink
             to="/"
-            className="text-2xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
+            className="text-3xl font-bold tracking-tighter hover:opacity-80 transition-all active:scale-95"
           >
             <span className="text-foreground">Lazy</span>
             <span className="text-[#E0115F]">Creator</span>
@@ -334,7 +334,7 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
                   key={item.name}
                   to={item.path}
                   className={({ isActive }) =>
-                    `text-base font-medium transition-colors ${
+                    `text-lg font-semibold transition-all hover:scale-105 ${
                       isActive
                         ? "text-[#E0115F]"
                         : "text-foreground/80 hover:text-foreground"
@@ -378,10 +378,10 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
                           <User className="h-5 w-5 text-primary" />
                         </div>
                       )}
-                      <span className="text-base font-medium">
+                      <span className="text-lg font-semibold">
                         {displayUsername}
                       </span>
-                      <div className={`w-2 h-2 rounded-full ${isYouTubeConnected ? 'bg-primary animate-pulse shadow-[0_0_8px_rgba(224,17,95,0.6)]' : 'bg-muted-foreground/30'}`} />
+                      <div className={`w-2.5 h-2.5 rounded-full ${isYouTubeConnected ? 'bg-primary animate-pulse shadow-[0_0_10px_rgba(224,17,95,0.7)]' : 'bg-muted-foreground/30'}`} />
                     </button>
                   </div>
                   <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">

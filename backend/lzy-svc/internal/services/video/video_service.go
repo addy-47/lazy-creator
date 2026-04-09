@@ -6,27 +6,34 @@ import (
 	"log"
 	"time"
 
+	"github.com/addy-47/lazy-creator/lazy-svc/internal/config"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/db"
 	"github.com/addy-47/lazy-creator/lazy-svc/internal/models"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"net/http"
+	"net/url"
+	"strings"
+	"io"
 )
 
 // VideoService handles video metadata operations in MongoDB
 type VideoService struct {
-	collection *mongo.Collection
+	collection  *mongo.Collection
+	DirectorURL string
 }
 
 // NewVideoService creates a new video metadata service
-func NewVideoService() *VideoService {
+func NewVideoService(cfg *config.Config) *VideoService {
 	collection := db.MongoDB.Collection("video_metadata")
 
 	// Create indexes for better query performance
 	createIndexes(context.Background(), collection)
 
 	return &VideoService{
-		collection: collection,
+		collection:  collection,
+		DirectorURL: cfg.DirectorURL,
 	}
 }
 
@@ -332,4 +339,63 @@ func (s *VideoService) GetUserVideoCount(ctx context.Context, userID string) (in
 	}
 
 	return count, nil
+}
+
+// InitiateGeneration triggers the Python video generation engine
+func (s *VideoService) InitiateGeneration(ctx context.Context, userID string, prompt string, duration int, backgroundType, backgroundSource string) (string, error) {
+	taskID := fmt.Sprintf("task_%d", time.Now().UnixNano())
+
+	// 1. Create initial record in MongoDB
+	video := &models.VideoMetadata{
+		TaskID:           taskID,
+		UserID:           userID,
+		Status:           models.VideoStatusQueued,
+		Progress:         0,
+		Prompt:           prompt,
+		BackgroundType:   backgroundType,
+		BackgroundSource: backgroundSource,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	if err := s.CreateVideo(ctx, video); err != nil {
+		return "", fmt.Errorf("failed to create video record: %w", err)
+	}
+
+	// 2. Prepare request to Python service
+	// The Python service expects multipart/form-data for uploads, but here we use simple form values
+	data := url.Values{}
+	data.Set("prompt", prompt)
+	data.Set("duration", fmt.Sprintf("%d", duration))
+	data.Set("background_type", backgroundType)
+	data.Set("background_source", backgroundSource)
+
+	directorEndpoint := fmt.Sprintf("%s/generate", s.DirectorURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", directorEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request for director: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// 3. Send request
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		// Update status to failed
+		s.FailVideo(ctx, taskID, fmt.Sprintf("Failed to contact Python engine: %v", err))
+		return "", fmt.Errorf("failed to call python engine: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		body, _ := io.ReadAll(resp.Body)
+		s.FailVideo(ctx, taskID, fmt.Sprintf("Python engine returned error: %s", string(body)))
+		return "", fmt.Errorf("python engine returned error status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// 4. Update status to processing
+	if err := s.UpdateStatus(ctx, taskID, models.VideoStatusProcessing, 5); err != nil {
+		log.Printf("Failed to update status to processing for task %s: %v", taskID, err)
+	}
+
+	return taskID, nil
 }

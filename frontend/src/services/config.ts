@@ -19,5 +19,3 @@ export const getFrontendBaseURL = (): string => {
   return import.meta.env.VITE_FRONTEND_URL || window.location.origin;
 };
 
-// Backwards compatibility for the old API base URL format if needed
-export const getAPIBaseURL = getLzyDirectorBaseURL;

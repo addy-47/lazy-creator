@@ -42,7 +42,7 @@ const MyVideosSection: React.FC<MyVideosSectionProps> = ({
 }) => {
   // Filter videos based on search query
   const filteredVideos = videos.filter((video) =>
-    video.original_prompt.toLowerCase().includes(searchQuery.toLowerCase())
+    (video.prompt || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Show auth required message if not authenticated

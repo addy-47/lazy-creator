@@ -85,41 +85,8 @@ lzySvcApi.interceptors.request.use(
   }
 );
 
-lzyDirectorApi.interceptors.request.use(
-  async (config) => {
-    if (
-      shouldRefreshToken() &&
-      !isRefreshing &&
-      config.url !== "/refresh-token"
-    ) {
-      isRefreshing = true;
-
-      try {
-        const newToken = await refreshToken();
-        isRefreshing = false;
-
-        if (newToken) {
-          config.headers["x-access-token"] = newToken;
-          config.headers["Authorization"] = `Bearer ${newToken}`;
-        }
-      } catch (error) {
-        console.error("Error refreshing token in interceptor:", error);
-        isRefreshing = false;
-      }
-    } else {
-      const token = getToken();
-      if (token) {
-        config.headers["x-access-token"] = token;
-        config.headers["Authorization"] = `Bearer ${token}`;
-      }
-    }
-
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+// Note: lzyDirectorApi (Python service) no longer has auth interceptors 
+// because it is now an internal service orchestrated by lzySvcApi.
 
 // Response interceptor to handle 401 errors and token refresh
 const responseInterceptor = (response: any) => response;
@@ -182,7 +149,6 @@ const errorInterceptor = async (error: any) => {
 };
 
 lzySvcApi.interceptors.response.use(responseInterceptor, errorInterceptor);
-lzyDirectorApi.interceptors.response.use(responseInterceptor, errorInterceptor);
 
 /**
  * Resets the session expiration notification flag.

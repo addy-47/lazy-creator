@@ -51,7 +51,7 @@ func LoadConfig() *Config {
 		MongoDBName:  getEnv("MONGODB_DB_NAME", "lzy"),
 		PostgresURI:  getEnv("POSTGRES_URI", "postgres://localhost:5500/lzy"),
 		FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:5555"),
-		DirectorURL:  getEnv("PYTHON_DIRECTOR_URL", "http://localhost:9999"),
+		DirectorURL:  getEnv("DIRECTOR_URL", getEnv("PYTHON_DIRECTOR_URL", "http://localhost:9999/api/v1/lzy-director")),
 		GCPProjectID: getEnv("GCP_PROJECT_ID", "lazycreator-1"),
 		GCSBucket:    getEnv("GCS_BUCKET_NAME", "lazy-creator-shorts-1"),
 		GSCreds:      getEnv("GOOGLE_APPLICATION_CREDENTIALS", ""),
