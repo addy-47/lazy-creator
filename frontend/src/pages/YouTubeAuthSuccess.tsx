@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import axios from "axios";
 import { getLzyDirectorBaseURL } from "@/services/config";
 import { getToken, setToken } from "@/services/tokenService";
+import { youtubeApi } from "@/services/api";
 
 export default function YouTubeAuthSuccess() {
   const navigate = useNavigate();
@@ -237,14 +238,7 @@ export default function YouTubeAuthSuccess() {
             try {
               // Check if we're connected to YouTube
               console.log("Checking YouTube connection status...");
-              const response = await axios.get(
-                `${getLzyDirectorBaseURL()}/api/youtube-auth-status`,
-                {
-                  headers: {
-                    "x-access-token": token,
-                  },
-                }
-              );
+              const response = await youtubeApi.getStatus();
 
               console.log("YouTube auth status response:", response.data);
 

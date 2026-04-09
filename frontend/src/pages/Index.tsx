@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
-import Footer from "@/components/Footer";
 import WorkflowProcess from "@/components/WorkflowProcess";
 import Testimonials from "@/components/Testimonials";
 import Statistics from "@/components/Statistics";
@@ -157,18 +155,14 @@ const Index = () => {
         </button>
       </div>
 
-      <Navbar />
-
-      <main className="flex-grow">
+      <div className="flex-grow">
         <Hero />
         <Features />
         <WorkflowProcess />
         <Testimonials />
         {/* Statistics optimized for performance */}
         <Statistics />
-      </main>
-
-      <Footer />
+      </div>
     </div>
   );
 };

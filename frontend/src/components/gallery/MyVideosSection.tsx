@@ -5,16 +5,7 @@ import CreateNewCard from "./CreateNewCard";
 import SkeletonLoader from "./SkeletonLoader";
 import { UserCircle2 } from "lucide-react";
 
-interface Video {
-  id: string;
-  filename: string;
-  gcs_path: string;
-  original_prompt: string;
-  duration: number;
-  created_at: string;
-  uploaded_to_yt: boolean;
-  youtube_id: string | null;
-}
+import { Video } from "@/services/api/video";
 
 interface MyVideosSectionProps {
   videos: Video[];

@@ -100,6 +100,7 @@ const Auth = () => {
       const userData = {
         email,
         name: data.user?.name || (isSignIn ? "User" : name),
+        picture: data.user?.picture || null,
       };
 
       // Store token and user info
@@ -178,6 +179,7 @@ const Auth = () => {
             JSON.stringify({
               email: data.user.email,
               name: data.user.name || "User",
+              picture: data.user.picture || data.user.avatar || null,
             })
           );
 

@@ -6,14 +6,14 @@
 
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --foreground: 0 0% 10%;
+    --background: 20 15% 99%;
+    --foreground: 20 10% 8%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
+    --card-foreground: 20 10% 8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
+    --popover-foreground: 20 10% 8%;
 
     --primary: 350 95% 50%;
     --primary-foreground: 0 0% 98%;
@@ -21,8 +21,8 @@
     --secondary: 351 35% 45%;
     --secondary-foreground: 0 0% 98%;
 
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 20 15% 96%;
+    --muted-foreground: 20 10% 45%;
 
     --accent: 350 60% 55%;
     --accent-foreground: 0 0% 98%;
@@ -30,15 +30,15 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 90%;
-    --input: 0 0% 90%;
+    --border: 20 10% 90%;
+    --input: 20 10% 90%;
     --ring: 350 95% 50%;
 
     --ruby: 350 95% 50%;
     --wine: 351 35% 45%;
     --maroon: 0 100% 25%;
 
-    --radius: 1rem;
+    --radius: 1.25rem;
   }
 
   .dark {
@@ -119,9 +119,7 @@
   html,
   body,
   #root {
-    height: 100%;
-    overflow-y: auto; /* Enable vertical scrolling */
-    scroll-behavior: smooth;
+    min-height: 100vh;
     @apply antialiased;
   }
 
@@ -220,7 +218,7 @@
 
 @layer components {
   .glass {
-    @apply bg-white/80 dark:bg-black/50 backdrop-blur-lg border border-white/20 dark:border-white/10;
+    @apply bg-white/70 dark:bg-black/40 backdrop-blur-xl border border-white/50 dark:border-white/10;
   }
 
   .glass-card {
@@ -289,6 +287,12 @@
 
   .step-transition-exit-active {
     @apply opacity-0 -translate-y-4 transition-all duration-300 ease-in;
+  }
+
+  .navbar-glass {
+    @apply bg-background/60 border-b border-border/10;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 }
 

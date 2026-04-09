@@ -1,7 +1,7 @@
 import { lzySvcApi, handleApiError } from "./client";
 
 export const youtubeApi = {
-  getStatus: async (): Promise<{ data: { status: string; authenticated: boolean; is_connected: boolean } }> => {
+  getStatus: async (): Promise<{ data: { status: string; authenticated: boolean; is_connected: boolean; message?: string } }> => {
     try {
       const response = await lzySvcApi.get('/youtube/status');
       return response;

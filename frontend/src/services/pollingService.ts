@@ -1,4 +1,4 @@
-import { videoApi } from "./apis";
+import { videoApi } from "./api";
 
 export interface PollingOptions {
   interval?: number;

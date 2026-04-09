@@ -1,20 +1,5 @@
-export interface Video {
-  id: string;
-  filename: string;
-  gcs_path: string;
-  original_prompt: string;
-  display_title?: string;
-  duration: number;
-  created_at: string;
-  uploaded_to_yt: boolean;
-  youtube_id: string | null;
-  comprehensive_content?: {
-    title?: string;
-    description?: string;
-    thumbnail_hf_prompt?: string;
-    thumbnail_unsplash_query?: string;
-  };
-}
+import { Video } from "@/services/api/video";
+export type { Video };
 
 export interface DemoVideo {
   id: string;

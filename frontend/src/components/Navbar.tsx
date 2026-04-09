@@ -71,8 +71,15 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   // Initialize from props
-  const { isAuthenticated, setYouTubeConnected, isYouTubeConnected, logout } =
-    useAuth();
+  const { 
+    isAuthenticated, 
+    setYouTubeConnected, 
+    isYouTubeConnected, 
+    logout,
+    user 
+  } = useAuth();
+
+  const displayUsername = user?.name;
 
   // Theme toggle
   const { setTheme, theme } = useTheme();
@@ -215,7 +222,7 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
 
     // Handle scroll events
     const handleScroll = () => {
-      if (window.scrollY > 10) {
+      if (window.scrollY > 5) {
         setIsScrolled(true);
       } else {
         setIsScrolled(false);
@@ -252,22 +259,16 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
     window.dispatchEvent(new Event("storage"));
   };
 
-  const navItems = [
-    { name: "Home", path: "/" },
-    { name: "Create", path: "/create" },
-    { name: "Gallery", path: "/gallery" },
-  ];
-
   const handleSignOut = () => {
     logout();
     navigate("/"); // Navigate to home
   };
 
-  // Check auth status on every render
-  const userData = localStorage.getItem("user");
-  const userInfo = userData ? JSON.parse(userData) : null;
-  const displayUsername =
-    currentUsername || (userInfo ? userInfo.name : undefined);
+  const navItems = [
+    { name: "Home", path: "/" },
+    { name: "Create", path: "/create" },
+    { name: "Gallery", path: "/gallery" },
+  ];
 
   // Handle clicks outside the navigation menu
   useEffect(() => {
@@ -300,16 +301,16 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         isScrolled
-          ? "bg-black/20 backdrop-blur-sm shadow-md border-b border-border/30"
-          : "bg-black/20 backdrop-blur-sm"
+          ? "navbar-glass shadow-sm"
+          : "bg-background/0"
       }`}
     >
       <div className="container-wide flex h-16 md:h-20 items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Logo />
           <NavLink
             to="/"
-            className="text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
+            className="text-2xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
           >
             <span className="text-foreground">Lazy</span>
             <span className="text-[#E0115F]">Creator</span>
@@ -333,9 +334,11 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
                   key={item.name}
                   to={item.path}
                   className={({ isActive }) =>
-                    isActive
-                      ? "font-medium text-[#E0115F] dark:text-[#E0115F]"
-                      : "text-foreground/80 hover:text-foreground transition-colors"
+                    `text-base font-medium transition-colors ${
+                      isActive
+                        ? "text-[#E0115F]"
+                        : "text-foreground/80 hover:text-foreground"
+                    }`
                   }
                 >
                   {item.name}
@@ -359,17 +362,26 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
               )}
             </button>
 
-            {displayUsername ? (
+            {user ? (
               <div className="flex items-center space-x-4">
                 <div className="relative group">
                   <div className="flex items-center">
-                    <button className="flex items-center gap-2 py-1 px-3 rounded-full bg-[#E0115F]/10 hover:bg-[#E0115F]/20 dark:hover:bg-[#E0115F]/20 transition-colors">
-                      <User className="h-4 w-4 text-[#E0115F] dark:text-[#E0115F]" />
-                      <span className="text-sm font-medium">
+                    <button className="flex items-center gap-3 py-1.5 px-4 rounded-full bg-primary/5 hover:bg-primary/10 border border-primary/10 transition-all">
+                      {user.picture ? (
+                        <img 
+                          src={user.picture} 
+                          alt={displayUsername} 
+                          className="w-8 h-8 rounded-full border border-primary/20 object-cover" 
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                          <User className="h-5 w-5 text-primary" />
+                        </div>
+                      )}
+                      <span className="text-base font-medium">
                         {displayUsername}
                       </span>
-                      {/* Username Sphere - Using ConnectionSphere component */}
-                      <ConnectionSphere isConnected={isYouTubeConnected} />
+                      <div className={`w-2 h-2 rounded-full ${isYouTubeConnected ? 'bg-primary animate-pulse shadow-[0_0_8px_rgba(224,17,95,0.6)]' : 'bg-muted-foreground/30'}`} />
                     </button>
                   </div>
                   <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 border border-gray-100 dark:border-gray-800 overflow-hidden">
@@ -440,7 +452,7 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
       {/* Mobile Navigation Menu with improved animation */}
       <div
         ref={mobileMenuRef}
-        className={`md:hidden fixed top-16 left-0 right-0 bg-[#FAF9F6]/85 dark:bg-black/85 backdrop-blur-sm shadow-lg border-b border-border/30 transform transition-all duration-300 ease-in-out ${
+        className={`md:hidden fixed top-16 left-0 right-0 bg-background/95 backdrop-blur-md shadow-xl border-b border-border/10 transform transition-all duration-300 ease-in-out ${
           isMenuOpen
             ? "translate-y-0 opacity-100"
             : "translate-y-[-10px] opacity-0 pointer-events-none"
@@ -496,7 +508,7 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
               )}
             </button>
 
-            {displayUsername ? (
+            {user ? (
               <>
                 <div className="flex items-center gap-2 py-2 text-sm">
                   <ConnectionSphere isConnected={isYouTubeConnected} />
@@ -507,9 +519,17 @@ const Navbar = ({ username, disableNavigation }: NavbarProps) => {
                   </span>
                 </div>
                 <div className="flex items-center gap-3 py-2">
-                  <div className="flex items-center space-x-2">
-                    <User className="h-5 w-5 text-[#E0115F]" />
-                    <span>{displayUsername}</span>
+                  <div className="flex items-center space-x-3">
+                    {user.picture ? (
+                      <img 
+                        src={user.picture} 
+                        alt={displayUsername} 
+                        className="w-8 h-8 rounded-full border border-primary/20 object-cover" 
+                      />
+                    ) : (
+                      <User className="h-6 w-6 text-[#E0115F]" />
+                    )}
+                    <span className="text-lg font-medium">{displayUsername}</span>
                   </div>
                 </div>
                 <button

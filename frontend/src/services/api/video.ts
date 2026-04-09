@@ -4,11 +4,24 @@ import { getLzyDirectorBaseURL } from "../config";
 
 export interface Video {
   id: string;
-  title: string;
+  title?: string;
   filename: string;
   thumbnailUrl?: string;
-  createdAt: string;
-  status: string;
+  createdAt?: string;
+  status?: string;
+  gcs_path: string;
+  original_prompt: string;
+  display_title?: string;
+  duration: number;
+  created_at: string;
+  uploaded_to_yt: boolean;
+  youtube_id: string | null;
+  comprehensive_content?: {
+    title?: string;
+    description?: string;
+    thumbnail_hf_prompt?: string;
+    thumbnail_unsplash_query?: string;
+  };
 }
 
 export interface GalleryResponse {
@@ -20,6 +33,7 @@ export interface TaskStatus {
   status: string;
   progress: number;
   message: string;
+  error?: string;
   video_url?: string;
 }
 

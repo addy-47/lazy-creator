@@ -3,6 +3,8 @@ import React, {
   useContext,
   useState,
   useEffect,
+  useMemo,
+  useCallback,
   ReactNode,
 } from "react";
 import { 
@@ -14,12 +16,20 @@ import {
   refreshToken 
 } from "@/services/tokenService";
 
+interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+}
+
 interface AuthContextType {
   isAuthenticated: boolean;
   isYouTubeConnected: boolean;
   username: string | undefined;
+  user: UserProfile | null;
   setYouTubeConnected: (connected: boolean) => void;
-  login: (token: string, user: any) => void;
+  login: (token: string, user: UserProfile) => void;
   logout: () => void;
   refreshAuthState: () => void;
   refreshTokenIfNeeded: () => Promise<boolean>;
@@ -38,31 +48,34 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isYouTubeConnected, setIsYouTubeConnected] = useState<boolean>(false);
-  const [username, setUsername] = useState<string | undefined>(undefined);
+  const [user, setUser] = useState<UserProfile | null>(null);
 
-  // Function to refresh auth state
-  const refreshAuthState = () => {
+  // Simplified username getter for backward compatibility
+  const username = useMemo(() => user?.name, [user]);
+
+  // Function to refresh auth state from persistent storage
+  const refreshAuthState = useCallback(() => {
     const token = getToken();
-    const user = localStorage.getItem("user");
+    const userJson = localStorage.getItem("user");
 
-    if (token && user) {
+    if (token && userJson) {
       try {
-        const userData = JSON.parse(user);
+        const userData = JSON.parse(userJson);
         setIsAuthenticated(true);
-        setUsername(userData.name);
+        setUser(userData);
       } catch (e) {
         console.error("Error parsing user data:", e);
         setIsAuthenticated(false);
-        setUsername(undefined);
+        setUser(null);
       }
     } else {
       setIsAuthenticated(false);
-      setUsername(undefined);
+      setUser(null);
     }
-  };
+  }, []);
 
   // Function to refresh the token if needed
-  const refreshTokenIfNeeded = async (): Promise<boolean> => {
+  const refreshTokenIfNeeded = useCallback(async (): Promise<boolean> => {
     if (!isAuthenticated) return false;
 
     if (shouldRefreshToken()) {
@@ -80,7 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return false; // No refresh needed
-  };
+  }, [isAuthenticated]);
+
+  // Check if user is already authenticated on mount
+  useEffect(() => {
+    refreshAuthState();
+  }, [refreshAuthState]);
 
   // Initialize token refresh mechanism
   useEffect(() => {
@@ -89,46 +107,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [isAuthenticated]);
 
-  // Check if user is already authenticated on mount
-  useEffect(() => {
-    refreshAuthState();
-  }, []);
-
-  const login = (token: string, user: any) => {
+  const login = useCallback((token: string, userData: UserProfile) => {
     setToken(token);
-    localStorage.setItem("user", JSON.stringify(user));
+    localStorage.setItem("user", JSON.stringify(userData));
     setIsAuthenticated(true);
-    setUsername(user.name);
+    setUser(userData);
 
     // Initialize token refresh mechanism after login
     initializeTokenRefresh();
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     clearToken();
     localStorage.removeItem("user");
+    // Clear session-specific transient flags too
+    sessionStorage.clear(); 
+    
     setIsAuthenticated(false);
     setIsYouTubeConnected(false);
-    setUsername(undefined);
-  };
+    setUser(null);
+  }, []);
 
-  const setYouTubeConnected = (connected: boolean) => {
+  const setYouTubeConnected = useCallback((connected: boolean) => {
     setIsYouTubeConnected(connected);
-  };
+  }, []);
+
+  // Memoize the context value as an optimization to prevent unnecessary re-renders
+  const value = useMemo(() => ({
+    isAuthenticated,
+    isYouTubeConnected,
+    username,
+    user,
+    setYouTubeConnected,
+    login,
+    logout,
+    refreshAuthState,
+    refreshTokenIfNeeded,
+  }), [
+    isAuthenticated,
+    isYouTubeConnected,
+    username,
+    user,
+    setYouTubeConnected,
+    login,
+    logout,
+    refreshAuthState,
+    refreshTokenIfNeeded
+  ]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        isYouTubeConnected,
-        username,
-        setYouTubeConnected,
-        login,
-        logout,
-        refreshAuthState,
-        refreshTokenIfNeeded,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

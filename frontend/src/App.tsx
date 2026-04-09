@@ -96,6 +96,8 @@ const SessionExpirationHandler = () => {
   return null; // This component doesn't render anything
 };
 
+import MainLayout from "@/components/MainLayout";
+
 const App = () => {
   // Initialize token refresh mechanism on app startup
   useEffect(() => {
@@ -120,15 +122,19 @@ const App = () => {
               <BrowserRouter>
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
-                    <Route path="/" element={<Index />} />
-                    <Route path="/create" element={<Create />} />
-                    <Route path="/learn" element={<Learn />} />
-                    <Route path="/gallery" element={<Gallery />} />
-                    <Route path="/processing" element={<Processing />} />
+                    {/* Routes that use the shared Layout */}
+                    <Route path="/" element={<MainLayout><Index /></MainLayout>} />
+                    <Route path="/create" element={<MainLayout><Create /></MainLayout>} />
+                    <Route path="/learn" element={<MainLayout><Learn /></MainLayout>} />
+                    <Route path="/gallery" element={<MainLayout><Gallery /></MainLayout>} />
+                    <Route path="/processing" element={<MainLayout><Processing /></MainLayout>} />
                     <Route path="/youtube-auth-success" element={<YouTubeAuthSuccess />} />
-                    <Route path="/terms-of-service" element={<TermsOfService />} />
-                    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                    
+                    {/* Routes that don't use the shared layout (e.g. Auth) */}
                     <Route path="/auth" element={<RouteWithAuth><Auth /></RouteWithAuth>} />
+                    
+                    <Route path="/terms-of-service" element={<MainLayout><TermsOfService /></MainLayout>} />
+                    <Route path="/privacy-policy" element={<MainLayout><PrivacyPolicy /></MainLayout>} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </Suspense>

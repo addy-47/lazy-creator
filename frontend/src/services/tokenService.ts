@@ -1,3 +1,4 @@
+
 import axios from "axios";
 import { getLzySvcBaseURL } from "./config";
 
@@ -13,7 +14,6 @@ export const SESSION_EXPIRED_EVENT = "session_expired";
 // Decode JWT token to get payload data
 export const decodeToken = (token: string): any => {
   try {
-    // The JWT token consists of three parts separated by dots: header.payload.signature
     const base64Url = token.split(".")[1];
     const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
     const jsonPayload = decodeURIComponent(
@@ -33,10 +33,8 @@ export const decodeToken = (token: string): any => {
 export const setToken = (token: string): void => {
   localStorage.setItem(TOKEN_KEY, token);
 
-  // Extract expiry time from token and store it
   const decodedToken = decodeToken(token);
   if (decodedToken && decodedToken.exp) {
-    // JWT exp is in seconds, convert to milliseconds for Date
     const expiryTime = decodedToken.exp * 1000;
     localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString());
   }
@@ -47,13 +45,13 @@ export const getToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
 };
 
-// Get token expiry time as a number (milliseconds)
+// Get token expiry time
 export const getTokenExpiry = (): number | null => {
   const expiryTimeStr = localStorage.getItem(TOKEN_EXPIRY_KEY);
   return expiryTimeStr ? parseInt(expiryTimeStr, 10) : null;
 };
 
-// Clear token and related data
+// Clear token data
 export const clearToken = (): void => {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(TOKEN_EXPIRY_KEY);
@@ -62,8 +60,7 @@ export const clearToken = (): void => {
 // Check if token is expired
 export const isTokenExpired = (): boolean => {
   const expiryTime = getTokenExpiry();
-  if (!expiryTime) return true; // No expiry time, consider expired
-
+  if (!expiryTime) return true;
   return Date.now() > expiryTime;
 };
 
@@ -78,15 +75,13 @@ export const shouldRefreshToken = (): boolean => {
   const expiryTime = getTokenExpiry();
   if (!expiryTime) return false;
 
-  // Calculate time remaining until expiry
   const now = Date.now();
   const timeRemaining = expiryTime - now;
 
-  // Return true if token is within refresh threshold
   return timeRemaining > 0 && timeRemaining < TOKEN_REFRESH_THRESHOLD;
 };
 
-// Refresh the token
+// Refresh the token via the backend
 export const refreshToken = async (): Promise<string | null> => {
   const currentToken = getToken();
   if (!currentToken) return null;
@@ -104,55 +99,28 @@ export const refreshToken = async (): Promise<string | null> => {
     );
 
     if (response.data && response.data.token) {
-      // Store the new token
       setToken(response.data.token);
-      console.log("Token refreshed successfully");
       return response.data.token;
     }
-
-    console.error("Token refresh response missing token");
     return null;
   } catch (error) {
     console.error("Error refreshing token:", error);
-
-    // Check if the error is due to an expired session
     if (axios.isAxiosError(error) && error.response?.status === 401) {
-      // Emit session expired event
       emitSessionExpiredEvent();
     }
-
     return null;
   }
 };
 
-// Initialize token refresh logic
+// Set up periodic checks for token refresh
 export const initializeTokenRefresh = (): void => {
-  // Initial check for token refresh
   if (shouldRefreshToken()) {
-    refreshToken().catch((error) => {
-      console.error("Failed to refresh token during initialization:", error);
-    });
+    refreshToken().catch(console.error);
   }
 
-  // Set up periodic checks for token refresh
   setInterval(() => {
     if (shouldRefreshToken()) {
-      refreshToken().catch((error) => {
-        console.error("Failed to refresh token during interval check:", error);
-      });
+      refreshToken().catch(console.error);
     }
   }, TOKEN_REFRESH_INTERVAL);
-};
-
-// Validate token and handle expiration
-export const validateToken = (): boolean => {
-  const token = getToken();
-  if (!token) return false;
-
-  if (isTokenExpired()) {
-    emitSessionExpiredEvent();
-    return false;
-  }
-
-  return true;
 };
