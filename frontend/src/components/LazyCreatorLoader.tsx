@@ -27,7 +27,7 @@ const LazyCreatorLoader: React.FC<LazyCreatorLoaderProps> = ({
       transition: {
         duration: 8,
         repeat: Infinity,
-        ease: "linear",
+        ease: "linear" as const,
       },
     },
   };
@@ -39,7 +39,7 @@ const LazyCreatorLoader: React.FC<LazyCreatorLoaderProps> = ({
       transition: {
         duration: 2,
         repeat: Infinity,
-        ease: "easeInOut",
+        ease: "easeInOut" as const,
       },
     },
   };
@@ -98,7 +98,7 @@ const LazyCreatorLoader: React.FC<LazyCreatorLoaderProps> = ({
             initial={{ pathLength: 0 }}
             animate={{
               pathLength: progress / 100,
-              transition: { duration: 0.5, ease: "easeInOut" },
+              transition: { duration: 0.5, ease: "easeInOut" as const },
             }}
           />
         </svg>
@@ -136,7 +136,7 @@ const LazyCreatorLoader: React.FC<LazyCreatorLoaderProps> = ({
               duration: 2 + Math.random() * 2,
               repeat: Infinity,
               delay: i * 0.5,
-              ease: "easeInOut",
+              ease: "easeInOut" as const,
             }}
           />
         ))}

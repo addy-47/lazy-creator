@@ -39,7 +39,7 @@ export const youtubeApi = {
     }
   },
 
-  disconnect: async (): Promise<ApiResponse<any>> => {
+  disconnect: async (): Promise<ApiResponse<{ message?: string }>> => {
     try {
       const response = await lzySvcApi.delete('/youtube/disconnect');
       return response.data;

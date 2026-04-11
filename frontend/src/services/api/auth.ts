@@ -13,7 +13,7 @@ export const authApi = {
       const response = await lzySvcApi.post('/auth/login', credentials);
       return response;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
@@ -22,7 +22,7 @@ export const authApi = {
       const response = await lzySvcApi.post('/auth/register', userData);
       return response;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
@@ -31,7 +31,7 @@ export const authApi = {
       const response = await lzySvcApi.get('/auth/google-url');
       return response;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
@@ -40,7 +40,7 @@ export const authApi = {
       const response = await lzySvcApi.post('/auth/refresh');
       return response;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
   
@@ -49,7 +49,7 @@ export const authApi = {
       const response = await lzySvcApi.post('/auth/logout');
       return response;
     } catch (error) {
-      handleApiError(error);
+      return handleApiError(error);
     }
   },
 };

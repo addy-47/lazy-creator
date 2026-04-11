@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/use-auth";
 import { BaseResponse } from "@/types/common";
@@ -189,7 +189,7 @@ export default function YouTubeAuthSuccess() {
               setToken(newToken);
             }
 
-            sendMessageAndFinish(true, undefined, newToken);
+            sendMessageAndFinish(true, undefined, newToken || undefined);
           } else {
             const errorMsg =
               (response as BaseResponse)?.message ||
@@ -206,7 +206,7 @@ export default function YouTubeAuthSuccess() {
           const errorAsDetailed = error as { 
             request?: { 
               responseURL?: string 
-            } 
+              } 
           };
           
           if (

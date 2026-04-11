@@ -114,7 +114,7 @@ const UploadFormDialog: React.FC<UploadFormDialogProps> = ({
                 {["public", "private", "unlisted"].map((status) => (
                   <button
                     key={status}
-                    onClick={() => updateField("privacy_status", status)}
+                    onClick={() => updateField("privacy_status", status as "public" | "private" | "unlisted")}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                       uploadData.privacy_status === status 
                         ? "bg-background text-foreground shadow-sm" 

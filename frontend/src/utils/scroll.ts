@@ -133,3 +133,20 @@ export function isInViewport(element: HTMLElement, offset = 0): boolean {
     rect.right >= 0 - offset
   );
 }
+
+/**
+ * Creates a function that calls the handler on the next animation frame
+ * @param handler The function to execute
+ */
+export function createRAFScrollHandler(handler: () => void): () => void {
+  let ticking = false;
+  return function () {
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        handler();
+        ticking = false;
+      });
+      ticking = true;
+    }
+  };
+}

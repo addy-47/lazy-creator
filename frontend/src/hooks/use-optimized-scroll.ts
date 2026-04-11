@@ -48,7 +48,7 @@ export function useOptimizedScroll(
   const prevScrollY = useRef<number>(
     typeof window !== "undefined" ? window.scrollY : 0
   );
-  const scrollListenerRef = useRef<() => void | null>(null);
+  const scrollListenerRef = useRef<(() => void) | null>(null);
 
   // Create the scroll handler function
   const handleScroll = useCallback(() => {

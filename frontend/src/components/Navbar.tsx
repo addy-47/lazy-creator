@@ -8,6 +8,7 @@ import { useTheme } from "next-themes";
 import { youtubeApi } from "@/services/api";
 import { useAuth } from "@/contexts/use-auth";
 import { toast } from "sonner";
+import ConfirmModal from "./modals/ConfirmModal";
 
 interface NavbarProps {
   username?: string;
@@ -63,6 +64,7 @@ const Navbar = ({ disableNavigation }: NavbarProps) => {
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isDisconnectModalOpen, setIsDisconnectModalOpen] = useState(false);
   
   // Add ref for the mobile navigation menu
   const mobileMenuRef = useRef<HTMLDivElement>(null);
@@ -184,8 +186,10 @@ const Navbar = ({ disableNavigation }: NavbarProps) => {
   };
 
   const handleDisconnectYouTube = async () => {
-    if (!window.confirm("Are you sure you want to disconnect your YouTube account?")) return;
-    
+    setIsDisconnectModalOpen(true);
+  };
+
+  const confirmDisconnectYouTube = async () => {
     const toastId = toast.loading("Disconnecting YouTube...");
     try {
       const response = await youtubeApi.disconnect();
@@ -577,6 +581,16 @@ const Navbar = ({ disableNavigation }: NavbarProps) => {
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={isDisconnectModalOpen}
+        onClose={() => setIsDisconnectModalOpen(false)}
+        onConfirm={confirmDisconnectYouTube}
+        title="Disconnect YouTube"
+        description="Are you sure you want to disconnect your YouTube account? You will need to re-authenticate to upload videos or see trending shorts."
+        confirmText="Disconnect"
+        variant="danger"
+      />
     </nav>
   );
 };

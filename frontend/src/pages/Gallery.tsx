@@ -9,6 +9,7 @@ import GalleryHeader from "@/components/gallery/GalleryHeader";
 import TabNavigation from "@/components/gallery/TabNavigation";
 import MyVideosSection from "@/components/gallery/MyVideosSection";
 import ExploreSection from "@/components/gallery/ExploreSection";
+import ConfirmModal from "@/components/modals/ConfirmModal";
 import {
   Video,
   YouTubeShort,
@@ -41,11 +42,11 @@ function GalleryPage() {
     privacy_status: "public",
   });
   const [youtubeChannels, setYoutubeChannels] = useState<YouTubeChannel[]>([]);
-  const [loadingChannels, setLoadingChannels] = useState(false);
   const [activeVideo, setActiveVideo] = useState<Video | DemoVideo | null>(null);
   const [activeSection, setActiveSection] = useState<"my-videos" | "explore">("my-videos");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedYouTubeChannel, setSelectedYouTubeChannel] = useState<YouTubeChannel | null>(null);
+  const [videoToDelete, setVideoToDelete] = useState<string | null>(null);
 
   const loadDemoVideos = useCallback((count: number) => {
     const demos: DemoVideo[] = [];
@@ -113,9 +114,6 @@ function GalleryPage() {
   const fetchYouTubeChannels = useCallback(async () => {
     if (!isYouTubeConnected) return [];
     
-    // Use a local variable to prevent multiple simultaneous calls
-    // since loadingChannels is used for UI state but can trigger cycles
-    setLoadingChannels(true);
     try {
       const response = await youtubeApi.getChannels();
       if (response.status === "success" && response.channels) {
@@ -132,10 +130,8 @@ function GalleryPage() {
     } catch (error) {
       console.error("Error fetching YouTube channels:", error);
       return [];
-    } finally {
-      setLoadingChannels(false);
     }
-  }, [isYouTubeConnected]); // Removed loadingChannels from dependencies
+  }, [isYouTubeConnected]);
 
   useEffect(() => {
     if (isYouTubeConnected) {
@@ -170,7 +166,12 @@ function GalleryPage() {
   }, []);
 
   const handleDelete = useCallback(async (videoId: string) => {
-    if (!window.confirm("Are you sure you want to delete this video?")) return;
+    setVideoToDelete(videoId);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!videoToDelete) return;
+    const videoId = videoToDelete;
     const toastId = toast.loading("Deleting video...");
     try {
       await videoApi.delete(videoId);
@@ -191,8 +192,9 @@ function GalleryPage() {
       }
     } finally {
       toast.dismiss(toastId);
+      setVideoToDelete(null);
     }
-  }, []);
+  }, [videoToDelete]);
 
   const handleUpload = useCallback(async (videoId: string) => {
     setUploading(videoId);
@@ -323,6 +325,16 @@ function GalleryPage() {
           />
         )}
       </React.Suspense>
+
+      <ConfirmModal
+        isOpen={!!videoToDelete}
+        onClose={() => setVideoToDelete(null)}
+        onConfirm={confirmDelete}
+        title="Delete Video"
+        description="Are you sure you want to delete this video? This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

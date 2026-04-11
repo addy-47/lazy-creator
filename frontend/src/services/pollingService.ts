@@ -36,7 +36,7 @@ export class PollingService {
     const poll = async () => {
       try {
         const response = await videoApi.getTaskStatus(videoId);
-        const data = response.data as TaskStatus;
+        const data = response as unknown as TaskStatus;
 
         if (onUpdate) onUpdate(data);
 

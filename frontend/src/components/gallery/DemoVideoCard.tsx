@@ -1,14 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Film, Youtube, AlertTriangle } from "lucide-react";
-
-interface DemoVideo {
-  id: string;
-  url: string;
-  title?: string;
-  views?: string;
-  youtubeUrl?: string;
-  channel?: string;
-}
+import { DemoVideo } from "./types";
 
 interface DemoVideoCardProps {
   demo: DemoVideo;
@@ -69,7 +61,7 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
       }
     };
 
-    const handleError = (e) => {
+    const handleError = (e: Event) => {
       console.error(`Error loading video ${demo.id}:`, e);
       setVideoError(true);
       // Log additional information to help debug the issue
@@ -129,7 +121,7 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
         {isYouTubeThumbnail ? (
           // YouTube thumbnail
           <img
-            src={demo.url}
+            src={demo.url || ""}
             className="w-full h-full object-cover"
             alt={demo.title || `Short ${demo.id}`}
             onError={() => setVideoError(true)}
@@ -139,7 +131,7 @@ const DemoVideoCard: React.FC<DemoVideoCardProps> = ({ demo, onClick }) => {
           <video
             id={`featured-${demo.id}`}
             ref={videoRef}
-            src={demo.url}
+            src={demo.url || ""}
             className="w-full h-full object-cover"
             muted
             preload="metadata"
